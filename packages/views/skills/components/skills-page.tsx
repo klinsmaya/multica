@@ -15,6 +15,8 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
+  Skill,
+  SkillSummary,
 } from "@multica/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
