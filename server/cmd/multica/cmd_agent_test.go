@@ -1488,6 +1488,103 @@ func TestAgentAvatarOversizedFile(t *testing.T) {
 	}
 }
 
+func newAgentLabelTestCmd(action string) *cobra.Command {
+	cmd := &cobra.Command{Use: action}
+	cmd.Flags().String("output", "json", "")
+	cmd.Flags().Bool("full-id", false, "")
+	return cmd
+}
+
+func TestRunAgentLabelCommands(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+	t.Setenv("MULTICA_TOKEN", "test-token")
+
+	var lastMethod, lastPath string
+	var lastBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastMethod = r.Method
+		lastPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/agents/agent-1/labels" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"labels": []map[string]any{
+					{"id": testLabelUUID, "name": "engineering", "color": "#10b981"},
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/agents/agent-1/labels" {
+			_ = json.NewDecoder(r.Body).Decode(&lastBody)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"labels": []map[string]any{
+					{"id": testLabelUUID, "name": "engineering", "color": "#10b981"},
+				},
+			})
+			return
+		}
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/agents/agent-1/labels/"+testLabelUUID {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/labels" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"labels": []map[string]any{
+					{"id": testLabelUUID, "name": "engineering", "color": "#10b981"},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	t.Setenv("MULTICA_SERVER_URL", srv.URL)
+
+	// 1. List labels on agent
+	listCmd := newAgentLabelTestCmd("list")
+	out, err := captureStdout(t, func() error {
+		return runAgentLabelList(listCmd, []string{"agent-1"})
+	})
+	if err != nil {
+		t.Fatalf("runAgentLabelList: %v", err)
+	}
+	var gotList []map[string]any
+	if err := json.Unmarshal([]byte(out), &gotList); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if len(gotList) != 1 || gotList[0]["name"] != "engineering" {
+		t.Fatalf("list output = %#v", gotList)
+	}
+
+	// 2. Add label to agent
+	addCmd := newAgentLabelTestCmd("add")
+	out, err = captureStdout(t, func() error {
+		return runAgentLabelAdd(addCmd, []string{"agent-1", testLabelUUID})
+	})
+	if err != nil {
+		t.Fatalf("runAgentLabelAdd: %v", err)
+	}
+	if lastMethod != http.MethodPost || lastPath != "/api/agents/agent-1/labels" {
+		t.Fatalf("add request: method=%s, path=%s", lastMethod, lastPath)
+	}
+	if lastBody["label_id"] != testLabelUUID {
+		t.Fatalf("add body: %#v, want label_id %s", lastBody, testLabelUUID)
+	}
+
+	// 3. Remove label from agent
+	removeCmd := newAgentLabelTestCmd("remove")
+	out, err = captureStdout(t, func() error {
+		return runAgentLabelRemove(removeCmd, []string{"agent-1", testLabelUUID})
+	})
+	if err != nil {
+		t.Fatalf("runAgentLabelRemove: %v", err)
+	}
+	if lastMethod != http.MethodGet || lastPath != "/api/agents/agent-1/labels" {
+		t.Fatalf("remove follow-up request: method=%s, path=%s", lastMethod, lastPath)
+	}
+}
+
+
 // TestAgentAvatarMissingAgent returns 404 when the agent does not exist.
 func TestAgentAvatarMissingAgent(t *testing.T) {
 	dir := t.TempDir()
