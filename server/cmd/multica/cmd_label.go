@@ -53,6 +53,16 @@ var labelDeleteCmd = &cobra.Command{
 	RunE:  runLabelDelete,
 }
 
+func validateLabelResourceType(value string, allowEmpty bool) error {
+	if value == "" && allowEmpty {
+		return nil
+	}
+	if value != "issue" && value != "skill" {
+		return fmt.Errorf("resource type must be issue or skill")
+	}
+	return nil
+}
+
 func init() {
 	labelCmd.AddCommand(labelListCmd)
 	labelCmd.AddCommand(labelGetCmd)
@@ -62,12 +72,12 @@ func init() {
 
 	labelListCmd.Flags().String("output", "table", "Output format: table or json")
 	labelListCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
-	labelListCmd.Flags().String("resource-type", "", "Filter by resource type: issue, agent, or skill (default: issue)")
+	labelListCmd.Flags().String("resource-type", "", "Filter by resource type: issue or skill (default: issue)")
 	labelGetCmd.Flags().String("output", "json", "Output format: table or json")
 
 	labelCreateCmd.Flags().String("name", "", "Label name (required)")
 	labelCreateCmd.Flags().String("color", "", "Hex color like #3b82f6 (required)")
-	labelCreateCmd.Flags().String("resource-type", "issue", "Resource type: issue, agent, or skill")
+	labelCreateCmd.Flags().String("resource-type", "issue", "Resource type: issue or skill")
 	labelCreateCmd.Flags().String("description", "", "Label description")
 	labelCreateCmd.Flags().String("output", "json", "Output format: table or json")
 
@@ -92,6 +102,9 @@ func runLabelList(cmd *cobra.Command, _ []string) error {
 		params.Set("workspace_id", client.WorkspaceID)
 	}
 	if v, _ := cmd.Flags().GetString("resource-type"); v != "" {
+		if err := validateLabelResourceType(v, false); err != nil {
+			return err
+		}
 		params.Set("resource_type", v)
 	}
 	path := "/api/labels"
@@ -142,7 +155,7 @@ func runLabelGet(cmd *cobra.Command, args []string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
-	labelRef, err := resolveLabelID(ctx, client, args[0])
+	labelRef, err := resolveLabelID(ctx, client, args[0], "")
 	if err != nil {
 		return fmt.Errorf("resolve label: %w", err)
 	}
@@ -181,6 +194,10 @@ func runLabelCreate(cmd *cobra.Command, _ []string) error {
 	if color == "" {
 		return fmt.Errorf("--color is required (e.g. #3b82f6)")
 	}
+	resourceType, _ := cmd.Flags().GetString("resource-type")
+	if err := validateLabelResourceType(resourceType, false); err != nil {
+		return err
+	}
 
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -190,9 +207,7 @@ func runLabelCreate(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 
 	body := map[string]any{"name": name, "color": color}
-	if v, _ := cmd.Flags().GetString("resource-type"); v != "" {
-		body["resource_type"] = v
-	}
+	body["resource_type"] = resourceType
 	if v, _ := cmd.Flags().GetString("description"); v != "" {
 		body["description"] = v
 	}
@@ -224,7 +239,7 @@ func runLabelUpdate(cmd *cobra.Command, args []string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
-	labelRef, err := resolveLabelID(ctx, client, args[0])
+	labelRef, err := resolveLabelID(ctx, client, args[0], "")
 	if err != nil {
 		return fmt.Errorf("resolve label: %w", err)
 	}
@@ -272,7 +287,7 @@ func runLabelDelete(cmd *cobra.Command, args []string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
-	labelRef, err := resolveLabelID(ctx, client, args[0])
+	labelRef, err := resolveLabelID(ctx, client, args[0], "")
 	if err != nil {
 		return fmt.Errorf("resolve label: %w", err)
 	}

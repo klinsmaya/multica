@@ -87,7 +87,7 @@ func runSkillLabelAdd(cmd *cobra.Command, args []string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
-	labelRef, err := resolveLabelID(ctx, client, args[1])
+	labelRef, err := resolveLabelID(ctx, client, args[1], "skill")
 	if err != nil {
 		return fmt.Errorf("resolve label: %w", err)
 	}
@@ -116,7 +116,7 @@ func runSkillLabelRemove(cmd *cobra.Command, args []string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
-	labelRef, err := resolveLabelID(ctx, client, args[1])
+	labelRef, err := resolveLabelID(ctx, client, args[1], "skill")
 	if err != nil {
 		return fmt.Errorf("resolve label: %w", err)
 	}

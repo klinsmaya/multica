@@ -710,6 +710,9 @@ func TestRunSkillLabelCommands(t *testing.T) {
 			return
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/api/labels" {
+			if got := r.URL.Query().Get("resource_type"); got != "skill" {
+				t.Fatalf("resource_type = %q, want skill", got)
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"labels": []map[string]any{
 					{"id": testLabelUUID, "name": "mattpocock", "color": "#3b82f6"},
@@ -753,6 +756,14 @@ func TestRunSkillLabelCommands(t *testing.T) {
 		t.Fatalf("add body: %#v, want label_id %s", lastBody, testLabelUUID)
 	}
 
+	// Short IDs from `label list --resource-type skill` resolve against skill labels.
+	_, err = captureStdout(t, func() error {
+		return runSkillLabelAdd(addCmd, []string{"skill-1", "1111"})
+	})
+	if err != nil {
+		t.Fatalf("runSkillLabelAdd with short label ID: %v", err)
+	}
+
 	// 3. Remove label from skill
 	removeCmd := newSkillLabelTestCmd("remove")
 	out, err = captureStdout(t, func() error {
@@ -765,4 +776,3 @@ func TestRunSkillLabelCommands(t *testing.T) {
 		t.Fatalf("remove follow-up request: method=%s, path=%s", lastMethod, lastPath)
 	}
 }
-
