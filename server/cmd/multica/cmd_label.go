@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Label commands — workspace-scoped CRUD for labels (issues, agents, skills).
+// Label commands — workspace-scoped CRUD for labels (issues and skills).
 // ---------------------------------------------------------------------------
 
 var labelCmd = &cobra.Command{
@@ -53,10 +53,7 @@ var labelDeleteCmd = &cobra.Command{
 	RunE:  runLabelDelete,
 }
 
-func validateLabelResourceType(value string, allowEmpty bool) error {
-	if value == "" && allowEmpty {
-		return nil
-	}
+func validateLabelResourceType(value string) error {
 	if value != "issue" && value != "skill" {
 		return fmt.Errorf("resource type must be issue or skill")
 	}
@@ -102,7 +99,7 @@ func runLabelList(cmd *cobra.Command, _ []string) error {
 		params.Set("workspace_id", client.WorkspaceID)
 	}
 	if v, _ := cmd.Flags().GetString("resource-type"); v != "" {
-		if err := validateLabelResourceType(v, false); err != nil {
+		if err := validateLabelResourceType(v); err != nil {
 			return err
 		}
 		params.Set("resource_type", v)
@@ -195,7 +192,7 @@ func runLabelCreate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--color is required (e.g. #3b82f6)")
 	}
 	resourceType, _ := cmd.Flags().GetString("resource-type")
-	if err := validateLabelResourceType(resourceType, false); err != nil {
+	if err := validateLabelResourceType(resourceType); err != nil {
 		return err
 	}
 
