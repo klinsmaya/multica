@@ -34,7 +34,7 @@ func TestCompatibilityDaemonClaimLifecycleRealGateway(t *testing.T) {
 		t.Run(kind, func(t *testing.T) { exerciseCompatibilityClaim(t, kind) })
 	}
 }
-func exerciseCompatibilityClaim(t *testing.T, kind string) {
+func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testing.T, context.Context, string, string)) {
 
 	binary, fixture := os.Getenv("GATEWAY_TEST_BINARY"), os.Getenv("GATEWAY_TEST_NATIVE_FIXTURE")
 	if testHandler == nil || binary == "" || fixture == "" {
@@ -152,6 +152,9 @@ func exerciseCompatibilityClaim(t *testing.T, kind string) {
 	}
 	if code := ping(); code != 200 {
 		t.Fatalf("live admission %d", code)
+	}
+	for _, probe := range probes {
+		probe(t, ctx, entry.URL, bearer)
 	}
 	switch kind {
 	case "terminal":
