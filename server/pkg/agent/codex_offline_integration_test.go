@@ -4,9 +4,9 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -84,17 +84,29 @@ func TestOfflineCodexContainerProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command.Stderr = io.Discard
+	var diagnostics bytes.Buffer
+	command.Stderr = &diagnostics
+	scanControlSecrets := func(data string) {
+		t.Helper()
+		for _, secret := range []string{"control-fixture", "native-admin-fixture", "fixture-provider-secret", "stale-project-secret", strings.Repeat("a", 32)} {
+			if strings.Contains(data, secret) {
+				t.Error("control/provider secret entered actual CLI config, environment or protocol/log output")
+			}
+		}
+	}
+	scanControlSecrets(config)
+	scanControlSecrets(strings.Join(command.Env, "\n"))
 	if err = command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = command.Process.Kill(); _ = command.Wait() }()
+	defer func() { _ = command.Process.Kill(); _ = command.Wait(); scanControlSecrets(diagnostics.String()) }()
 	lines := make(chan map[string]json.RawMessage, 100)
 	go func() {
 		defer close(lines)
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer(make([]byte, 4096), 8<<20)
 		for scanner.Scan() {
+			scanControlSecrets(scanner.Text())
 			var m map[string]json.RawMessage
 			if json.Unmarshal(scanner.Bytes(), &m) == nil {
 				select {

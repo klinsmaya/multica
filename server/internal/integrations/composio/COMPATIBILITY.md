@@ -33,7 +33,8 @@ permission to run: claim-time policy validation and lifecycle revocation are des
 Validation here uses real SDK parsing and real Auth JWT-cookie middleware
 with isolated upstream/store fixtures. The companion gateway fork separately
 runs real SDK + gateway + PostgreSQL + native OpenConnector HTTP integration
-with an offline OAuth exchange. Neither is a live provider or daemon E2E.
+with an offline OAuth exchange. This is not a live provider validation. The later claim/canary tests use actual
+Multica server, gateway and native processes.
 
 ## Claim-time lifecycle implementation
 
@@ -63,9 +64,9 @@ CLIs do not receive a long-lived refresh token.
 Tests use migrated isolated PostgreSQL plus actual gateway and native OC
 subprocesses. They exercise daemon claim, prompt secret exclusion, source
 withdrawal before outbox delivery, unexpired session revocation and retained
-runtime-token ciphertext. They do not launch a third-party Agent CLI or prove
-real-provider OAuth/revocation. Native non-destructive provider revoke and full
-upgrade/restore/rollback acceptance remain outstanding.
+runtime-token ciphertext. The separately tagged actual Codex app-server test verifies offline MCP protocol
+without a model turn. Isolated full-service restore/compat-disable rollback
+passes; real-provider OAuth/revocation and target deployment remain unverified.
 
 ## Local disconnect and remote cleanup
 
@@ -85,6 +86,6 @@ mode retains its original SDK and disconnect contracts. Do not automatically
 copy compatibility credentials into an official project.
 
 Validation covers the actual daemon claim handler, real gateway/native OC,
-PostgreSQL and offline provider fixtures. Target Agent CLIs, real provider grant
-revocation and a full production rollout remain unverified. See the sibling OC
+PostgreSQL and offline provider fixtures. Codex 0.159.0-alpha.3 is verified for offline protocol only; model-mediated
+prompt behavior, real provider grant revocation and production rollout remain unverified. See the sibling OC
 checkout's `gateway/docs/t09-t12-evidence.md` and `gateway/ops/RUNBOOK.md`.

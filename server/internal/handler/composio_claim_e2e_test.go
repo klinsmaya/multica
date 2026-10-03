@@ -35,6 +35,10 @@ func TestCompatibilityDaemonClaimLifecycleRealGateway(t *testing.T) {
 	}
 }
 
+func TestCompatibilityClaimAfterQueueExceedsSessionTTL(t *testing.T) {
+	exerciseCompatibilityClaim(t, "aged-queue")
+}
+
 type compatibilityClaimFixture struct {
 	Endpoint, Bearer, NativeFile, Owner, Agent, Task string
 	Gateway                                          *pgxpool.Pool
@@ -73,6 +77,9 @@ func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testi
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM composio_compat_outbox WHERE task_id=$1;`, taskID)
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM composio_compat_task WHERE task_id=$1`, taskID)
 	})
+	if kind == "aged-queue" {
+		dbfx.Exec(t, `UPDATE agent_task_queue SET created_at=now()-interval '2 hours' WHERE id=$1`, taskID)
+	}
 	agent, err := testHandler.Queries.GetAgent(ctx, parseUUID(agentID))
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +124,12 @@ func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testi
 	bearer := strings.TrimPrefix(entry.Headers["Authorization"], "Bearer ")
 	if len(bearer) < 32 || !strings.HasPrefix(entry.URL, mcpOrigin+"/sessions/") {
 		t.Fatal("unsafe MCP descriptor")
+	}
+	if kind == "aged-queue" {
+		var fresh bool
+		if err := gatewayPool.QueryRow(ctx, `SELECT expires_at>now()+interval '59 minutes' AND issued_at>now()-interval '1 minute' FROM session WHERE task_id=$1 AND state='ACTIVE'`, taskID).Scan(&fresh); err != nil || !fresh {
+			t.Fatalf("claim reused enqueue-time expiry: %v", err)
+		}
 	}
 	// Remove the dedicated credential carrier, then scan every other claim field,
 	// including all task prompts and agent instructions.
@@ -163,7 +176,7 @@ func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testi
 		probe(t, ctx, compatibilityClaimFixture{entry.URL, bearer, nativeFile, testUserID, agentID, taskID, gatewayPool})
 	}
 	switch kind {
-	case "terminal":
+	case "terminal", "aged-queue":
 		dbfx.Exec(t, `UPDATE agent_task_queue SET status='completed',completed_at=now() WHERE id=$1`, taskID)
 	case "cancelled":
 		dbfx.Exec(t, `UPDATE agent_task_queue SET status='cancelled' WHERE id=$1`, taskID)
