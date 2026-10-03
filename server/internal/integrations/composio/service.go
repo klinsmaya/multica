@@ -25,6 +25,7 @@ import (
 	sdk "github.com/multica-ai/multica/server/pkg/composio"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -94,6 +95,9 @@ type Store interface {
 
 // Config configures a Service.
 type Config struct {
+	AuthorizeClaim        func(context.Context, db.Agent, string) bool
+	AuthorityToken        string
+	LifecycleDB           *pgxpool.Pool
 	Backend               string
 	MCPOrigin             string
 	AllowInsecureLoopback bool
@@ -124,17 +128,20 @@ const callbackPath = "/api/integrations/composio/callback"
 
 // Service is the Composio business-integration service.
 type Service struct {
-	compat        bool
-	compatClient  compatibilityClient
-	mcpOrigin     string
-	allowLoopback bool
-	sdk           SDK
-	store         Store
-	secret        []byte
-	callbackURL   string
-	frontendURL   string
-	stateTTL      time.Duration
-	now           func() time.Time
+	authorizeClaim func(context.Context, db.Agent, string) bool
+	authorityToken string
+	lifecycleDB    *pgxpool.Pool
+	compat         bool
+	compatClient   compatibilityClient
+	mcpOrigin      string
+	allowLoopback  bool
+	sdk            SDK
+	store          Store
+	secret         []byte
+	callbackURL    string
+	frontendURL    string
+	stateTTL       time.Duration
+	now            func() time.Time
 
 	// authCache holds the resolved toolkit_slug → auth_config_id map for the
 	// project. It is rebuilt from Composio's /auth_configs endpoint on first
@@ -170,6 +177,9 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 	if backend != "official" && backend != "compat" {
 		return nil, errors.New("composio: invalid backend")
 	}
+	if backend == "compat" && cfg.LifecycleDB != nil && len(cfg.AuthorityToken) < 32 {
+		return nil, errors.New("composio: compatibility authority token is required")
+	}
 	var verifier compatibilityClient
 	if backend == "compat" {
 		var ok bool
@@ -195,7 +205,7 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 	}
 
 	return &Service{
-		compat: backend == "compat", compatClient: verifier, mcpOrigin: cfg.MCPOrigin, allowLoopback: cfg.AllowInsecureLoopback,
+		authorizeClaim: cfg.AuthorizeClaim, lifecycleDB: cfg.LifecycleDB, authorityToken: cfg.AuthorityToken, compat: backend == "compat", compatClient: verifier, mcpOrigin: cfg.MCPOrigin, allowLoopback: cfg.AllowInsecureLoopback,
 		sdk:          client,
 		store:        store,
 		secret:       cfg.StateSecret,

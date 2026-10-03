@@ -84,6 +84,13 @@ type mcpOverlayPayload struct {
 // the `toolkits.enable` allowlist filter and `connected_accounts` pinning so
 // the session is narrowed to (owner allowlist ∩ owner active connections).
 func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
+	if s.compat {
+		return runtimeapps.MCPOverlayResult{}, nil
+	}
+	return s.buildTaskOverlay(ctx, originatorUserID, agent, nil, 0)
+}
+
+func (s *Service) buildTaskOverlay(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent, task *db.AgentTaskQueue, revision int64) (runtimeapps.MCPOverlayResult, error) {
 	// Gate 1: the overlay is the agent OWNER's connected-apps view. Without an
 	// owner there is nothing to project.
 	if !agent.OwnerID.Valid {
@@ -119,7 +126,22 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 	}
 	sort.Strings(slugs)
 
+	var compatContext *sdk.CompatibilityContext
+	if s.compat {
+		if task == nil || !originatorUserID.Valid {
+			return runtimeapps.MCPOverlayResult{}, fmt.Errorf("composio: missing trusted task context")
+		}
+		policyPins := make(map[string][]string, len(pinned))
+		for slug, value := range pinned {
+			policyPins[slug] = value.([]string)
+		}
+		if err = s.compatClient.SyncCompatibilityPolicy(ctx, util.UUIDToString(agent.ID), sdk.CompatibilityPolicy{OwnerUserID: util.UUIDToString(ownerUserID), SourceRevision: revision, ConnectedAccounts: policyPins}); err != nil {
+			return runtimeapps.MCPOverlayResult{}, fmt.Errorf("composio: policy sync denied")
+		}
+		compatContext = &sdk.CompatibilityContext{AgentID: util.UUIDToString(agent.ID), ActorUserID: util.UUIDToString(originatorUserID), TaskID: util.UUIDToString(task.ID)}
+	}
 	resp, err := s.sdk.CreateSession(ctx, sdk.CreateSessionRequest{
+		CompatContext:     compatContext,
 		UserID:            util.UUIDToString(ownerUserID),
 		Toolkits:          map[string]any{"enable": slugs},
 		ConnectedAccounts: pinned,
@@ -131,6 +153,9 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 	// rather than wire up a server with an empty URL — every runtime fails
 	// noisily on that.
 	if resp == nil || resp.MCP.URL == "" {
+		if s.compat {
+			return runtimeapps.MCPOverlayResult{}, fmt.Errorf("composio: missing session URL")
+		}
 		return runtimeapps.MCPOverlayResult{}, nil
 	}
 

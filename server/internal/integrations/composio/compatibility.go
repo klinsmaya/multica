@@ -11,6 +11,8 @@ import (
 )
 
 type compatibilityClient interface {
+	SyncCompatibilityPolicy(context.Context, string, sdk.CompatibilityPolicy) error
+	RevokeCompatibilityTask(context.Context, string) error
 	VerifyCompatibilityIdentity(context.Context, string, string) (*sdk.IdentityCompletion, error)
 	CompatibilitySessionHeaders(*sdk.CreateSessionResponse, string, bool) (map[string]string, error)
 }

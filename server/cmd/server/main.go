@@ -747,6 +747,9 @@ func main() {
 	// installation rows it simply idles. Lifecycle is bound to sweepCtx so it winds down
 	// alongside the other long-running workers, AFTER the HTTP server has
 	// drained.
+	if h.Composio != nil {
+		go h.Composio.RunLifecycle(sweepCtx)
+	}
 	if h.ChannelSupervisor != nil {
 		go h.ChannelSupervisor.Run(sweepCtx)
 	}

@@ -28,10 +28,41 @@ Compat MCP responses must include exactly one session Authorization bearer.
 The URL must match the configured MCP origin and the response's session ID.
 The project key is never returned by MCPAuthHeaders in compat mode. Official
 mode retains its current header behavior. The session response alone is not
-permission to run: claim-time policy validation and lifecycle revocation are
-still being implemented in the gateway integration.
+permission to run: claim-time policy validation and lifecycle revocation are described below.
 
 Validation here uses real SDK parsing and real Auth JWT-cookie middleware
 with isolated upstream/store fixtures. The companion gateway fork separately
 runs real SDK + gateway + PostgreSQL + native OpenConnector HTTP integration
 with an offline OAuth exchange. Neither is a live provider or daemon E2E.
+
+## Claim-time lifecycle implementation
+
+Compat now defers token issuance until daemon claim. The handler uses current
+invocation permission and strips the reserved saved `composio` MCP entry; errors
+cannot fall back to a project-key entry or enqueue-time session. The service
+registers the task durably, locks source authorization rows through registration,
+rechecks owner/actor membership and invocation, synchronizes exact policy, then
+creates a task-bound session. A database sequence orders policy snapshots.
+
+Configure a separate random COMPOSIO_AUTHORITY_TOKEN (at least 32 characters).
+Gateway `-source-origin` and `-source-token-file` reference this Multica instance
+and the same dedicated token. `/internal/composio/authorize` accepts only this
+service credential. Its boolean verdict reads current task, Agent, owner/actor
+membership, invocation targets, connection pins and persistent task tombstones.
+No permission cache or credential fallback is used.
+
+Migrations 469–473 add registry/outbox and separate concurrent indexes without
+foreign keys/cascades. Source terminal transitions, deletion, permission changes,
+connection changes and relevant membership removal preserve outbox work. No-op
+changes and unrelated workspaces/toolkits do not revoke tasks. `RunLifecycle`
+retries gateway revocation with leases. Source authority rejects new admission
+without waiting for this worker. A revoked run is never reopened: restart as a
+new task ID after restoring permission. Sessions expire after one hour; running
+CLIs do not receive a long-lived refresh token.
+
+Tests use migrated isolated PostgreSQL plus actual gateway and native OC
+subprocesses. They exercise daemon claim, prompt secret exclusion, source
+withdrawal before outbox delivery, unexpired session revocation and retained
+runtime-token ciphertext. They do not launch a third-party Agent CLI or prove
+real-provider OAuth/revocation. Native non-destructive provider revoke and full
+upgrade/restore/rollback acceptance remain outstanding.

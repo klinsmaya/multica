@@ -158,3 +158,25 @@ func unmarshalServerMap(raw json.RawMessage) (map[string]json.RawMessage, error)
 	}
 	return m, nil
 }
+
+// Compatibility owns the reserved composio entry. A saved project-key or stale
+// session entry must not become a fallback when no fresh claim grant exists.
+func removeCompatibilityMCPEntry(config json.RawMessage) (json.RawMessage, error) {
+	if !hasManagedJSON(config) {
+		return nil, nil
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(config, &root); err != nil {
+		return nil, errors.New("invalid MCP config")
+	}
+	servers, err := unmarshalServerMap(root["mcpServers"])
+	if err != nil {
+		return nil, err
+	}
+	delete(servers, "composio")
+	root["mcpServers"], err = json.Marshal(servers)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(root)
+}

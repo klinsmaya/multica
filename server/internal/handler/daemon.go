@@ -2347,7 +2347,27 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// because it carries the live user-scoped session URL. Errors are
 	// logged but never fail the claim: a broken overlay must not prevent
 	// the agent from running with its base config.
-	if composioMCPEnabled && len(task.RuntimeMcpOverlay) > 0 {
+	if h.Composio != nil && h.Composio.CompatibilityMode() {
+		var sanitizeErr error
+		mcpConfig, sanitizeErr = removeCompatibilityMCPEntry(mcpConfig)
+		if sanitizeErr != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Connected-app configuration is invalid.", taskfailure.ReasonInvalidTaskIdentity, "error_integration_config", http.StatusConflict, "invalid integration configuration")
+		}
+	}
+	if composioMCPEnabled && h.Composio != nil && h.Composio.CompatibilityMode() {
+		actor := uuidToString(task.OriginatorUserID)
+		if len(agent.ComposioToolkitAllowlist) > 0 && (!task.OriginatorUserID.Valid || !h.canInvokeAgent(r.Context(), agent, "member", actor, actor, uuidToString(agent.WorkspaceID))) {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Connected-app invocation permission is no longer valid.", taskfailure.ReasonInvalidTaskIdentity, "error_integration_access_denied", http.StatusForbidden, "integration invocation denied")
+		}
+		overlay, overlayErr := h.Composio.BuildClaimOverlay(r.Context(), *task, agent)
+		if overlayErr == nil && len(overlay.MCPOverlay) > 0 {
+			mcpConfig, overlayErr = mergeMCPOverlay(mcpConfig, overlay.MCPOverlay)
+		}
+		if overlayErr != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(r.Context(), task, "Connected-app authorization could not be verified.", taskfailure.ReasonInvalidTaskIdentity, "error_integration_authorization", http.StatusServiceUnavailable, "integration authorization unavailable")
+		}
+		resp.ConnectedApps = overlay.ConnectedApps
+	} else if composioMCPEnabled && len(task.RuntimeMcpOverlay) > 0 {
 		if merged, err := mergeMCPOverlay(mcpConfig, json.RawMessage(task.RuntimeMcpOverlay)); err != nil {
 			slog.Warn("daemon claim: merge runtime_mcp_overlay failed; falling back to agent mcp_config", "task_id", uuidToString(task.ID), "error", err)
 		} else {

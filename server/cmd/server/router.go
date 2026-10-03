@@ -1144,8 +1144,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
 				default:
 					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
-						StateSecret: stateSecret,
-						Backend:     os.Getenv("COMPOSIO_BACKEND"), MCPOrigin: os.Getenv("COMPOSIO_MCP_ORIGIN"), AllowInsecureLoopback: os.Getenv("COMPOSIO_ALLOW_LOOPBACK") == "true",
+						StateSecret: stateSecret, LifecycleDB: pool, AuthorizeClaim: h.AuthorizeComposioClaim, AuthorityToken: os.Getenv("COMPOSIO_AUTHORITY_TOKEN"),
+						Backend: os.Getenv("COMPOSIO_BACKEND"), MCPOrigin: os.Getenv("COMPOSIO_MCP_ORIGIN"), AllowInsecureLoopback: os.Getenv("COMPOSIO_ALLOW_LOOPBACK") == "true",
 						CallbackBaseURL: callbackBase,
 						FrontendBaseURL: appURLFromEnv(),
 					})
@@ -1385,6 +1385,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	authVerifyRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_AUTH_VERIFY", 20), time.Minute, trustedProxies)
 	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
+	r.Post("/internal/composio/authorize", h.ComposioAuthorizeExecution)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.Post("/auth/logout", h.Logout)
