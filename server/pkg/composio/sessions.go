@@ -18,20 +18,27 @@ import (
 // `toolkits`, `auth_configs`, `tools`, `tags`, `multi_account`, etc. fields
 // because they carry many child attributes and are expected to evolve.
 // Callers can still construct strongly typed wrappers on top.
+type CompatibilityContext struct {
+	AgentID     string `json:"agent_id"`
+	ActorUserID string `json:"actor_user_id"`
+	TaskID      string `json:"task_id"`
+}
+
 type CreateSessionRequest struct {
-	UserID            string             `json:"user_id"`
-	Toolkits          map[string]any     `json:"toolkits,omitempty"`
-	AuthConfigs       map[string]any     `json:"auth_configs,omitempty"`
-	ConnectedAccounts map[string]any     `json:"connected_accounts,omitempty"`
-	ManageConnections *ManageConnections `json:"manage_connections,omitempty"`
-	Tools             map[string]any     `json:"tools,omitempty"`
-	Tags              any                `json:"tags,omitempty"`
-	Workbench         map[string]any     `json:"workbench,omitempty"`
-	MultiAccount      map[string]any     `json:"multi_account,omitempty"`
-	Preload           map[string]any     `json:"preload,omitempty"`
-	Search            map[string]any     `json:"search,omitempty"`
-	Execute           map[string]any     `json:"execute,omitempty"`
-	Experimental      map[string]any     `json:"experimental,omitempty"`
+	CompatContext     *CompatibilityContext `json:"compat_context,omitempty"`
+	UserID            string                `json:"user_id"`
+	Toolkits          map[string]any        `json:"toolkits,omitempty"`
+	AuthConfigs       map[string]any        `json:"auth_configs,omitempty"`
+	ConnectedAccounts map[string]any        `json:"connected_accounts,omitempty"`
+	ManageConnections *ManageConnections    `json:"manage_connections,omitempty"`
+	Tools             map[string]any        `json:"tools,omitempty"`
+	Tags              any                   `json:"tags,omitempty"`
+	Workbench         map[string]any        `json:"workbench,omitempty"`
+	MultiAccount      map[string]any        `json:"multi_account,omitempty"`
+	Preload           map[string]any        `json:"preload,omitempty"`
+	Search            map[string]any        `json:"search,omitempty"`
+	Execute           map[string]any        `json:"execute,omitempty"`
+	Experimental      map[string]any        `json:"experimental,omitempty"`
 }
 
 // ManageConnections is the typed flavor of the `manage_connections` object —
@@ -77,6 +84,9 @@ type SessionWarning struct {
 // returns these separately rather than baking them into the response so
 // that callers don't accidentally leak the secret API key through logs.
 func (c *Client) CreateSession(ctx context.Context, req CreateSessionRequest) (*CreateSessionResponse, error) {
+	if c.backend != "compat" && req.CompatContext != nil {
+		return nil, errors.New("composio: compatibility context requires compat backend")
+	}
 	if req.UserID == "" {
 		return nil, errors.New("composio: CreateSession: UserID is required")
 	}

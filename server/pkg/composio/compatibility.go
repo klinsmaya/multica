@@ -48,3 +48,22 @@ func (c *Client) CompatibilitySessionHeaders(resp *CreateSessionResponse, origin
 	}
 	return map[string]string{"Authorization": value}, nil
 }
+
+type CompatibilityPolicy struct {
+	OwnerUserID       string              `json:"owner_user_id"`
+	SourceRevision    int64               `json:"source_revision"`
+	ConnectedAccounts map[string][]string `json:"connected_accounts"`
+}
+
+func (c *Client) SyncCompatibilityPolicy(ctx context.Context, agentID string, policy CompatibilityPolicy) error {
+	if c.backend != "compat" || agentID == "" {
+		return errors.New("composio: compatibility policy unavailable")
+	}
+	return c.do(c.newRequest(ctx).SetBody(policy), http.MethodPut, "/internal/agents/"+url.PathEscape(agentID)+"/policy", nil)
+}
+func (c *Client) RevokeCompatibilityTask(ctx context.Context, taskID string) error {
+	if c.backend != "compat" || taskID == "" {
+		return errors.New("composio: compatibility revocation unavailable")
+	}
+	return c.do(c.newRequest(ctx), http.MethodPost, "/internal/tasks/"+url.PathEscape(taskID)+"/revoke", nil)
+}
