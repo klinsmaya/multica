@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,6 +25,9 @@ const DefaultTimeout = 30 * time.Second
 
 // Options configures a [Client]. Only APIKey is required.
 type Options struct {
+	// Backend defaults to official; compat explicitly enables private extensions.
+	Backend               string
+	AllowInsecureLoopback bool
 	// APIKey is the Composio project API key, sent as the `x-api-key` header.
 	APIKey string
 
@@ -58,6 +62,7 @@ type Options struct {
 //
 // It is safe for concurrent use by multiple goroutines.
 type Client struct {
+	backend   string
 	rc        *resty.Client
 	baseURL   string
 	apiKey    string
@@ -79,6 +84,25 @@ func NewClient(opts Options) (*Client, error) {
 		return nil, fmt.Errorf("composio: invalid BaseURL %q: %w", baseURL, err)
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
+	backend := opts.Backend
+	if backend == "" {
+		backend = "official"
+	}
+	if backend != "official" && backend != "compat" {
+		return nil, errors.New("composio: invalid backend")
+	}
+	if backend == "compat" {
+		u, e := url.Parse(baseURL)
+		if e != nil || opts.BaseURL == "" || !safeCompatibilityURL(u, opts.AllowInsecureLoopback) || u.Path != "/api/v3.1" || u.RawQuery != "" || opts.RetryCount != 0 {
+			return nil, errors.New("composio: invalid compatibility configuration")
+		}
+		hc := &http.Client{}
+		if opts.HTTPClient != nil {
+			*hc = *opts.HTTPClient
+		}
+		hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		opts.HTTPClient = hc
+	}
 
 	ua := opts.UserAgent
 	if ua == "" {
@@ -109,6 +133,7 @@ func NewClient(opts Options) (*Client, error) {
 	}
 
 	return &Client{
+		backend:   backend,
 		rc:        rc,
 		baseURL:   baseURL,
 		apiKey:    opts.APIKey,
@@ -162,4 +187,15 @@ func (c *Client) do(req *resty.Request, method, path string, out any) error {
 		return parseAPIError(resp.StatusCode(), resp.Body())
 	}
 	return nil
+}
+
+func safeCompatibilityURL(u *url.URL, loopback bool) bool {
+	if u == nil || u.Host == "" || u.User != nil || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	if u.Scheme == "https" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return loopback && u.Scheme == "http" && ip != nil && ip.IsLoopback()
 }

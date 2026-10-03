@@ -276,6 +276,9 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				r.Header.Set("X-User-Email", email)
 			}
 
+			if fromCookie {
+				r = r.WithContext(context.WithValue(r.Context(), browserSessionKey{}, sub))
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
@@ -296,4 +299,13 @@ func extractToken(r *http.Request) (token string, fromCookie bool) {
 	}
 
 	return "", false
+}
+
+type browserSessionKey struct{}
+
+// BrowserSessionUserID is set only after Auth validates a JWT session cookie.
+// PATs, task tokens and bearer JWTs never receive this proof.
+func BrowserSessionUserID(ctx context.Context) string {
+	value, _ := ctx.Value(browserSessionKey{}).(string)
+	return value
 }

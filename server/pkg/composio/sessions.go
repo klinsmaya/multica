@@ -45,8 +45,9 @@ type ManageConnections struct {
 
 // MCPDescriptor is the streamable HTTP entrypoint for the session's MCP.
 type MCPDescriptor struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type    string            `json:"type"`
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 // CreateSessionResponse mirrors the subset of the upstream response the SDK
@@ -95,5 +96,8 @@ func (c *Client) CreateSession(ctx context.Context, req CreateSessionRequest) (*
 // material is leaving the SDK boundary, so callers can route it through
 // their secret-redact pipeline (see server/pkg/redact).
 func (c *Client) MCPAuthHeaders() map[string]string {
+	if c.backend == "compat" {
+		return nil
+	}
 	return c.APIKeyHeader()
 }

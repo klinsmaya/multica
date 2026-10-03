@@ -134,12 +134,16 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 		return runtimeapps.MCPOverlayResult{}, nil
 	}
 
+	headers, err := s.sessionHeaders(resp)
+	if err != nil {
+		return runtimeapps.MCPOverlayResult{}, err
+	}
 	payload := mcpOverlayPayload{
 		MCPServers: map[string]composioMCPServer{
 			mcpOverlayServerName: {
 				Type:    "http",
 				URL:     resp.MCP.URL,
-				Headers: s.sdk.MCPAuthHeaders(),
+				Headers: headers,
 			},
 		},
 	}

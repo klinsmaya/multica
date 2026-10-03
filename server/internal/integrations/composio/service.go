@@ -94,6 +94,9 @@ type Store interface {
 
 // Config configures a Service.
 type Config struct {
+	Backend               string
+	MCPOrigin             string
+	AllowInsecureLoopback bool
 	// StateSecret signs the connect-state HMAC. Required (non-empty).
 	StateSecret []byte
 	// CallbackBaseURL is the absolute, public base URL of THIS API, with no
@@ -121,13 +124,17 @@ const callbackPath = "/api/integrations/composio/callback"
 
 // Service is the Composio business-integration service.
 type Service struct {
-	sdk         SDK
-	store       Store
-	secret      []byte
-	callbackURL string
-	frontendURL string
-	stateTTL    time.Duration
-	now         func() time.Time
+	compat        bool
+	compatClient  compatibilityClient
+	mcpOrigin     string
+	allowLoopback bool
+	sdk           SDK
+	store         Store
+	secret        []byte
+	callbackURL   string
+	frontendURL   string
+	stateTTL      time.Duration
+	now           func() time.Time
 
 	// authCache holds the resolved toolkit_slug → auth_config_id map for the
 	// project. It is rebuilt from Composio's /auth_configs endpoint on first
@@ -156,6 +163,24 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 		return nil, errors.New("composio: CallbackBaseURL is required")
 	}
 
+	backend := cfg.Backend
+	if backend == "" {
+		backend = "official"
+	}
+	if backend != "official" && backend != "compat" {
+		return nil, errors.New("composio: invalid backend")
+	}
+	var verifier compatibilityClient
+	if backend == "compat" {
+		var ok bool
+		verifier, ok = client.(compatibilityClient)
+		if !ok || cfg.MCPOrigin == "" {
+			return nil, errors.New("composio: compatibility identity/session client is required")
+		}
+		if cfg.StateTTL == 0 {
+			cfg.StateTTL = 15 * time.Minute
+		}
+	}
 	ttl := cfg.StateTTL
 	if ttl <= 0 {
 		ttl = defaultStateTTL
@@ -170,6 +195,7 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 	}
 
 	return &Service{
+		compat: backend == "compat", compatClient: verifier, mcpOrigin: cfg.MCPOrigin, allowLoopback: cfg.AllowInsecureLoopback,
 		sdk:          client,
 		store:        store,
 		secret:       cfg.StateSecret,
@@ -320,7 +346,7 @@ func (s *Service) CompleteCallback(ctx context.Context, state, status, connected
 	// that this account actually belongs to the state's user (the
 	// composio_user_id == multica user id invariant) and was created under the
 	// toolkit's auth config. Any mismatch fails closed with ErrAccountVerification.
-	if err := s.verifyAccountOwnership(ctx, connectedAccountID, claims.UserID, authConfigID); err != nil {
+	if err := s.verifyAccountOwnership(ctx, connectedAccountID, claims.UserID, authConfigID, claims.ToolkitSlug); err != nil {
 		return claims.ToolkitSlug, err
 	}
 
@@ -444,9 +470,13 @@ func (s *Service) CreateMCPSession(ctx context.Context, userID pgtype.UUID) (*MC
 	if err != nil {
 		return nil, fmt.Errorf("composio: create session: %w", err)
 	}
+	headers, err := s.sessionHeaders(resp)
+	if err != nil {
+		return nil, err
+	}
 	return &MCPSession{
 		URL:     resp.MCP.URL,
-		Headers: s.sdk.MCPAuthHeaders(),
+		Headers: headers,
 	}, nil
 }
 
@@ -588,7 +618,7 @@ func (s *Service) authConfigMap(ctx context.Context) (map[string]string, error) 
 	if err != nil {
 		// Serve a stale snapshot if we have one — a transient /auth_configs
 		// blip should not make every toolkit suddenly un-connectable.
-		if s.authCache != nil {
+		if s.authCache != nil && !s.compat {
 			return s.authCache, nil
 		}
 		return nil, err
@@ -667,7 +697,7 @@ func betterAuthConfig(a, b authCandidate) bool {
 // exactly-matching auth config is what closes the cross-toolkit binding gap —
 // the expected value is the auth_config_id signed into the state at
 // BeginConnect, which is toolkit-specific.
-func (s *Service) verifyAccountOwnership(ctx context.Context, connectedAccountID, expectedUserID, expectedAuthConfigID string) error {
+func (s *Service) verifyAccountOwnership(ctx context.Context, connectedAccountID, expectedUserID, expectedAuthConfigID, expectedToolkit string) error {
 	resp, err := s.sdk.ListConnectedAccounts(ctx, sdk.ListConnectedAccountsRequest{
 		ConnectedAccountIDs: []string{connectedAccountID},
 	})
@@ -682,6 +712,9 @@ func (s *Service) verifyAccountOwnership(ctx context.Context, connectedAccountID
 		}
 	}
 	if acct == nil {
+		return ErrAccountVerification
+	}
+	if s.compat && (acct.Status != "ACTIVE" || acct.Toolkit.Slug != expectedToolkit || acct.AuthConfig.ID != expectedAuthConfigID || acct.AuthConfigID != expectedAuthConfigID || acct.AuthConfig.IsDisabled) {
 		return ErrAccountVerification
 	}
 	if acct.UserID != expectedUserID {

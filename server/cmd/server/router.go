@@ -1131,7 +1131,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		if !featureflags.ComposioMCPAppsEnabled(context.Background(), opts.FeatureFlags) {
 			slog.Info("composio integration disabled (feature flag off)")
 		} else {
-			sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
+			sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey, Backend: os.Getenv("COMPOSIO_BACKEND"), BaseURL: os.Getenv("COMPOSIO_BASE_URL"), AllowInsecureLoopback: os.Getenv("COMPOSIO_ALLOW_LOOPBACK") == "true"})
 			if err != nil {
 				slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
 			} else {
@@ -1144,7 +1144,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
 				default:
 					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
-						StateSecret:     stateSecret,
+						StateSecret: stateSecret,
+						Backend:     os.Getenv("COMPOSIO_BACKEND"), MCPOrigin: os.Getenv("COMPOSIO_MCP_ORIGIN"), AllowInsecureLoopback: os.Getenv("COMPOSIO_ALLOW_LOOPBACK") == "true",
 						CallbackBaseURL: callbackBase,
 						FrontendBaseURL: appURLFromEnv(),
 					})
@@ -1774,6 +1775,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// see MUL-3843). All return 503 when COMPOSIO_API_KEY is unset.
 		r.Route("/api/integrations/composio", func(r chi.Router) {
 			r.Post("/connect/init", h.ComposioConnectInit)
+			r.With(handler.RequireHumanActor).Get("/verify", h.ComposioVerifyIdentity)
 			r.Get("/toolkits", h.ListComposioToolkits)
 			r.Get("/connections", h.ListComposioConnections)
 			r.Delete("/connections/{id}", h.DeleteComposioConnection)

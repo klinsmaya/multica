@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
+	"github.com/multica-ai/multica/server/internal/middleware"
 )
 
 // Composio integration handlers (MUL-3720, Stage 2 MVP). A Composio connection
@@ -225,4 +227,39 @@ func (h *Handler) DeleteComposioConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ComposioVerifyIdentity requires the authenticated browser, independently of
+// the OAuth link's signed state or any subject supplied by the browser.
+func (h *Handler) ComposioVerifyIdentity(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if middleware.BrowserSessionUserID(r.Context()) == "" {
+		writeError(w, http.StatusUnauthorized, "sign in with a browser session to confirm this connection")
+		return
+	}
+	if isMachineCredentialActor(r) {
+		writeError(w, http.StatusForbidden, "human login required")
+		return
+	}
+	if h.Composio == nil || !h.Composio.CompatibilityMode() || !h.composioMCPAppsEnabled(r.Context()) {
+		writeError(w, http.StatusServiceUnavailable, "compatibility integration not configured")
+		return
+	}
+	userID := middleware.BrowserSessionUserID(r.Context())
+	user, ok := parseUUIDOrBadRequest(w, userID, "user id")
+	if !ok {
+		return
+	}
+	q, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(q) != 1 || len(q["verify_ticket"]) != 1 || q.Get("verify_ticket") == "" {
+		writeError(w, http.StatusBadRequest, "invalid verification ticket")
+		return
+	}
+	target, err := h.Composio.VerifyBrowserIdentity(r.Context(), user, q.Get("verify_ticket"))
+	if err != nil {
+		writeError(w, http.StatusForbidden, "connection identity verification failed")
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
