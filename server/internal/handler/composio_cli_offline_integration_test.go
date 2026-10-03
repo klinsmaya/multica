@@ -30,7 +30,8 @@ func TestCompatibilityOfflineCodexActualCLI(t *testing.T) {
 	if binary == "" || probe == "" {
 		t.Fatal("explicit verified CLI and static probe binary required")
 	}
-	exerciseCompatibilityClaim(t, "terminal", func(t *testing.T, ctx context.Context, endpoint, bearer string) {
+	exerciseCompatibilityClaim(t, "terminal", func(t *testing.T, ctx context.Context, fixture compatibilityClaimFixture) {
+		endpoint, bearer := fixture.Endpoint, fixture.Bearer
 		folder := t.TempDir()
 		target, err := url.Parse(endpoint)
 		if err != nil {

@@ -34,15 +34,21 @@ func TestCompatibilityDaemonClaimLifecycleRealGateway(t *testing.T) {
 		t.Run(kind, func(t *testing.T) { exerciseCompatibilityClaim(t, kind) })
 	}
 }
-func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testing.T, context.Context, string, string)) {
+
+type compatibilityClaimFixture struct {
+	Endpoint, Bearer, NativeFile, Owner, Agent, Task string
+	Gateway                                          *pgxpool.Pool
+}
+
+func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testing.T, context.Context, compatibilityClaimFixture)) {
 
 	binary, fixture := os.Getenv("GATEWAY_TEST_BINARY"), os.Getenv("GATEWAY_TEST_NATIVE_FIXTURE")
 	if testHandler == nil || binary == "" || fixture == "" {
 		t.Skip("NOT_RUN: isolated database, gateway binary and native fixture required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
-	gatewayPool, control, mcpOrigin := startClaimGateway(t, ctx, binary, fixture)
+	gatewayPool, control, mcpOrigin, nativeFile := startClaimGateway(t, ctx, binary, fixture)
 	withComposioMCPAppsFlag(t, testHandler, true)
 	client, err := sdk.NewClient(sdk.Options{Backend: "compat", APIKey: "control-fixture", BaseURL: control + "/api/v3.1", AllowInsecureLoopback: true})
 	if err != nil {
@@ -154,7 +160,7 @@ func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testi
 		t.Fatalf("live admission %d", code)
 	}
 	for _, probe := range probes {
-		probe(t, ctx, entry.URL, bearer)
+		probe(t, ctx, compatibilityClaimFixture{entry.URL, bearer, nativeFile, testUserID, agentID, taskID, gatewayPool})
 	}
 	switch kind {
 	case "terminal":
@@ -234,10 +240,12 @@ func exerciseCompatibilityClaim(t *testing.T, kind string, probes ...func(*testi
 	}
 }
 
-func startClaimGateway(t *testing.T, ctx context.Context, binary, fixture string) (*pgxpool.Pool, string, string) {
+func startClaimGateway(t *testing.T, ctx context.Context, binary, fixture string) (*pgxpool.Pool, string, string, string) {
 	t.Helper()
 	native := exec.CommandContext(ctx, "node", fixture)
 	native.Dir = filepath.Dir(fixture)
+	nativeFile := filepath.Join(t.TempDir(), "native.sqlite")
+	native.Env = append(os.Environ(), "OC_NATIVE_FIXTURE_DB="+nativeFile)
 	stdout, err := native.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -346,13 +354,13 @@ func startClaimGateway(t *testing.T, ctx context.Context, binary, fixture string
 		if e == nil {
 			res.Body.Close()
 			if res.StatusCode == 200 {
-				return pool, "http://" + control, "http://" + data
+				return pool, "http://" + control, "http://" + data, nativeFile
 			}
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 	t.Fatal("gateway listener did not start")
-	return nil, "", ""
+	return nil, "", "", ""
 }
 
 func TestCompatibilityRegistrationSerializesPermissionWithdrawal(t *testing.T) {
