@@ -1156,7 +1156,13 @@
     "last_used": "마지막 사용 {{when}}",
     "last_used_never": "사용한 적 없음",
     "expired": "토큰 만료됨",
-    "reconnect": "다시 연결"
+    "reconnect": "다시 연결",
+    "backend_compat": "OpenConnector 호환 모드 · 읽기 전용",
+    "backend_official": "Composio",
+    "cleanup_unavailable": "연결 정리 상태를 불러올 수 없습니다.",
+    "remote_pending": "로컬에서 비활성화되었습니다. 제공자 권한 철회 또는 정리를 기다리는 중입니다.",
+    "remote_unsupported": "로컬에서 비활성화되었습니다. 제공자 권한 철회는 지원되지 않으며 복구 자격 증명은 보존됩니다.",
+    "remote_blocked": "로컬에서 비활성화되었습니다. 관리자 확인이 필요하며 복구 자격 증명은 보존됩니다."
   },
   "slack": {
     "section_title": "Slack",

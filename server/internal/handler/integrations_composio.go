@@ -219,6 +219,14 @@ func (h *Handler) DeleteComposioConnection(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.Composio.Disconnect(r.Context(), userUUID, connUUID); err != nil {
+		var pending *composio.PendingRemoteRevocation
+		if errors.As(err, &pending) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"local_disabled": true, "remote_revocation": pending.State})
+			return
+		}
 		if errors.Is(err, composio.ErrConnectionNotFound) {
 			writeError(w, http.StatusNotFound, "composio connection not found")
 			return
@@ -262,4 +270,26 @@ func (h *Handler) ComposioVerifyIdentity(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (h *Handler) ComposioBackendStatus(w http.ResponseWriter, r *http.Request) {
+	if h.Composio == nil || !h.composioMCPAppsEnabled(r.Context()) {
+		writeError(w, http.StatusServiceUnavailable, "composio integration not configured")
+		return
+	}
+	owner, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	id, ok := parseUUIDOrBadRequest(w, owner, "user id")
+	if !ok {
+		return
+	}
+	status, err := h.Composio.CompatibilityStatus(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "connection cleanup status unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, status)
 }

@@ -907,7 +907,13 @@
     "last_used": "最近使用 {{when}}",
     "last_used_never": "从未使用",
     "expired": "令牌已过期",
-    "reconnect": "重新连接"
+    "reconnect": "重新连接",
+    "backend_compat": "OpenConnector 兼容模式 · 只读",
+    "backend_official": "Composio",
+    "cleanup_unavailable": "暂时无法读取连接清理状态。",
+    "remote_pending": "已在本地禁用。提供方撤权或清理仍在等待处理。",
+    "remote_unsupported": "已在本地禁用。暂不支持提供方撤权，恢复凭据仍保留。",
+    "remote_blocked": "已在本地禁用。提供方撤权需要管理员核对，恢复凭据仍保留。"
   },
   "slack": {
     "section_title": "Slack",

@@ -201,7 +201,7 @@ func (c *Client) DeleteConnectedAccount(ctx context.Context, connectedAccountID 
 		return nil
 	}
 	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr.IsNotFound() {
+	if c.backend != "compat" && errors.As(err, &apiErr) && apiErr.IsNotFound() {
 		return nil
 	}
 	return err

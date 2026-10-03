@@ -45,6 +45,7 @@ export function ComposioTab() {
 
   const toolkitsQuery = useQuery(composioToolkitsOptions());
   const connectionsQuery = useQuery(composioConnectionsOptions());
+  const statusQuery = useQuery({queryKey:[...composioKeys.all,"status"],queryFn:()=>api.getComposioStatus(),refetchInterval:10000});
 
   const [query, setQuery] = useState("");
   const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
@@ -164,9 +165,11 @@ export function ComposioTab() {
     if (!disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
-      await api.deleteComposioConnection(disconnectTarget.connectionId);
+      const result = await api.deleteComposioConnection(disconnectTarget.connectionId);
       await qc.invalidateQueries({ queryKey: composioKeys.connections() });
-      toast.success(t(($) => $.composio.toast_disconnected));
+      await qc.invalidateQueries({queryKey:[...composioKeys.all,"status"]});
+      if (result?.local_disabled) toast.info(t(($) => $.composio.remote_pending));
+      else toast.success(t(($) => $.composio.toast_disconnected));
       setDisconnectTarget(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.composio.disconnect_failed));
@@ -178,6 +181,9 @@ export function ComposioTab() {
   return (
     <div className="space-y-6">
       <section className="space-y-1">
+        {statusQuery.data && <p className="text-caption">{statusQuery.data.backend === "compat" ? t(($)=>$.composio.backend_compat) : t(($)=>$.composio.backend_official)}</p>}
+        {statusQuery.isError && <p role="status">{t(($)=>$.composio.cleanup_unavailable)}</p>}
+        {(statusQuery.data?.cleanup ?? []).map(item=><p role="status" key={item.connection_id} className="text-caption">{item.toolkit_slug || item.connection_id}: {item.remote_revocation === "UNSUPPORTED" ? t(($)=>$.composio.remote_unsupported) : item.remote_revocation === "BLOCKED" ? t(($)=>$.composio.remote_blocked) : t(($)=>$.composio.remote_pending)}</p>)}
         <p className="text-body text-muted-foreground">{t(($) => $.composio.page_description)}</p>
       </section>
 

@@ -30,7 +30,7 @@ import (
 // This is a daemon CLAIM integration test, not a launch of a third-party agent
 // CLI. Its explicit fixtures run the actual gateway and native OC processes.
 func TestCompatibilityDaemonClaimLifecycleRealGateway(t *testing.T) {
-	for _, kind := range []string{"terminal", "cancelled", "permission", "connection", "agent-delete", "member"} {
+	for _, kind := range []string{"terminal", "cancelled", "permission", "connection", "disconnect", "agent-delete", "member"} {
 		t.Run(kind, func(t *testing.T) { exerciseCompatibilityClaim(t, kind) })
 	}
 }
@@ -57,7 +57,10 @@ func exerciseCompatibilityClaim(t *testing.T, kind string) {
 	t.Cleanup(func() { testHandler.Composio = previous })
 	agentID, runtimeID, daemonID := createRuntimeGuardAgent(t, ctx)
 	dbfx.Exec(t, `UPDATE agent SET composio_toolkit_allowlist=ARRAY['example'],mcp_config='{"mcpServers":{"composio":{"type":"http","url":"https://stale.invalid","headers":{"x-api-key":"stale-project-secret"}}}}' WHERE id=$1`, agentID)
-	dbfx.Insert(t, "user_composio_connection", testutil.Cols{"user_id": testUserID, "composio_user_id": testUserID, "toolkit_slug": "example", "auth_config_id": "ac", "connected_account_id": "ca_fixture"})
+	connectionID := dbfx.Insert(t, "user_composio_connection", testutil.Cols{"user_id": testUserID, "composio_user_id": testUserID, "toolkit_slug": "example", "auth_config_id": "ac", "connected_account_id": "ca_fixture"})
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM composio_compat_connection_outbox WHERE connection_id=$1`, connectionID)
+	})
 	chat := dbfx.ChatSession(t, agentID, testutil.Cols{"title": "Compatibility lifecycle fixture"})
 	taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID, "chat_session_id": chat, "status": "queued", "originator_user_id": testUserID, "accountable_user_id": testUserID, "originator_source": "direct_human"})
 	t.Cleanup(func() {
@@ -162,6 +165,40 @@ func exerciseCompatibilityClaim(t *testing.T, kind string) {
 		defer dbfx.Exec(t, `INSERT INTO member(workspace_id,user_id,role) VALUES($1,$2,'owner') ON CONFLICT DO NOTHING`, testWorkspaceID, testUserID)
 	case "permission":
 		dbfx.Exec(t, `UPDATE agent SET composio_toolkit_allowlist='{}' WHERE id=$1`, agentID)
+	case "disconnect":
+		if err = svc.Disconnect(ctx, parseUUID(testUserID), parseUUID(connectionID)); err == nil {
+			t.Fatal("remote revocation falsely reported complete")
+		}
+		if code := ping(); code != 401 {
+			t.Fatal("local disable waited for remote revoke")
+		}
+		if err = svc.DrainConnectionRevocation(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var remote string
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+			if err = gatewayPool.QueryRow(ctx, `SELECT remote_revocation FROM connection WHERE id='ca_fixture'`).Scan(&remote); err != nil {
+				t.Fatal(err)
+			}
+			if remote == "UNSUPPORTED" {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		if remote != "UNSUPPORTED" {
+			t.Fatalf("unverified provider outcome %s", remote)
+		}
+		dbfx.Exec(t, `UPDATE composio_compat_connection_outbox SET available_at=now() WHERE connection_id=$1`, connectionID)
+		if err = svc.DrainConnectionRevocation(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var localRemote string
+		if err = testPool.QueryRow(ctx, `SELECT state FROM composio_compat_connection_outbox WHERE connection_id=$1`, connectionID).Scan(&localRemote); err != nil || localRemote != "UNSUPPORTED" {
+			t.Fatalf("lost remote state %s %v", localRemote, err)
+		}
+		if _, err = testPool.Exec(ctx, `UPDATE user_composio_connection SET status='active' WHERE id=$1`, connectionID); err == nil {
+			t.Fatal("callback could revive disconnected account")
+		}
 	case "connection":
 		dbfx.Exec(t, `UPDATE user_composio_connection SET status='revoked' WHERE connected_account_id='ca_fixture' AND user_id=$1`, testUserID)
 	}

@@ -907,7 +907,13 @@
     "last_used": "最終使用 {{when}}",
     "last_used_never": "未使用",
     "expired": "トークンの有効期限切れ",
-    "reconnect": "再接続"
+    "reconnect": "再接続",
+    "backend_compat": "OpenConnector 互換モード · 読み取り専用",
+    "backend_official": "Composio",
+    "cleanup_unavailable": "接続のクリーンアップ状態を取得できません。",
+    "remote_pending": "ローカルで無効化済み。プロバイダーの取り消しまたは削除は処理待ちです。",
+    "remote_unsupported": "ローカルで無効化済み。プロバイダーの取り消しは未対応です。認証情報は保持されています。",
+    "remote_blocked": "ローカルで無効化済み。管理者による確認が必要です。認証情報は保持されています。"
   },
   "slack": {
     "section_title": "Slack",

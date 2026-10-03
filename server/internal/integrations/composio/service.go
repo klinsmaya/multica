@@ -394,6 +394,9 @@ func (s *Service) ListConnections(ctx context.Context, userID pgtype.UUID) ([]Co
 // returns ErrConnectionNotFound so the handler can 404 without leaking
 // existence across users.
 func (s *Service) Disconnect(ctx context.Context, userID, connectionID pgtype.UUID) error {
+	if s.compat {
+		return s.disconnectCompatibility(ctx, userID, connectionID)
+	}
 	row, err := s.store.GetUserComposioConnection(ctx, db.GetUserComposioConnectionParams{
 		ID:     connectionID,
 		UserID: userID,

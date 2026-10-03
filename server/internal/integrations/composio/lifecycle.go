@@ -119,6 +119,9 @@ func (s *Service) RunLifecycle(ctx context.Context) {
 			return
 		case <-tick.C:
 			attempt, cancel := context.WithTimeout(ctx, 15*time.Second)
+			if s.DrainConnectionRevocation(attempt) != nil {
+				slog.Warn("composio connection cleanup deferred")
+			}
 			if s.DrainRevocation(attempt) != nil {
 				slog.Warn("composio compatibility cleanup deferred")
 			}

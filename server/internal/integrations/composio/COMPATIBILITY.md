@@ -66,3 +66,25 @@ withdrawal before outbox delivery, unexpired session revocation and retained
 runtime-token ciphertext. They do not launch a third-party Agent CLI or prove
 real-provider OAuth/revocation. Native non-destructive provider revoke and full
 upgrade/restore/rollback acceptance remain outstanding.
+
+## Local disconnect and remote cleanup
+
+Compatibility disconnect now commits a revoked local mirror and a durable
+connection outbox before network I/O. The endpoint returns 202 with
+`local_disabled: true` and `remote_revocation` until remote cleanup is confirmed.
+The `/api/integrations/composio/status` endpoint is owner-scoped and reports the
+backend plus unresolved cleanup. Settings distinguish pending, unsupported and
+blocked remote revocation from local disable. A replayed callback cannot revive
+a connection with a disconnect tombstone. The gateway's confirmed DELETED
+record supports retry after a lost cleanup response; unknown IDs are not success.
+
+Migrations 474–475 add the connection outbox and a separate concurrent index.
+They have no foreign keys/cascades. Pending native/provider recovery must be
+reconciled before any rollback that would remove these tombstones. Official
+mode retains its original SDK and disconnect contracts. Do not automatically
+copy compatibility credentials into an official project.
+
+Validation covers the actual daemon claim handler, real gateway/native OC,
+PostgreSQL and offline provider fixtures. Target Agent CLIs, real provider grant
+revocation and a full production rollout remain unverified. See the sibling OC
+checkout's `gateway/docs/t09-t12-evidence.md` and `gateway/ops/RUNBOOK.md`.

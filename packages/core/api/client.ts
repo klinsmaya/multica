@@ -4479,9 +4479,13 @@ export class ApiClient {
     });
   }
 
+  async getComposioStatus(): Promise<{backend: "official" | "compat"; cleanup: Array<{connection_id: string; toolkit_slug: string; remote_revocation: string}>}> {
+    return this.fetch(`/api/integrations/composio/status`);
+  }
+
   /** Disconnects a Composio connection the caller owns. */
-  async deleteComposioConnection(connectionId: string): Promise<void> {
-    await this.fetch(`/api/integrations/composio/connections/${connectionId}`, {
+  async deleteComposioConnection(connectionId: string): Promise<{local_disabled: boolean; remote_revocation: string} | undefined> {
+    return this.fetch(`/api/integrations/composio/connections/${connectionId}`, {
       method: "DELETE",
     });
   }

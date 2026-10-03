@@ -1779,6 +1779,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.With(handler.RequireHumanActor).Get("/verify", h.ComposioVerifyIdentity)
 			r.Get("/toolkits", h.ListComposioToolkits)
 			r.Get("/connections", h.ListComposioConnections)
+			r.Get("/status", h.ComposioBackendStatus)
 			r.Delete("/connections/{id}", h.DeleteComposioConnection)
 		})
 

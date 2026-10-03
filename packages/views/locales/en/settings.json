@@ -909,7 +909,13 @@
     "last_used": "Last used {{when}}",
     "last_used_never": "Never used",
     "expired": "Token expired",
-    "reconnect": "Reconnect"
+    "reconnect": "Reconnect",
+    "backend_compat": "OpenConnector compatibility · read-only",
+    "backend_official": "Composio",
+    "cleanup_unavailable": "Connection cleanup status is unavailable.",
+    "remote_pending": "Disabled locally. Provider revocation or cleanup is still pending.",
+    "remote_unsupported": "Disabled locally. Provider revocation is unsupported; credentials are retained.",
+    "remote_blocked": "Disabled locally. Provider revocation needs administrator reconciliation; credentials are retained."
   },
   "slack": {
     "section_title": "Slack",

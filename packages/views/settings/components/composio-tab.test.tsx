@@ -14,6 +14,7 @@ const toolkitsRef = vi.hoisted(() => ({
 const connectionsRef = vi.hoisted(() => ({
   current: { data: [] as ComposioConnection[], isError: false },
 }));
+const statusRef = vi.hoisted(() => ({current: {data: undefined as undefined | {backend:"compat" | "official";cleanup:Array<{connection_id:string;toolkit_slug:string;remote_revocation:string}>}, isError:false}}));
 const searchParamsRef = vi.hoisted(() => ({ current: new URLSearchParams("tab=integrations") }));
 
 const mockInvalidate = vi.hoisted(() => vi.fn());
@@ -26,6 +27,7 @@ vi.mock("@tanstack/react-query", () => ({
     const key = JSON.stringify(opts.queryKey);
     if (key.includes("toolkits")) return toolkitsRef.current;
     if (key.includes("connections")) return connectionsRef.current;
+    if (key.includes("status")) return statusRef.current;
     return { data: undefined };
   },
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
@@ -96,12 +98,20 @@ const NOTION: ComposioToolkit = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  statusRef.current={data:undefined,isError:false};
   toolkitsRef.current = { data: [NOTION], isLoading: false, isError: false };
   connectionsRef.current = { data: [], isError: false };
   searchParamsRef.current = new URLSearchParams("tab=integrations");
 });
 
 describe("ComposioTab", () => {
+  it("distinguishes local disable from unsupported provider revocation", () => {
+    statusRef.current={isError:false,data:{backend:"compat",cleanup:[{connection_id:"old",toolkit_slug:"notion",remote_revocation:"UNSUPPORTED"}]}};
+    renderTab();
+    expect(screen.getByText("OpenConnector compatibility · read-only")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Provider revocation is unsupported; credentials are retained.");
+    expect(screen.queryByText("Connected")).not.toBeInTheDocument();
+  });
   it("renders a connected card with a 'never used' placeholder when last_used_at is null", () => {
     connectionsRef.current = {
       data: [

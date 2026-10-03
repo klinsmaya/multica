@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS composio_compat_connection_outbox_pending_idx;
