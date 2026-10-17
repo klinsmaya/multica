@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS artifacts_pkey_uidx;

@@ -187,6 +187,92 @@ type AgentToLabel struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type Artifact struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	OwnerScope     string             `json:"owner_scope"`
+	OwnerID        pgtype.UUID        `json:"owner_id"`
+	Title          string             `json:"title"`
+	Kind           string             `json:"kind"`
+	HeadRevisionID pgtype.UUID        `json:"head_revision_id"`
+	RowVersion     int64              `json:"row_version"`
+	Status         string             `json:"status"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type ArtifactBlob struct {
+	ID                pgtype.UUID        `json:"id"`
+	StorageKey        string             `json:"storage_key"`
+	SizeBytes         int64              `json:"size_bytes"`
+	Sha256            string             `json:"sha256"`
+	DetectedMediaType string             `json:"detected_media_type"`
+	ScanStatus        string             `json:"scan_status"`
+	EncryptionScope   string             `json:"encryption_scope"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type ArtifactLink struct {
+	ID           pgtype.UUID        `json:"id"`
+	ArtifactID   pgtype.UUID        `json:"artifact_id"`
+	RevisionID   pgtype.UUID        `json:"revision_id"`
+	TargetType   string             `json:"target_type"`
+	TargetID     pgtype.UUID        `json:"target_id"`
+	RelationType string             `json:"relation_type"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type ArtifactOperation struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	RequestHash    string             `json:"request_hash"`
+	State          string             `json:"state"`
+	ResultRef      []byte             `json:"result_ref"`
+	ErrorCode      pgtype.Text        `json:"error_code"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ArtifactRevision struct {
+	ID                pgtype.UUID        `json:"id"`
+	ArtifactID        pgtype.UUID        `json:"artifact_id"`
+	RevisionNo        int64              `json:"revision_no"`
+	ParentRevisionID  pgtype.UUID        `json:"parent_revision_id"`
+	BaseRevisionID    pgtype.UUID        `json:"base_revision_id"`
+	BlobID            pgtype.UUID        `json:"blob_id"`
+	SourceUploadID    pgtype.UUID        `json:"source_upload_id"`
+	CommitOperationID pgtype.UUID        `json:"commit_operation_id"`
+	MediaType         string             `json:"media_type"`
+	SizeBytes         int64              `json:"size_bytes"`
+	Sha256            string             `json:"sha256"`
+	Filename          string             `json:"filename"`
+	Source            string             `json:"source"`
+	ActorID           pgtype.UUID        `json:"actor_id"`
+	TaskRunID         pgtype.UUID        `json:"task_run_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+}
+
+type ArtifactUpload struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	ActorID             pgtype.UUID        `json:"actor_id"`
+	ArtifactID          pgtype.UUID        `json:"artifact_id"`
+	BaseRevisionID      pgtype.UUID        `json:"base_revision_id"`
+	ExpectedSizeBytes   int64              `json:"expected_size_bytes"`
+	ExpectedSha256      string             `json:"expected_sha256"`
+	StagingKey          string             `json:"staging_key"`
+	State               string             `json:"state"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt          pgtype.Timestamptz `json:"consumed_at"`
+	CommittedRevisionID pgtype.UUID        `json:"committed_revision_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+}
+
 type Attachment struct {
 	ID              pgtype.UUID        `json:"id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
