@@ -40,6 +40,29 @@ export interface ArtifactRevisionList {
   revisions: ArtifactRevision[];
 }
 
+export interface ArtifactEditSession {
+  edit_session_id: string;
+  artifact_id: string;
+  base_revision_id: string;
+  fencing_token: number;
+  lease_token?: string;
+  lease_expires_at: string;
+  editor_type: string;
+  state: string;
+  editable: boolean;
+  draft_content?: string;
+}
+
+export interface ArtifactCommitResult {
+  artifact_id: string;
+  revision_id: string;
+  operation_id: string;
+  state: string;
+  title?: string;
+  filename?: string;
+  revision_no?: number;
+}
+
 export interface ArtifactPreview {
   artifact_id: string;
   revision_id: string;

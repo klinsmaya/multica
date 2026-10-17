@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS artifact_edit_sessions_fencing_uidx;

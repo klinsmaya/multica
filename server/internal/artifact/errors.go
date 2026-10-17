@@ -5,6 +5,12 @@ import "errors"
 const (
 	// CodeRevisionConflict is the stable error_code stored when head moved.
 	CodeRevisionConflict = "REVISION_CONFLICT"
+	// CodeLeaseHeld means another editor, or a mismatched token, holds the lease.
+	CodeLeaseHeld = "LEASE_HELD"
+	// CodeLeaseExpired means the fencing token is no longer allowed to submit.
+	CodeLeaseExpired = "LEASE_EXPIRED"
+	// CodeNotEditable means this revision is not a text format the editor opens.
+	CodeNotEditable = "NOT_EDITABLE"
 	// CodeIdempotencyReused is the stable error_code for a key reused with a
 	// different request. It is returned to the caller and is not stored on the
 	// original operation, which keeps its own result.
@@ -42,4 +48,10 @@ var (
 	ErrUploadExpired = errors.New("upload expired")
 	// ErrUploadCancelled means the caller cancelled the staging binding.
 	ErrUploadCancelled = errors.New("upload cancelled")
+	// ErrLeaseHeld means the open lease does not match this caller.
+	ErrLeaseHeld = errors.New("edit lease held")
+	// ErrLeaseExpired means the fencing token can no longer submit.
+	ErrLeaseExpired = errors.New("edit lease expired")
+	// ErrNotEditable means the head revision is not markdown, text, JSON, or CSV.
+	ErrNotEditable = errors.New("artifact is not editable")
 )

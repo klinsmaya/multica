@@ -41,6 +41,7 @@ type CreateUploadInput struct {
 	ExpectedSHA256 string
 	Filename       string
 	MediaType      string
+	EditLease      *EditLease
 }
 
 // Upload is the staging binding returned to callers.
@@ -69,6 +70,7 @@ type FinalizeInput struct {
 	IdempotencyKey string
 	Source         string
 	TaskRunID      *uuid.UUID
+	EditLease      *EditLease
 }
 
 // CreateUpload reserves expected bytes and inserts a created upload.
@@ -119,6 +121,9 @@ func (s *Service) CreateUpload(ctx context.Context, in CreateUploadInput) (Uploa
 	}
 	if art.DeletedAt.Valid || art.Status == "deleted" {
 		return Upload{}, ErrNotFound
+	}
+	if err := enforceEditLease(ctx, q, in.ArtifactID, in.ActorID, in.EditLease); err != nil {
+		return Upload{}, err
 	}
 	wsReserved, err := q.SumWorkspaceArtifactBytes(ctx, pgUUID(in.WorkspaceID))
 	if err != nil {
@@ -416,6 +421,9 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 	if art.DeletedAt.Valid || art.Status == "deleted" {
 		return CommitResult{}, ErrNotFound
 	}
+	if err := enforceEditLease(ctx, q, uuid.UUID(art.ID.Bytes), in.ActorID, in.EditLease); err != nil {
+		return s.rejectLease(ctx, q, tx, &committed, up, stagingKey, err)
+	}
 
 	opID, err := uuid.NewV7()
 	if err != nil {
@@ -448,6 +456,9 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 			ErrorCode: pgText(CodeRevisionConflict),
 			ID:        op.ID,
 		}); err != nil {
+			return CommitResult{}, err
+		}
+		if err := releaseEditLease(ctx, q, in.EditLease); err != nil {
 			return CommitResult{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -550,6 +561,9 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		}); err != nil {
 			return CommitResult{}, err
 		}
+		if err := releaseEditLease(ctx, q, in.EditLease); err != nil {
+			return CommitResult{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return CommitResult{}, err
 		}
@@ -557,6 +571,9 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		return CommitResult{}, ErrRevisionConflict
 	}
 	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := finishEditLease(ctx, q, uuid.UUID(art.ID.Bytes), in.ActorID, in.EditLease); err != nil {
 		return CommitResult{}, err
 	}
 	if _, err := q.ConsumeArtifactUpload(ctx, db.ConsumeArtifactUploadParams{

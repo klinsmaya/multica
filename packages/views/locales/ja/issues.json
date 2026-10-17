@@ -1435,7 +1435,15 @@
     "section_title": "アーティファクト",
     "revision": "v{{version}}",
     "download": "ダウンロード",
-    "preview_failed": "このファイルはプレビューできません。"
+    "preview_failed": "このファイルはプレビューできません。",
+    "edit": "編集",
+    "save_draft": "下書きを保存",
+    "save_revision": "新しい版として保存",
+    "draft_saved": "下書きを保存しました",
+    "conflict": "ファイルが更新されました。下書きは残っています。",
+    "read_only": "読み取り専用",
+    "lease_expired": "編集ロックの期限が切れました。今は閲覧のみです。",
+    "cancel": "キャンセル"
   },
   "workflows": {
     "default_name": "Default",

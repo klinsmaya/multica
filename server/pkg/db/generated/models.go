@@ -214,6 +214,20 @@ type ArtifactBlob struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
+type ArtifactEditSession struct {
+	ID             pgtype.UUID        `json:"id"`
+	ArtifactID     pgtype.UUID        `json:"artifact_id"`
+	BaseRevisionID pgtype.UUID        `json:"base_revision_id"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	EditorType     string             `json:"editor_type"`
+	LeaseTokenHash string             `json:"lease_token_hash"`
+	FencingToken   int64              `json:"fencing_token"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	DraftRef       pgtype.Text        `json:"draft_ref"`
+	State          string             `json:"state"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type ArtifactLink struct {
 	ID           pgtype.UUID        `json:"id"`
 	ArtifactID   pgtype.UUID        `json:"artifact_id"`

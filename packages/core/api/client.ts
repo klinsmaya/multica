@@ -1,5 +1,7 @@
 import type { ZodType } from "zod";
 import type {
+  ArtifactCommitResult,
+  ArtifactEditSession,
   ArtifactList,
   ArtifactPreview,
   ArtifactRevisionList,
@@ -261,10 +263,14 @@ import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
+  ArtifactCommitResultSchema,
+  ArtifactEditSessionSchema,
   ArtifactListSchema,
   ArtifactPreviewSchema,
   ArtifactRevisionListSchema,
   ArtifactSummaryResponseSchema,
+  EMPTY_ARTIFACT_COMMIT,
+  EMPTY_ARTIFACT_EDIT_SESSION,
   EMPTY_ARTIFACT_LIST,
   EMPTY_ARTIFACT_PREVIEW,
   EMPTY_ARTIFACT_REVISIONS,
@@ -4090,6 +4096,94 @@ export class ApiClient {
     return res.blob();
   }
 
+  async createArtifactEditSession(artifactId: string): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifacts/${encodeURIComponent(artifactId)}/edit-sessions`,
+      { method: "POST" },
+    );
+    return parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+      endpoint: "POST /api/artifacts/{id}/edit-sessions",
+    });
+  }
+
+  async heartbeatArtifactEditSession(input: {
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+  }): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifact-edit-sessions/${encodeURIComponent(input.editSessionId)}/heartbeat`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lease_token: input.leaseToken,
+          fencing_token: input.fencingToken,
+        }),
+      },
+    );
+    return keepLeaseToken(
+      parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+        endpoint: "POST /api/artifact-edit-sessions/{id}/heartbeat",
+      }),
+      input.leaseToken,
+    );
+  }
+
+  async saveArtifactDraft(input: {
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+    content: string;
+  }): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifact-edit-sessions/${encodeURIComponent(input.editSessionId)}/draft`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          lease_token: input.leaseToken,
+          fencing_token: input.fencingToken,
+          content: input.content,
+        }),
+      },
+    );
+    return keepLeaseToken(
+      parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+        endpoint: "PUT /api/artifact-edit-sessions/{id}/draft",
+      }),
+      input.leaseToken,
+    );
+  }
+
+  // Formal save. The browser sets the multipart boundary. If-Match is the
+  // session base. The lease is not a second commit API.
+  async commitArtifactRevision(input: {
+    artifactId: string;
+    baseRevisionId: string;
+    filename: string;
+    content: string;
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+  }): Promise<ArtifactCommitResult> {
+    const form = new FormData();
+    form.append("base_revision_id", input.baseRevisionId);
+    form.append("edit_session_id", input.editSessionId);
+    form.append("fencing_token", String(input.fencingToken));
+    form.append("lease_token", input.leaseToken);
+    form.append("file", new Blob([input.content]), input.filename || "artifact.txt");
+    const res = await this.fetchRaw(
+      `/api/artifacts/${encodeURIComponent(input.artifactId)}/revisions`,
+      {
+        method: "POST",
+        body: form,
+        headers: { "If-Match": `"${input.baseRevisionId}"` },
+      },
+    );
+    return parseWithFallback(await res.json(), ArtifactCommitResultSchema, EMPTY_ARTIFACT_COMMIT, {
+      endpoint: "POST /api/artifacts/{id}/revisions",
+    });
+  }
+
   // Projects
   async listProjects(params?: { status?: string }): Promise<ListProjectsResponse> {
     const search = new URLSearchParams();
@@ -5440,6 +5534,11 @@ export class ApiClient {
       { endpoint: "POST /api/telegram/binding/redeem" },
     );
   }
+}
+
+function keepLeaseToken(session: ArtifactEditSession, token: string): ArtifactEditSession {
+  if (session.lease_token || token === "") return session;
+  return { ...session, lease_token: token };
 }
 
 function artifactRevisionPath(

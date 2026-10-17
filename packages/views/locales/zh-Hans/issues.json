@@ -1435,7 +1435,15 @@
     "section_title": "版本产物",
     "revision": "v{{version}}",
     "download": "下载",
-    "preview_failed": "这个文件暂时不能预览。"
+    "preview_failed": "这个文件暂时不能预览。",
+    "edit": "编辑",
+    "save_draft": "保存草稿",
+    "save_revision": "保存为新版本",
+    "draft_saved": "草稿已保存",
+    "conflict": "文件已有新版本。草稿还在。",
+    "read_only": "只读",
+    "lease_expired": "编辑锁已过期。现在只能查看。",
+    "cancel": "取消"
   },
   "workflows": {
     "default_name": "Default",

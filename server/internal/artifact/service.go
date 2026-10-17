@@ -47,6 +47,9 @@ type Service struct {
 	// Settlement, refunds, and the sweeper schedule belong to A14.
 	WorkspaceQuotaBytes int64
 	ActorQuotaBytes     int64
+	// EditLeaseTTL is how long a heartbeat extends a text-edit lease.
+	// Zero selects DefaultEditLeaseTTL.
+	EditLeaseTTL time.Duration
 }
 
 // CreateInput opens an artifact with no revision. Title is a display name.
@@ -88,6 +91,9 @@ type CommitInput struct {
 	Source         string
 	TaskRunID      *uuid.UUID
 	Data           []byte
+	// EditLease is optional. It is not part of the request hash. When an
+	// unexpired lease is open, a commit without that lease is rejected.
+	EditLease *EditLease
 }
 
 // CommitResult is the sealed revision. Replayed is true when an earlier
@@ -173,6 +179,7 @@ func (s *Service) Commit(ctx context.Context, in CommitInput) (CommitResult, err
 		ExpectedSHA256: norm.SHA256,
 		Filename:       norm.Filename,
 		MediaType:      norm.MediaType,
+		EditLease:      norm.EditLease,
 	})
 	if err != nil {
 		return CommitResult{}, err
@@ -190,6 +197,7 @@ func (s *Service) Commit(ctx context.Context, in CommitInput) (CommitResult, err
 		IdempotencyKey: norm.IdempotencyKey,
 		Source:         norm.Source,
 		TaskRunID:      norm.TaskRunID,
+		EditLease:      norm.EditLease,
 	}, hash)
 }
 

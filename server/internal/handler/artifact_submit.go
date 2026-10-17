@@ -67,7 +67,7 @@ func (h *Handler) CreateArtifact(w http.ResponseWriter, r *http.Request) {
 		writeArtifactServiceError(w, err)
 		return
 	}
-	result, err := h.commitArtifactFile(r, svc, binding, created.ID, nil, file)
+	result, err := h.commitArtifactFile(r, svc, binding, created.ID, nil, file, "agent", nil, &binding.Task)
 	if err != nil {
 		if h.DB != nil {
 			_, _ = h.DB.Exec(r.Context(), `DELETE FROM artifacts WHERE id = $1 AND head_revision_id IS NULL`, created.ID)
@@ -83,6 +83,71 @@ func (h *Handler) CreateArtifact(w http.ResponseWriter, r *http.Request) {
 // Multipart fields: base_revision_id, file. A task token may only append a
 // revision to an artifact owned by its own task.
 func (h *Handler) UpdateArtifact(w http.ResponseWriter, r *http.Request) {
+	file, ok := readArtifactUpload(w, r)
+	if !ok {
+		return
+	}
+	lease, hasLease, ok := submittedEditLease(w, r)
+	if !ok {
+		return
+	}
+	baseRaw := strings.TrimSpace(r.FormValue("base_revision_id"))
+	if !ifMatchAgrees(r, baseRaw) {
+		writeErrorCode(w, http.StatusConflict, artifact.CodeRevisionConflict, "revision conflict")
+		return
+	}
+	if !hasLease {
+		h.updateArtifactFromTask(w, r, file, baseRaw)
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	art, ok := h.loadArtifactForMember(w, r)
+	if !ok {
+		return
+	}
+	actor, _, ok := editorIdentity(w, r)
+	if !ok {
+		return
+	}
+	baseID, ok := parseUUIDOrBadRequest(w, baseRaw, "base_revision_id")
+	if !ok {
+		return
+	}
+	if art.HeadRevisionID.Valid {
+		rev, err := h.Queries.GetArtifactRevision(r.Context(), db.GetArtifactRevisionParams{
+			ID:         art.HeadRevisionID,
+			ArtifactID: art.ID,
+		})
+		if err == nil && rev.Filename != "" {
+			file.name = rev.Filename
+		}
+	}
+	base := uuid.UUID(baseID.Bytes)
+	source := "agent"
+	var taskID *uuid.UUID
+	if task, _, scoped := taskTokenBinding(r); scoped {
+		if id, err := uuid.Parse(task); err == nil {
+			taskID = &id
+		}
+	} else {
+		source = "human_edit"
+	}
+	lease.ActorID = actor
+	result, err := h.commitArtifactFile(r, h.artifactService(), artifactTaskBinding{
+		Workspace: uuid.UUID(art.WorkspaceID.Bytes),
+		Agent:     actor,
+		Task:      uuid.UUID{},
+	}, uuid.UUID(art.ID.Bytes), &base, file, source, &lease, taskID)
+	if err != nil {
+		writeArtifactServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, artifactCommandFromCommit(result, "committed", art.Title, file.name))
+}
+
+func (h *Handler) updateArtifactFromTask(w http.ResponseWriter, r *http.Request, file artifactUploadFile, baseRaw string) {
 	binding, ok := h.requireArtifactTask(w, r)
 	if !ok {
 		return
@@ -95,17 +160,12 @@ func (h *Handler) UpdateArtifact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "artifact not found")
 		return
 	}
-	file, ok := readArtifactUpload(w, r)
-	if !ok {
-		return
-	}
-	baseRaw := strings.TrimSpace(r.FormValue("base_revision_id"))
 	baseID, ok := parseUUIDOrBadRequest(w, baseRaw, "base_revision_id")
 	if !ok {
 		return
 	}
 	base := uuid.UUID(baseID.Bytes)
-	result, err := h.commitArtifactFile(r, h.artifactService(), binding, uuid.UUID(art.ID.Bytes), &base, file)
+	result, err := h.commitArtifactFile(r, h.artifactService(), binding, uuid.UUID(art.ID.Bytes), &base, file, "agent", nil, &binding.Task)
 	if err != nil {
 		writeArtifactServiceError(w, err)
 		return
@@ -249,21 +309,25 @@ func (h *Handler) artifactService() *artifact.Service {
 	return &artifact.Service{DB: dbBegin, Store: h.Storage}
 }
 
-func (h *Handler) commitArtifactFile(r *http.Request, svc *artifact.Service, binding artifactTaskBinding, artifactID uuid.UUID, base *uuid.UUID, file artifactUploadFile) (artifact.CommitResult, error) {
+func (h *Handler) commitArtifactFile(r *http.Request, svc *artifact.Service, binding artifactTaskBinding, artifactID uuid.UUID, base *uuid.UUID, file artifactUploadFile, source string, lease *artifact.EditLease, taskID *uuid.UUID) (artifact.CommitResult, error) {
 	sum := sha256.Sum256(file.data)
-	taskID := binding.Task
+	key := taskOperationPrefix(binding.TaskID) + uuid.NewString()
+	if lease != nil {
+		key = "edit:" + strings.ToLower(lease.SessionID.String()) + ":" + uuid.NewString()
+	}
 	return svc.Commit(r.Context(), artifact.CommitInput{
 		WorkspaceID:    binding.Workspace,
 		ActorID:        binding.Agent,
 		ArtifactID:     artifactID,
 		BaseRevisionID: base,
-		IdempotencyKey: taskOperationPrefix(binding.TaskID) + uuid.NewString(),
+		IdempotencyKey: key,
 		Filename:       file.name,
 		MediaType:      declaredArtifactMediaType(file.name, file.data),
 		SHA256:         hex.EncodeToString(sum[:]),
-		Source:         "agent",
-		TaskRunID:      &taskID,
+		Source:         source,
+		TaskRunID:      taskID,
 		Data:           file.data,
+		EditLease:      lease,
 	})
 }
 
@@ -361,6 +425,12 @@ func writeArtifactServiceError(w http.ResponseWriter, err error) {
 		writeErrorCode(w, http.StatusUnprocessableEntity, "DIGEST_MISMATCH", "digest mismatch")
 	case errors.Is(err, artifact.ErrNotFound):
 		writeError(w, http.StatusNotFound, "artifact not found")
+	case errors.Is(err, artifact.ErrLeaseHeld):
+		writeErrorCode(w, http.StatusConflict, artifact.CodeLeaseHeld, "edit lease held")
+	case errors.Is(err, artifact.ErrLeaseExpired):
+		writeErrorCode(w, http.StatusConflict, artifact.CodeLeaseExpired, "edit lease expired")
+	case errors.Is(err, artifact.ErrNotEditable):
+		writeErrorCode(w, http.StatusUnsupportedMediaType, artifact.CodeNotEditable, "artifact is not editable")
 	case errors.Is(err, artifact.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "invalid artifact request")
 	default:

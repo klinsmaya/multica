@@ -36,3 +36,7 @@ Workspace teardown deletes attachment rows in `DeleteWorkspaceLeafData` (`server
 ## What is not an artifact identity
 
 `packages/core/attachments/deliverables.ts` groups comment attachments into "versions" by normalized content type plus trimmed filename (`deliverableKey`). That grouping is a view over attachments. It is not a stable id, and two different files with the same name stay two attachments. This slice keeps that behavior and does not use the filename as an artifact id.
+
+## Text edit is not an attachment
+
+A07 opens an `artifact_edit_sessions` row for Markdown, TXT, JSON, and CSV. A draft object lives at `workspaces/{workspace_id}/artifact-drafts/{session_id}`. Saving that draft does not insert an attachment and does not move `head_revision_id`. A formal save is still `POST /api/artifacts/{id}/revisions`. `POST /api/upload-file` and `multica attachment` are unchanged. An expired lease or a failed edit leaves the draft in place.

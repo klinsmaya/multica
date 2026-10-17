@@ -198,7 +198,15 @@ UNION
 SELECT artifact_uploads.staging_key
 FROM artifact_uploads
 WHERE artifact_uploads.workspace_id = sqlc.arg(workspace_id)
-  AND artifact_uploads.staging_key <> '';
+  AND artifact_uploads.staging_key <> ''
+UNION
+SELECT artifact_edit_sessions.draft_ref
+FROM artifact_edit_sessions
+WHERE artifact_edit_sessions.draft_ref IS NOT NULL
+  AND artifact_edit_sessions.draft_ref <> ''
+  AND artifact_edit_sessions.artifact_id IN (
+      SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
+  );
 
 -- name: DeleteWorkspaceArtifacts :exec
 -- Bottom-up delete for one workspace. Blob rows have no workspace_id; they
@@ -228,6 +236,10 @@ deleted_uploads AS (
 deleted_operations AS (
     DELETE FROM artifact_operations
     WHERE artifact_operations.workspace_id = sqlc.arg(workspace_id)
+),
+deleted_edit_sessions AS (
+    DELETE FROM artifact_edit_sessions
+    WHERE artifact_edit_sessions.artifact_id IN (SELECT doomed.id FROM doomed)
 ),
 deleted_artifacts AS (
     DELETE FROM artifacts
@@ -286,6 +298,94 @@ WHERE id = $1 AND artifact_id = $2;
 -- name: GetArtifactOperationByID :one
 SELECT * FROM artifact_operations
 WHERE id = $1 AND workspace_id = $2;
+
+-- name: GetArtifactEditSession :one
+SELECT * FROM artifact_edit_sessions WHERE id = $1;
+
+-- name: LockOpenArtifactEditSession :one
+SELECT
+    id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash,
+    fencing_token, lease_expires_at, draft_ref, state, created_at,
+    (lease_expires_at <= now())::boolean AS lease_elapsed
+FROM artifact_edit_sessions
+WHERE artifact_id = $1 AND state = 'open'
+FOR UPDATE;
+
+-- name: ExpireElapsedArtifactEditSessions :many
+UPDATE artifact_edit_sessions
+SET state = 'expired'
+WHERE artifact_id = $1 AND state = 'open' AND lease_expires_at <= now()
+RETURNING id, actor_id, fencing_token, draft_ref;
+
+-- name: NextArtifactFencingToken :one
+SELECT (COALESCE(MAX(fencing_token), 0) + 1)::bigint
+FROM artifact_edit_sessions
+WHERE artifact_id = $1;
+
+-- name: InsertArtifactEditSession :one
+INSERT INTO artifact_edit_sessions (
+    id, artifact_id, base_revision_id, actor_id, editor_type,
+    lease_token_hash, fencing_token, lease_expires_at, state
+) VALUES (
+    sqlc.arg(id), sqlc.arg(artifact_id), sqlc.arg(base_revision_id), sqlc.arg(actor_id),
+    sqlc.arg(editor_type), sqlc.arg(lease_token_hash), sqlc.arg(fencing_token),
+    now() + (sqlc.arg(ttl_secs)::bigint * interval '1 second'), 'open'
+)
+RETURNING *;
+
+-- name: RenewArtifactEditLease :one
+UPDATE artifact_edit_sessions
+SET lease_expires_at = now() + (sqlc.arg(ttl_secs)::bigint * interval '1 second')
+WHERE id = sqlc.arg(id)
+  AND actor_id = sqlc.arg(actor_id)
+  AND lease_token_hash = sqlc.arg(lease_token_hash)
+  AND fencing_token = sqlc.arg(fencing_token)
+  AND state = 'open'
+  AND lease_expires_at > now()
+RETURNING *;
+
+-- name: SaveArtifactEditDraft :one
+UPDATE artifact_edit_sessions
+SET draft_ref = sqlc.arg(draft_ref)
+WHERE id = sqlc.arg(id)
+  AND actor_id = sqlc.arg(actor_id)
+  AND lease_token_hash = sqlc.arg(lease_token_hash)
+  AND fencing_token = sqlc.arg(fencing_token)
+  AND state = 'open'
+  AND lease_expires_at > now()
+RETURNING *;
+
+-- name: CommitArtifactEditSession :execrows
+UPDATE artifact_edit_sessions
+SET state = 'committed'
+WHERE id = sqlc.arg(id)
+  AND artifact_id = sqlc.arg(artifact_id)
+  AND actor_id = sqlc.arg(actor_id)
+  AND lease_token_hash = sqlc.arg(lease_token_hash)
+  AND fencing_token = sqlc.arg(fencing_token)
+  AND state = 'open'
+  AND lease_expires_at > now();
+
+-- name: ReleaseArtifactEditSession :exec
+UPDATE artifact_edit_sessions
+SET state = 'expired'
+WHERE id = $1 AND state = 'open';
+
+-- name: LatestActorEditDraft :one
+SELECT draft_ref
+FROM artifact_edit_sessions
+WHERE artifact_id = sqlc.arg(artifact_id)
+  AND actor_id = sqlc.arg(actor_id)
+  AND id <> sqlc.arg(id)
+  AND draft_ref IS NOT NULL
+  AND draft_ref <> ''
+ORDER BY fencing_token DESC
+LIMIT 1;
+
+-- name: SetArtifactEditDraftRef :exec
+UPDATE artifact_edit_sessions
+SET draft_ref = sqlc.arg(draft_ref)
+WHERE id = sqlc.arg(id) AND state = 'open';
 
 -- name: GetArtifactBlob :one
 SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status

@@ -44,6 +44,40 @@ func (q *Queries) CasArtifactHead(ctx context.Context, arg CasArtifactHeadParams
 	return row_version, err
 }
 
+const commitArtifactEditSession = `-- name: CommitArtifactEditSession :execrows
+UPDATE artifact_edit_sessions
+SET state = 'committed'
+WHERE id = $1
+  AND artifact_id = $2
+  AND actor_id = $3
+  AND lease_token_hash = $4
+  AND fencing_token = $5
+  AND state = 'open'
+  AND lease_expires_at > now()
+`
+
+type CommitArtifactEditSessionParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ArtifactID     pgtype.UUID `json:"artifact_id"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	LeaseTokenHash string      `json:"lease_token_hash"`
+	FencingToken   int64       `json:"fencing_token"`
+}
+
+func (q *Queries) CommitArtifactEditSession(ctx context.Context, arg CommitArtifactEditSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, commitArtifactEditSession,
+		arg.ID,
+		arg.ArtifactID,
+		arg.ActorID,
+		arg.LeaseTokenHash,
+		arg.FencingToken,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const consumeArtifactUpload = `-- name: ConsumeArtifactUpload :one
 UPDATE artifact_uploads
 SET state = 'committed',
@@ -162,6 +196,10 @@ deleted_operations AS (
     DELETE FROM artifact_operations
     WHERE artifact_operations.workspace_id = $1
 ),
+deleted_edit_sessions AS (
+    DELETE FROM artifact_edit_sessions
+    WHERE artifact_edit_sessions.artifact_id IN (SELECT doomed.id FROM doomed)
+),
 deleted_artifacts AS (
     DELETE FROM artifacts
     WHERE artifacts.workspace_id = $1
@@ -177,6 +215,45 @@ WHERE artifact_blobs.id IN (SELECT doomed_blobs.id FROM doomed_blobs)
 func (q *Queries) DeleteWorkspaceArtifacts(ctx context.Context, workspaceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkspaceArtifacts, workspaceID)
 	return err
+}
+
+const expireElapsedArtifactEditSessions = `-- name: ExpireElapsedArtifactEditSessions :many
+UPDATE artifact_edit_sessions
+SET state = 'expired'
+WHERE artifact_id = $1 AND state = 'open' AND lease_expires_at <= now()
+RETURNING id, actor_id, fencing_token, draft_ref
+`
+
+type ExpireElapsedArtifactEditSessionsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	ActorID      pgtype.UUID `json:"actor_id"`
+	FencingToken int64       `json:"fencing_token"`
+	DraftRef     pgtype.Text `json:"draft_ref"`
+}
+
+func (q *Queries) ExpireElapsedArtifactEditSessions(ctx context.Context, artifactID pgtype.UUID) ([]ExpireElapsedArtifactEditSessionsRow, error) {
+	rows, err := q.db.Query(ctx, expireElapsedArtifactEditSessions, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireElapsedArtifactEditSessionsRow{}
+	for rows.Next() {
+		var i ExpireElapsedArtifactEditSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActorID,
+			&i.FencingToken,
+			&i.DraftRef,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const finishArtifactOperation = `-- name: FinishArtifactOperation :one
@@ -270,6 +347,29 @@ func (q *Queries) GetArtifactByID(ctx context.Context, id pgtype.UUID) (Artifact
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getArtifactEditSession = `-- name: GetArtifactEditSession :one
+SELECT id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash, fencing_token, lease_expires_at, draft_ref, state, created_at FROM artifact_edit_sessions WHERE id = $1
+`
+
+func (q *Queries) GetArtifactEditSession(ctx context.Context, id pgtype.UUID) (ArtifactEditSession, error) {
+	row := q.db.QueryRow(ctx, getArtifactEditSession, id)
+	var i ArtifactEditSession
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ActorID,
+		&i.EditorType,
+		&i.LeaseTokenHash,
+		&i.FencingToken,
+		&i.LeaseExpiresAt,
+		&i.DraftRef,
+		&i.State,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -412,6 +512,57 @@ func (q *Queries) InsertArtifactBlob(ctx context.Context, arg InsertArtifactBlob
 		&i.DetectedMediaType,
 		&i.ScanStatus,
 		&i.EncryptionScope,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertArtifactEditSession = `-- name: InsertArtifactEditSession :one
+INSERT INTO artifact_edit_sessions (
+    id, artifact_id, base_revision_id, actor_id, editor_type,
+    lease_token_hash, fencing_token, lease_expires_at, state
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    now() + ($8::bigint * interval '1 second'), 'open'
+)
+RETURNING id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash, fencing_token, lease_expires_at, draft_ref, state, created_at
+`
+
+type InsertArtifactEditSessionParams struct {
+	ID             pgtype.UUID `json:"id"`
+	ArtifactID     pgtype.UUID `json:"artifact_id"`
+	BaseRevisionID pgtype.UUID `json:"base_revision_id"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	EditorType     string      `json:"editor_type"`
+	LeaseTokenHash string      `json:"lease_token_hash"`
+	FencingToken   int64       `json:"fencing_token"`
+	TtlSecs        int64       `json:"ttl_secs"`
+}
+
+func (q *Queries) InsertArtifactEditSession(ctx context.Context, arg InsertArtifactEditSessionParams) (ArtifactEditSession, error) {
+	row := q.db.QueryRow(ctx, insertArtifactEditSession,
+		arg.ID,
+		arg.ArtifactID,
+		arg.BaseRevisionID,
+		arg.ActorID,
+		arg.EditorType,
+		arg.LeaseTokenHash,
+		arg.FencingToken,
+		arg.TtlSecs,
+	)
+	var i ArtifactEditSession
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ActorID,
+		&i.EditorType,
+		&i.LeaseTokenHash,
+		&i.FencingToken,
+		&i.LeaseExpiresAt,
+		&i.DraftRef,
+		&i.State,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -594,6 +745,31 @@ func (q *Queries) InsertArtifactUpload(ctx context.Context, arg InsertArtifactUp
 	return i, err
 }
 
+const latestActorEditDraft = `-- name: LatestActorEditDraft :one
+SELECT draft_ref
+FROM artifact_edit_sessions
+WHERE artifact_id = $1
+  AND actor_id = $2
+  AND id <> $3
+  AND draft_ref IS NOT NULL
+  AND draft_ref <> ''
+ORDER BY fencing_token DESC
+LIMIT 1
+`
+
+type LatestActorEditDraftParams struct {
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+	ActorID    pgtype.UUID `json:"actor_id"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) LatestActorEditDraft(ctx context.Context, arg LatestActorEditDraftParams) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, latestActorEditDraft, arg.ArtifactID, arg.ActorID, arg.ID)
+	var draft_ref pgtype.Text
+	err := row.Scan(&draft_ref)
+	return draft_ref, err
+}
+
 const listArtifactRevisions = `-- name: ListArtifactRevisions :many
 SELECT
     id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
@@ -661,6 +837,14 @@ SELECT artifact_uploads.staging_key
 FROM artifact_uploads
 WHERE artifact_uploads.workspace_id = $1
   AND artifact_uploads.staging_key <> ''
+UNION
+SELECT artifact_edit_sessions.draft_ref
+FROM artifact_edit_sessions
+WHERE artifact_edit_sessions.draft_ref IS NOT NULL
+  AND artifact_edit_sessions.draft_ref <> ''
+  AND artifact_edit_sessions.artifact_id IN (
+      SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
+  )
 `
 
 func (q *Queries) ListArtifactStorageKeysByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]string, error) {
@@ -932,6 +1116,51 @@ func (q *Queries) LockArtifactUpload(ctx context.Context, arg LockArtifactUpload
 	return i, err
 }
 
+const lockOpenArtifactEditSession = `-- name: LockOpenArtifactEditSession :one
+SELECT
+    id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash,
+    fencing_token, lease_expires_at, draft_ref, state, created_at,
+    (lease_expires_at <= now())::boolean AS lease_elapsed
+FROM artifact_edit_sessions
+WHERE artifact_id = $1 AND state = 'open'
+FOR UPDATE
+`
+
+type LockOpenArtifactEditSessionRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	ArtifactID     pgtype.UUID        `json:"artifact_id"`
+	BaseRevisionID pgtype.UUID        `json:"base_revision_id"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	EditorType     string             `json:"editor_type"`
+	LeaseTokenHash string             `json:"lease_token_hash"`
+	FencingToken   int64              `json:"fencing_token"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	DraftRef       pgtype.Text        `json:"draft_ref"`
+	State          string             `json:"state"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	LeaseElapsed   bool               `json:"lease_elapsed"`
+}
+
+func (q *Queries) LockOpenArtifactEditSession(ctx context.Context, artifactID pgtype.UUID) (LockOpenArtifactEditSessionRow, error) {
+	row := q.db.QueryRow(ctx, lockOpenArtifactEditSession, artifactID)
+	var i LockOpenArtifactEditSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ActorID,
+		&i.EditorType,
+		&i.LeaseTokenHash,
+		&i.FencingToken,
+		&i.LeaseExpiresAt,
+		&i.DraftRef,
+		&i.State,
+		&i.CreatedAt,
+		&i.LeaseElapsed,
+	)
+	return i, err
+}
+
 const lockWorkspaceArtifactQuota = `-- name: LockWorkspaceArtifactQuota :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':artifact-quota', 604))
 `
@@ -939,6 +1168,19 @@ SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':artifact-quota
 func (q *Queries) LockWorkspaceArtifactQuota(ctx context.Context, workspaceID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, lockWorkspaceArtifactQuota, workspaceID)
 	return err
+}
+
+const nextArtifactFencingToken = `-- name: NextArtifactFencingToken :one
+SELECT (COALESCE(MAX(fencing_token), 0) + 1)::bigint
+FROM artifact_edit_sessions
+WHERE artifact_id = $1
+`
+
+func (q *Queries) NextArtifactFencingToken(ctx context.Context, artifactID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, nextArtifactFencingToken, artifactID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const nextArtifactRevisionNo = `-- name: NextArtifactRevisionNo :one
@@ -952,6 +1194,62 @@ func (q *Queries) NextArtifactRevisionNo(ctx context.Context, artifactID pgtype.
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const releaseArtifactEditSession = `-- name: ReleaseArtifactEditSession :exec
+UPDATE artifact_edit_sessions
+SET state = 'expired'
+WHERE id = $1 AND state = 'open'
+`
+
+func (q *Queries) ReleaseArtifactEditSession(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, releaseArtifactEditSession, id)
+	return err
+}
+
+const renewArtifactEditLease = `-- name: RenewArtifactEditLease :one
+UPDATE artifact_edit_sessions
+SET lease_expires_at = now() + ($1::bigint * interval '1 second')
+WHERE id = $2
+  AND actor_id = $3
+  AND lease_token_hash = $4
+  AND fencing_token = $5
+  AND state = 'open'
+  AND lease_expires_at > now()
+RETURNING id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash, fencing_token, lease_expires_at, draft_ref, state, created_at
+`
+
+type RenewArtifactEditLeaseParams struct {
+	TtlSecs        int64       `json:"ttl_secs"`
+	ID             pgtype.UUID `json:"id"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	LeaseTokenHash string      `json:"lease_token_hash"`
+	FencingToken   int64       `json:"fencing_token"`
+}
+
+func (q *Queries) RenewArtifactEditLease(ctx context.Context, arg RenewArtifactEditLeaseParams) (ArtifactEditSession, error) {
+	row := q.db.QueryRow(ctx, renewArtifactEditLease,
+		arg.TtlSecs,
+		arg.ID,
+		arg.ActorID,
+		arg.LeaseTokenHash,
+		arg.FencingToken,
+	)
+	var i ArtifactEditSession
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ActorID,
+		&i.EditorType,
+		&i.LeaseTokenHash,
+		&i.FencingToken,
+		&i.LeaseExpiresAt,
+		&i.DraftRef,
+		&i.State,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const retainArtifactUploadConflict = `-- name: RetainArtifactUploadConflict :one
@@ -992,6 +1290,67 @@ func (q *Queries) RetainArtifactUploadConflict(ctx context.Context, arg RetainAr
 		&i.Filename,
 	)
 	return i, err
+}
+
+const saveArtifactEditDraft = `-- name: SaveArtifactEditDraft :one
+UPDATE artifact_edit_sessions
+SET draft_ref = $1
+WHERE id = $2
+  AND actor_id = $3
+  AND lease_token_hash = $4
+  AND fencing_token = $5
+  AND state = 'open'
+  AND lease_expires_at > now()
+RETURNING id, artifact_id, base_revision_id, actor_id, editor_type, lease_token_hash, fencing_token, lease_expires_at, draft_ref, state, created_at
+`
+
+type SaveArtifactEditDraftParams struct {
+	DraftRef       pgtype.Text `json:"draft_ref"`
+	ID             pgtype.UUID `json:"id"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	LeaseTokenHash string      `json:"lease_token_hash"`
+	FencingToken   int64       `json:"fencing_token"`
+}
+
+func (q *Queries) SaveArtifactEditDraft(ctx context.Context, arg SaveArtifactEditDraftParams) (ArtifactEditSession, error) {
+	row := q.db.QueryRow(ctx, saveArtifactEditDraft,
+		arg.DraftRef,
+		arg.ID,
+		arg.ActorID,
+		arg.LeaseTokenHash,
+		arg.FencingToken,
+	)
+	var i ArtifactEditSession
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ActorID,
+		&i.EditorType,
+		&i.LeaseTokenHash,
+		&i.FencingToken,
+		&i.LeaseExpiresAt,
+		&i.DraftRef,
+		&i.State,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const setArtifactEditDraftRef = `-- name: SetArtifactEditDraftRef :exec
+UPDATE artifact_edit_sessions
+SET draft_ref = $1
+WHERE id = $2 AND state = 'open'
+`
+
+type SetArtifactEditDraftRefParams struct {
+	DraftRef pgtype.Text `json:"draft_ref"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) SetArtifactEditDraftRef(ctx context.Context, arg SetArtifactEditDraftRefParams) error {
+	_, err := q.db.Exec(ctx, setArtifactEditDraftRef, arg.DraftRef, arg.ID)
+	return err
 }
 
 const sumActorArtifactBytes = `-- name: SumActorArtifactBytes :one

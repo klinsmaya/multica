@@ -1484,7 +1484,15 @@
     "section_title": "Artifacts",
     "revision": "v{{version}}",
     "download": "Download",
-    "preview_failed": "Preview is not available for this file."
+    "preview_failed": "Preview is not available for this file.",
+    "edit": "Edit",
+    "save_draft": "Save draft",
+    "save_revision": "Save revision",
+    "draft_saved": "Draft saved",
+    "conflict": "This file changed. Your draft is still here.",
+    "read_only": "Read only",
+    "lease_expired": "The edit lock expired. This file is read only.",
+    "cancel": "Cancel"
   },
   "workflows": {
     "default_name": "Default",

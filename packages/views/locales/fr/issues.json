@@ -1484,7 +1484,15 @@
     "section_title": "Artefacts",
     "revision": "v{{version}}",
     "download": "Télécharger",
-    "preview_failed": "Aperçu indisponible pour ce fichier."
+    "preview_failed": "Aperçu indisponible pour ce fichier.",
+    "edit": "Modifier",
+    "save_draft": "Enregistrer le brouillon",
+    "save_revision": "Enregistrer comme nouvelle version",
+    "draft_saved": "Brouillon enregistré",
+    "conflict": "Ce fichier a changé. Votre brouillon est toujours là.",
+    "read_only": "Lecture seule",
+    "lease_expired": "Le verrou d'édition a expiré. Ce fichier est en lecture seule.",
+    "cancel": "Annuler"
   },
   "workflows": {
     "default_name": "Default",

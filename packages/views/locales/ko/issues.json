@@ -1435,7 +1435,15 @@
     "section_title": "아티팩트",
     "revision": "v{{version}}",
     "download": "다운로드",
-    "preview_failed": "이 파일은 미리 볼 수 없습니다."
+    "preview_failed": "이 파일은 미리 볼 수 없습니다.",
+    "edit": "편집",
+    "save_draft": "초안 저장",
+    "save_revision": "새 버전으로 저장",
+    "draft_saved": "초안을 저장했습니다",
+    "conflict": "파일이 바뀌었습니다. 초안은 그대로입니다.",
+    "read_only": "읽기 전용",
+    "lease_expired": "편집 잠금이 만료되었습니다. 지금은 읽기만 됩니다.",
+    "cancel": "취소"
   },
   "workflows": {
     "default_name": "Default",

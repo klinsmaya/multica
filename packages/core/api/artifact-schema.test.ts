@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { parseWithFallback } from "./schema";
 import {
+  ArtifactEditSessionSchema,
   ArtifactListSchema,
   ArtifactPreviewSchema,
+  EMPTY_ARTIFACT_EDIT_SESSION,
   EMPTY_ARTIFACT_LIST,
   EMPTY_ARTIFACT_PREVIEW,
 } from "./schemas";
-import type { ArtifactList, ArtifactPreview } from "../types/artifact";
+import type { ArtifactEditSession, ArtifactList, ArtifactPreview } from "../types/artifact";
 
 describe("artifact read schemas", () => {
   it("drops a malformed artifact list instead of throwing", () => {
@@ -53,5 +55,32 @@ describe("artifact read schemas", () => {
     expect(parsed.preview_kind).toBe("download");
     expect(parsed.active_content).toBe(false);
     expect(parsed.content_disposition).toBe("attachment");
+  });
+
+  it("keeps a lease and drops a malformed edit session", () => {
+    const parsed = parseWithFallback<ArtifactEditSession>(
+      {
+        edit_session_id: "sess-1",
+        fencing_token: 4,
+        draft_content: "keep me\n",
+        editable: true,
+      },
+      ArtifactEditSessionSchema,
+      EMPTY_ARTIFACT_EDIT_SESSION,
+      { endpoint: "POST /api/artifacts/{id}/edit-sessions" },
+    );
+    expect(parsed.edit_session_id).toBe("sess-1");
+    expect(parsed.fencing_token).toBe(4);
+    expect(parsed.draft_content).toBe("keep me\n");
+
+    const broken = parseWithFallback(
+      { fencing_token: "nope", editable: "yes" },
+      ArtifactEditSessionSchema,
+      EMPTY_ARTIFACT_EDIT_SESSION,
+      { endpoint: "POST /api/artifacts/{id}/edit-sessions" },
+    );
+    expect(broken.edit_session_id).toBe("");
+    expect(broken.fencing_token).toBe(0);
+    expect(broken.editable).toBe(false);
   });
 });

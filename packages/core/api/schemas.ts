@@ -10,6 +10,8 @@ import type {
   AgentBuilderSession,
   AgentBuilderSessionSummary,
   Attachment,
+  ArtifactCommitResult,
+  ArtifactEditSession,
   ArtifactList,
   ArtifactPreview,
   ArtifactRevisionList,
@@ -3909,4 +3911,49 @@ export const EMPTY_ARTIFACT_PREVIEW: ArtifactPreview = {
   content_path: "",
   content_disposition: "attachment",
   active_content: false,
+};
+
+export const ArtifactEditSessionSchema = z
+  .object({
+    edit_session_id: z.string().catch(""),
+    artifact_id: z.string().catch(""),
+    base_revision_id: z.string().catch(""),
+    fencing_token: z.number().catch(0),
+    lease_token: z.string().nullish().catch(undefined),
+    lease_expires_at: z.string().catch(""),
+    editor_type: z.string().catch(""),
+    state: z.string().catch(""),
+    editable: z.boolean().catch(false),
+    draft_content: z.string().nullish().catch(undefined),
+  })
+  .loose();
+
+export const ArtifactCommitResultSchema = z
+  .object({
+    artifact_id: z.string().catch(""),
+    revision_id: z.string().catch(""),
+    operation_id: z.string().catch(""),
+    state: z.string().catch(""),
+    title: z.string().nullish().catch(undefined),
+    filename: z.string().nullish().catch(undefined),
+    revision_no: z.number().nullish().catch(undefined),
+  })
+  .loose();
+
+export const EMPTY_ARTIFACT_EDIT_SESSION: ArtifactEditSession = {
+  edit_session_id: "",
+  artifact_id: "",
+  base_revision_id: "",
+  fencing_token: 0,
+  lease_expires_at: "",
+  editor_type: "",
+  state: "",
+  editable: false,
+};
+
+export const EMPTY_ARTIFACT_COMMIT: ArtifactCommitResult = {
+  artifact_id: "",
+  revision_id: "",
+  operation_id: "",
+  state: "",
 };
