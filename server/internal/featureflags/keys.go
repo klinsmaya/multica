@@ -44,8 +44,10 @@ const (
 	// ArtifactsV1 is the choke point for the artifact authority HTTP API and
 	// the issue-detail Artifacts section. It is off unless FF_ARTIFACTS_V1
 	// is set. While it is off, no artifact route is mounted. Turning it on
-	// mounts the read routes (list, metadata, revisions, content, preview).
-	// Attachment upload, download, and the CLI are not gated by this flag.
+	// mounts the read routes (list, metadata, revisions, content, preview)
+	// and the task-scoped submit routes the CLI calls. The CLI does not
+	// read this flag; a disabled server answers 404. Attachment upload,
+	// download, and `multica attachment` are not gated by this flag.
 	ArtifactsV1 = "artifacts_v1"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation

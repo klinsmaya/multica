@@ -28,8 +28,9 @@ func (h *Handler) RequireArtifactsV1(next http.Handler) http.Handler {
 
 // MountArtifactRoutes is the only place artifact HTTP may be registered.
 // The flag is read at process start. Off (the default) mounts nothing, so
-// /api/artifacts does not exist. On mounts the read routes. Attachment
-// routes are not registered here.
+// /api/artifacts does not exist. On mounts the read routes and the
+// task-scoped submit routes the CLI calls. Attachment routes are not
+// registered here.
 func MountArtifactRoutes(r chi.Router, h *Handler) {
 	if r == nil || h == nil || !featureflags.ArtifactsV1Enabled(context.Background(), h.FeatureFlags) {
 		return
@@ -37,9 +38,12 @@ func MountArtifactRoutes(r chi.Router, h *Handler) {
 	r.Group(func(r chi.Router) {
 		r.Use(h.RequireArtifactsV1)
 		r.Get("/api/artifacts", h.ListArtifacts)
+		r.Post("/api/artifacts", h.CreateArtifact)
 		r.Get("/api/artifacts/{artifactID}", h.GetArtifact)
 		r.Get("/api/artifacts/{artifactID}/revisions", h.ListArtifactRevisions)
+		r.Post("/api/artifacts/{artifactID}/revisions", h.UpdateArtifact)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/preview", h.GetArtifactRevisionPreview)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/content", h.GetArtifactRevisionContent)
+		r.Get("/api/artifact-operations/{operationID}", h.GetArtifactOperationStatus)
 	})
 }

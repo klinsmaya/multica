@@ -43,6 +43,7 @@ func TestArtifactsV1ReadRoutesMountWhenEnabled(t *testing.T) {
 		"/api/artifacts/{artifactID}/revisions",
 		"/api/artifacts/{artifactID}/revisions/{revisionID}/preview",
 		"/api/artifacts/{artifactID}/revisions/{revisionID}/content",
+		"/api/artifact-operations/{operationID}",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in %s", want, joined)

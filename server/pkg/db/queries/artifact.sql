@@ -272,16 +272,20 @@ WHERE id = $1 AND deleted_at IS NULL AND status = 'active';
 
 -- name: ListArtifactRevisions :many
 SELECT
-    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, created_at
+    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
 FROM artifact_revisions
 WHERE artifact_id = $1
 ORDER BY revision_no DESC;
 
 -- name: GetArtifactRevision :one
 SELECT
-    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, created_at
+    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
 FROM artifact_revisions
 WHERE id = $1 AND artifact_id = $2;
+
+-- name: GetArtifactOperationByID :one
+SELECT * FROM artifact_operations
+WHERE id = $1 AND workspace_id = $2;
 
 -- name: GetArtifactBlob :one
 SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status

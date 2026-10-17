@@ -303,9 +303,37 @@ func (q *Queries) GetArtifactOperation(ctx context.Context, arg GetArtifactOpera
 	return i, err
 }
 
+const getArtifactOperationByID = `-- name: GetArtifactOperationByID :one
+SELECT id, workspace_id, actor_id, idempotency_key, request_hash, state, result_ref, error_code, created_at, updated_at FROM artifact_operations
+WHERE id = $1 AND workspace_id = $2
+`
+
+type GetArtifactOperationByIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetArtifactOperationByID(ctx context.Context, arg GetArtifactOperationByIDParams) (ArtifactOperation, error) {
+	row := q.db.QueryRow(ctx, getArtifactOperationByID, arg.ID, arg.WorkspaceID)
+	var i ArtifactOperation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.State,
+		&i.ResultRef,
+		&i.ErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getArtifactRevision = `-- name: GetArtifactRevision :one
 SELECT
-    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, created_at
+    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
 FROM artifact_revisions
 WHERE id = $1 AND artifact_id = $2
 `
@@ -316,16 +344,17 @@ type GetArtifactRevisionParams struct {
 }
 
 type GetArtifactRevisionRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ArtifactID pgtype.UUID        `json:"artifact_id"`
-	RevisionNo int64              `json:"revision_no"`
-	BlobID     pgtype.UUID        `json:"blob_id"`
-	MediaType  string             `json:"media_type"`
-	SizeBytes  int64              `json:"size_bytes"`
-	Filename   string             `json:"filename"`
-	Source     string             `json:"source"`
-	ActorID    pgtype.UUID        `json:"actor_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID                pgtype.UUID        `json:"id"`
+	ArtifactID        pgtype.UUID        `json:"artifact_id"`
+	RevisionNo        int64              `json:"revision_no"`
+	BlobID            pgtype.UUID        `json:"blob_id"`
+	MediaType         string             `json:"media_type"`
+	SizeBytes         int64              `json:"size_bytes"`
+	Filename          string             `json:"filename"`
+	Source            string             `json:"source"`
+	ActorID           pgtype.UUID        `json:"actor_id"`
+	CommitOperationID pgtype.UUID        `json:"commit_operation_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) GetArtifactRevision(ctx context.Context, arg GetArtifactRevisionParams) (GetArtifactRevisionRow, error) {
@@ -341,6 +370,7 @@ func (q *Queries) GetArtifactRevision(ctx context.Context, arg GetArtifactRevisi
 		&i.Filename,
 		&i.Source,
 		&i.ActorID,
+		&i.CommitOperationID,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -566,22 +596,23 @@ func (q *Queries) InsertArtifactUpload(ctx context.Context, arg InsertArtifactUp
 
 const listArtifactRevisions = `-- name: ListArtifactRevisions :many
 SELECT
-    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, created_at
+    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
 FROM artifact_revisions
 WHERE artifact_id = $1
 ORDER BY revision_no DESC
 `
 
 type ListArtifactRevisionsRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	ArtifactID pgtype.UUID        `json:"artifact_id"`
-	RevisionNo int64              `json:"revision_no"`
-	MediaType  string             `json:"media_type"`
-	SizeBytes  int64              `json:"size_bytes"`
-	Filename   string             `json:"filename"`
-	Source     string             `json:"source"`
-	ActorID    pgtype.UUID        `json:"actor_id"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	ID                pgtype.UUID        `json:"id"`
+	ArtifactID        pgtype.UUID        `json:"artifact_id"`
+	RevisionNo        int64              `json:"revision_no"`
+	MediaType         string             `json:"media_type"`
+	SizeBytes         int64              `json:"size_bytes"`
+	Filename          string             `json:"filename"`
+	Source            string             `json:"source"`
+	ActorID           pgtype.UUID        `json:"actor_id"`
+	CommitOperationID pgtype.UUID        `json:"commit_operation_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListArtifactRevisions(ctx context.Context, artifactID pgtype.UUID) ([]ListArtifactRevisionsRow, error) {
@@ -602,6 +633,7 @@ func (q *Queries) ListArtifactRevisions(ctx context.Context, artifactID pgtype.U
 			&i.Filename,
 			&i.Source,
 			&i.ActorID,
+			&i.CommitOperationID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

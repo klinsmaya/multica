@@ -1,8 +1,8 @@
 // Package artifact is the authority for product files: stable artifact ids,
 // immutable revisions, and compare-and-swap updates of artifacts.head_revision_id.
 //
-// HTTP is not served from here. The artifacts_v1 flag keeps that entry absent
-// until a later slice. Attachment upload is a separate path and is not called.
+// HTTP is not served from this package. Handlers behind artifacts_v1 call
+// Create and Commit. Attachment upload is a separate path and is not called.
 package artifact
 
 import (

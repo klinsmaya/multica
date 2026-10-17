@@ -32,21 +32,24 @@ type artifactResponse struct {
 	Filename       string `json:"filename,omitempty"`
 	SizeBytes      *int64 `json:"size_bytes,omitempty"`
 	UpdatedBy      string `json:"updated_by,omitempty"`
+	RevisionID     string `json:"revision_id,omitempty"`
+	OperationID    string `json:"operation_id,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
 	RowVersion     int64  `json:"row_version"`
 }
 
 type artifactRevisionResponse struct {
-	ID         string `json:"id"`
-	ArtifactID string `json:"artifact_id"`
-	RevisionNo int64  `json:"revision_no"`
-	MediaType  string `json:"media_type"`
-	Filename   string `json:"filename"`
-	SizeBytes  int64  `json:"size_bytes"`
-	Source     string `json:"source"`
-	ActorID    string `json:"actor_id"`
-	CreatedAt  string `json:"created_at"`
+	ID          string `json:"id"`
+	ArtifactID  string `json:"artifact_id"`
+	RevisionNo  int64  `json:"revision_no"`
+	MediaType   string `json:"media_type"`
+	Filename    string `json:"filename"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Source      string `json:"source"`
+	ActorID     string `json:"actor_id"`
+	OperationID string `json:"operation_id,omitempty"`
+	CreatedAt   string `json:"created_at"`
 }
 
 type artifactPreviewResponse struct {
@@ -75,6 +78,14 @@ func (h *Handler) ListArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := strings.TrimSpace(r.URL.Query().Get("owner_scope"))
+	if taskID, _, scoped := taskTokenBinding(r); scoped {
+		// A task token may list only the artifacts owned by its own task.
+		ownerRaw := strings.TrimSpace(r.URL.Query().Get("owner_id"))
+		if scope != "task" || taskID == "" || !strings.EqualFold(ownerRaw, taskID) {
+			writeError(w, http.StatusNotFound, "artifact not found")
+			return
+		}
+	}
 	switch scope {
 	case "workspace", "issue", "task":
 	default:
@@ -113,14 +124,28 @@ func (h *Handler) GetArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := artifactFromModel(art)
-	if art.HeadRevisionID.Valid {
+	revID := art.HeadRevisionID
+	if raw := strings.TrimSpace(r.URL.Query().Get("revision_id")); raw != "" {
+		parsed, ok := parseUUIDOrBadRequest(w, raw, "revision_id")
+		if !ok {
+			return
+		}
+		revID = parsed
+	}
+	if revID.Valid {
 		rev, err := h.Queries.GetArtifactRevision(r.Context(), db.GetArtifactRevisionParams{
-			ID:         art.HeadRevisionID,
+			ID:         revID,
 			ArtifactID: art.ID,
 		})
-		if err == nil {
-			fillArtifactRevision(&resp, rev)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "artifact not found")
+			return
 		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load revision")
+			return
+		}
+		fillArtifactRevision(&resp, rev)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -239,6 +264,10 @@ func (h *Handler) loadArtifactForMember(w http.ResponseWriter, r *http.Request) 
 	if !h.authorizeArtifactWorkspace(w, r, uuidToString(art.WorkspaceID)) {
 		return db.Artifact{}, false
 	}
+	if taskID, _, scoped := taskTokenBinding(r); scoped && !artifactOwnedByTask(art, taskID) {
+		writeError(w, http.StatusNotFound, "artifact not found")
+		return db.Artifact{}, false
+	}
 	return art, true
 }
 
@@ -351,20 +380,36 @@ func fillArtifactRevision(resp *artifactResponse, rev db.GetArtifactRevisionRow)
 	resp.Filename = rev.Filename
 	resp.SizeBytes = &size
 	resp.UpdatedBy = uuidToString(rev.ActorID)
+	resp.RevisionID = uuidToString(rev.ID)
+	if rev.CommitOperationID.Valid {
+		resp.OperationID = uuidToString(rev.CommitOperationID)
+	}
 }
 
 func artifactRevisionFromList(row db.ListArtifactRevisionsRow) artifactRevisionResponse {
 	return artifactRevisionResponse{
-		ID:         uuidToString(row.ID),
-		ArtifactID: uuidToString(row.ArtifactID),
-		RevisionNo: row.RevisionNo,
-		MediaType:  row.MediaType,
-		Filename:   row.Filename,
-		SizeBytes:  row.SizeBytes,
-		Source:     row.Source,
-		ActorID:    uuidToString(row.ActorID),
-		CreatedAt:  formatPGTime(row.CreatedAt),
+		ID:          uuidToString(row.ID),
+		ArtifactID:  uuidToString(row.ArtifactID),
+		RevisionNo:  row.RevisionNo,
+		MediaType:   row.MediaType,
+		Filename:    row.Filename,
+		SizeBytes:   row.SizeBytes,
+		Source:      row.Source,
+		ActorID:     uuidToString(row.ActorID),
+		OperationID: uuidToString(row.CommitOperationID),
+		CreatedAt:   formatPGTime(row.CreatedAt),
 	}
+}
+
+func taskTokenBinding(r *http.Request) (taskID, agentID string, scoped bool) {
+	if r.Header.Get("X-Actor-Source") != "task_token" {
+		return "", "", false
+	}
+	return strings.TrimSpace(r.Header.Get("X-Task-ID")), strings.TrimSpace(r.Header.Get("X-Agent-ID")), true
+}
+
+func artifactOwnedByTask(art db.Artifact, taskID string) bool {
+	return taskID != "" && art.OwnerScope == "task" && strings.EqualFold(uuidToString(art.OwnerID), taskID)
 }
 
 func formatPGTime(t pgtype.Timestamptz) string {
