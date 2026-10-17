@@ -1480,6 +1480,12 @@
     "overview_empty": "Aucun livrable de ce type.",
     "group_comment_by": "Commentaire de {{name}}"
   },
+  "artifacts": {
+    "section_title": "Artefacts",
+    "revision": "v{{version}}",
+    "download": "Télécharger",
+    "preview_failed": "Aperçu indisponible pour ce fichier."
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "Tous les états, sans passage de relais",

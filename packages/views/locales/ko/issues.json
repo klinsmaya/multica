@@ -1431,6 +1431,12 @@
     "overview_empty": "이 유형의 산출물이 없습니다.",
     "group_comment_by": "{{name}}의 댓글"
   },
+  "artifacts": {
+    "section_title": "아티팩트",
+    "revision": "v{{version}}",
+    "download": "다운로드",
+    "preview_failed": "이 파일은 미리 볼 수 없습니다."
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "모든 상태, 인계 없음",

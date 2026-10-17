@@ -219,6 +219,61 @@ func (q *Queries) FinishArtifactOperation(ctx context.Context, arg FinishArtifac
 	return i, err
 }
 
+const getArtifactBlob = `-- name: GetArtifactBlob :one
+SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status
+FROM artifact_blobs
+WHERE id = $1
+`
+
+type GetArtifactBlobRow struct {
+	ID                pgtype.UUID `json:"id"`
+	StorageKey        string      `json:"storage_key"`
+	SizeBytes         int64       `json:"size_bytes"`
+	Sha256            string      `json:"sha256"`
+	DetectedMediaType string      `json:"detected_media_type"`
+	ScanStatus        string      `json:"scan_status"`
+}
+
+func (q *Queries) GetArtifactBlob(ctx context.Context, id pgtype.UUID) (GetArtifactBlobRow, error) {
+	row := q.db.QueryRow(ctx, getArtifactBlob, id)
+	var i GetArtifactBlobRow
+	err := row.Scan(
+		&i.ID,
+		&i.StorageKey,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.DetectedMediaType,
+		&i.ScanStatus,
+	)
+	return i, err
+}
+
+const getArtifactByID = `-- name: GetArtifactByID :one
+SELECT id, workspace_id, owner_scope, owner_id, title, kind, head_revision_id, row_version, status, created_by, created_at, updated_at, deleted_at FROM artifacts
+WHERE id = $1 AND deleted_at IS NULL AND status = 'active'
+`
+
+func (q *Queries) GetArtifactByID(ctx context.Context, id pgtype.UUID) (Artifact, error) {
+	row := q.db.QueryRow(ctx, getArtifactByID, id)
+	var i Artifact
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerScope,
+		&i.OwnerID,
+		&i.Title,
+		&i.Kind,
+		&i.HeadRevisionID,
+		&i.RowVersion,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getArtifactOperation = `-- name: GetArtifactOperation :one
 SELECT id, workspace_id, actor_id, idempotency_key, request_hash, state, result_ref, error_code, created_at, updated_at FROM artifact_operations
 WHERE workspace_id = $1 AND actor_id = $2 AND idempotency_key = $3
@@ -244,6 +299,49 @@ func (q *Queries) GetArtifactOperation(ctx context.Context, arg GetArtifactOpera
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getArtifactRevision = `-- name: GetArtifactRevision :one
+SELECT
+    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, created_at
+FROM artifact_revisions
+WHERE id = $1 AND artifact_id = $2
+`
+
+type GetArtifactRevisionParams struct {
+	ID         pgtype.UUID `json:"id"`
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+}
+
+type GetArtifactRevisionRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ArtifactID pgtype.UUID        `json:"artifact_id"`
+	RevisionNo int64              `json:"revision_no"`
+	BlobID     pgtype.UUID        `json:"blob_id"`
+	MediaType  string             `json:"media_type"`
+	SizeBytes  int64              `json:"size_bytes"`
+	Filename   string             `json:"filename"`
+	Source     string             `json:"source"`
+	ActorID    pgtype.UUID        `json:"actor_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetArtifactRevision(ctx context.Context, arg GetArtifactRevisionParams) (GetArtifactRevisionRow, error) {
+	row := q.db.QueryRow(ctx, getArtifactRevision, arg.ID, arg.ArtifactID)
+	var i GetArtifactRevisionRow
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.RevisionNo,
+		&i.BlobID,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.Filename,
+		&i.Source,
+		&i.ActorID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -466,6 +564,56 @@ func (q *Queries) InsertArtifactUpload(ctx context.Context, arg InsertArtifactUp
 	return i, err
 }
 
+const listArtifactRevisions = `-- name: ListArtifactRevisions :many
+SELECT
+    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, created_at
+FROM artifact_revisions
+WHERE artifact_id = $1
+ORDER BY revision_no DESC
+`
+
+type ListArtifactRevisionsRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	ArtifactID pgtype.UUID        `json:"artifact_id"`
+	RevisionNo int64              `json:"revision_no"`
+	MediaType  string             `json:"media_type"`
+	SizeBytes  int64              `json:"size_bytes"`
+	Filename   string             `json:"filename"`
+	Source     string             `json:"source"`
+	ActorID    pgtype.UUID        `json:"actor_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) ListArtifactRevisions(ctx context.Context, artifactID pgtype.UUID) ([]ListArtifactRevisionsRow, error) {
+	rows, err := q.db.Query(ctx, listArtifactRevisions, artifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArtifactRevisionsRow{}
+	for rows.Next() {
+		var i ListArtifactRevisionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ArtifactID,
+			&i.RevisionNo,
+			&i.MediaType,
+			&i.SizeBytes,
+			&i.Filename,
+			&i.Source,
+			&i.ActorID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listArtifactStorageKeysByWorkspace = `-- name: ListArtifactStorageKeysByWorkspace :many
 SELECT artifact_blobs.storage_key
 FROM artifact_blobs
@@ -496,6 +644,107 @@ func (q *Queries) ListArtifactStorageKeysByWorkspace(ctx context.Context, worksp
 			return nil, err
 		}
 		items = append(items, storage_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArtifactsByOwner = `-- name: ListArtifactsByOwner :many
+SELECT
+    artifacts.id,
+    artifacts.workspace_id,
+    artifacts.owner_scope,
+    artifacts.owner_id,
+    artifacts.title,
+    artifacts.kind,
+    artifacts.status,
+    artifacts.head_revision_id,
+    artifacts.row_version,
+    artifacts.created_by,
+    artifacts.created_at,
+    artifacts.updated_at,
+    artifact_revisions.revision_no,
+    artifact_revisions.media_type,
+    artifact_revisions.filename,
+    artifact_revisions.size_bytes,
+    artifact_revisions.actor_id AS updated_by
+FROM artifacts
+LEFT JOIN artifact_revisions ON artifact_revisions.id = artifacts.head_revision_id
+WHERE artifacts.workspace_id = $1
+  AND artifacts.owner_scope = $2
+  AND artifacts.owner_id = $3
+  AND artifacts.deleted_at IS NULL
+  AND artifacts.status = 'active'
+ORDER BY artifacts.updated_at DESC, artifacts.id DESC
+LIMIT $4
+`
+
+type ListArtifactsByOwnerParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	OwnerScope  string      `json:"owner_scope"`
+	OwnerID     pgtype.UUID `json:"owner_id"`
+	Lim         int32       `json:"lim"`
+}
+
+type ListArtifactsByOwnerRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	OwnerScope     string             `json:"owner_scope"`
+	OwnerID        pgtype.UUID        `json:"owner_id"`
+	Title          string             `json:"title"`
+	Kind           string             `json:"kind"`
+	Status         string             `json:"status"`
+	HeadRevisionID pgtype.UUID        `json:"head_revision_id"`
+	RowVersion     int64              `json:"row_version"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	RevisionNo     pgtype.Int8        `json:"revision_no"`
+	MediaType      pgtype.Text        `json:"media_type"`
+	Filename       pgtype.Text        `json:"filename"`
+	SizeBytes      pgtype.Int8        `json:"size_bytes"`
+	UpdatedBy      pgtype.UUID        `json:"updated_by"`
+}
+
+// Read model for one owner. Storage keys are not selected.
+func (q *Queries) ListArtifactsByOwner(ctx context.Context, arg ListArtifactsByOwnerParams) ([]ListArtifactsByOwnerRow, error) {
+	rows, err := q.db.Query(ctx, listArtifactsByOwner,
+		arg.WorkspaceID,
+		arg.OwnerScope,
+		arg.OwnerID,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArtifactsByOwnerRow{}
+	for rows.Next() {
+		var i ListArtifactsByOwnerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.OwnerScope,
+			&i.OwnerID,
+			&i.Title,
+			&i.Kind,
+			&i.Status,
+			&i.HeadRevisionID,
+			&i.RowVersion,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RevisionNo,
+			&i.MediaType,
+			&i.Filename,
+			&i.SizeBytes,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

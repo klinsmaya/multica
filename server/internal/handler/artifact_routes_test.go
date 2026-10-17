@@ -11,20 +11,41 @@ import (
 	"github.com/multica-ai/multica/server/internal/featureflags"
 )
 
-func TestArtifactsV1RoutesStayUnmounted(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		h := &Handler{}
-		if enabled {
-			withFeatureFlag(t, h, featureflags.ArtifactsV1, true)
+func TestArtifactsV1RoutesStayUnmountedWhenOff(t *testing.T) {
+	h := &Handler{}
+	r := chi.NewRouter()
+	MountArtifactRoutes(r, h)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/artifacts", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	var patterns []string
+	walkRoutes(r, "", &patterns)
+	for _, pattern := range patterns {
+		if strings.Contains(pattern, "artifact") {
+			t.Fatalf("flag off mounted %s", pattern)
 		}
-		r := chi.NewRouter()
-		MountArtifactRoutes(r, h)
-		var patterns []string
-		walkRoutes(r, "", &patterns)
-		for _, pattern := range patterns {
-			if strings.Contains(pattern, "artifact") {
-				t.Fatalf("enabled=%v mounted %s", enabled, pattern)
-			}
+	}
+}
+
+func TestArtifactsV1ReadRoutesMountWhenEnabled(t *testing.T) {
+	h := &Handler{}
+	withFeatureFlag(t, h, featureflags.ArtifactsV1, true)
+	r := chi.NewRouter()
+	MountArtifactRoutes(r, h)
+	var patterns []string
+	walkRoutes(r, "", &patterns)
+	joined := strings.Join(patterns, "\n")
+	for _, want := range []string{
+		"/api/artifacts",
+		"/api/artifacts/{artifactID}",
+		"/api/artifacts/{artifactID}/revisions",
+		"/api/artifacts/{artifactID}/revisions/{revisionID}/preview",
+		"/api/artifacts/{artifactID}/revisions/{revisionID}/content",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %s in %s", want, joined)
 		}
 	}
 }

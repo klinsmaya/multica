@@ -1664,9 +1664,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// middleware.Auth and never call this (MUL-7436).
 		r.Post("/api/auth/refresh", h.RefreshSession)
 		r.Post("/api/upload-file", h.UploadFile)
-		// Artifact HTTP stays unmounted while artifacts_v1 is off, and the
-		// mount is empty even when the flag is on. Attachment routes above
-		// and below are unchanged.
+		// Artifact read routes mount only while artifacts_v1 is on. Attachment
+		// routes above and below are not part of that group.
 		handler.MountArtifactRoutes(r, h)
 		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)

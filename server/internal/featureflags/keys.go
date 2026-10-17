@@ -41,10 +41,10 @@ const (
 	// makes those endpoints answer 404, so clients stop syncing and search
 	// through the server again without a client release.
 	LocalSearchIndex = "local_search_index"
-	// ArtifactsV1 is the choke point for the artifact authority HTTP API.
-	// It is off unless FF_ARTIFACTS_V1 is set. While it is off, no artifact
-	// route is mounted. Turning it on still publishes nothing until the
-	// upload/commit HTTP slice registers handlers behind RequireArtifactsV1.
+	// ArtifactsV1 is the choke point for the artifact authority HTTP API and
+	// the issue-detail Artifacts section. It is off unless FF_ARTIFACTS_V1
+	// is set. While it is off, no artifact route is mounted. Turning it on
+	// mounts the read routes (list, metadata, revisions, content, preview).
 	// Attachment upload, download, and the CLI are not gated by this flag.
 	ArtifactsV1 = "artifacts_v1"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
@@ -69,6 +69,7 @@ var frontendPublicFlags = []string{
 	ComposioMCPApps,
 	PluginsV1,
 	ProjectWorkflowsV1,
+	ArtifactsV1,
 }
 
 func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featureflag.Service) bool {

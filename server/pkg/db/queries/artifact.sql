@@ -235,3 +235,55 @@ deleted_artifacts AS (
 )
 DELETE FROM artifact_blobs
 WHERE artifact_blobs.id IN (SELECT doomed_blobs.id FROM doomed_blobs);
+
+-- name: ListArtifactsByOwner :many
+-- Read model for one owner. Storage keys are not selected.
+SELECT
+    artifacts.id,
+    artifacts.workspace_id,
+    artifacts.owner_scope,
+    artifacts.owner_id,
+    artifacts.title,
+    artifacts.kind,
+    artifacts.status,
+    artifacts.head_revision_id,
+    artifacts.row_version,
+    artifacts.created_by,
+    artifacts.created_at,
+    artifacts.updated_at,
+    artifact_revisions.revision_no,
+    artifact_revisions.media_type,
+    artifact_revisions.filename,
+    artifact_revisions.size_bytes,
+    artifact_revisions.actor_id AS updated_by
+FROM artifacts
+LEFT JOIN artifact_revisions ON artifact_revisions.id = artifacts.head_revision_id
+WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
+  AND artifacts.owner_scope = sqlc.arg(owner_scope)
+  AND artifacts.owner_id = sqlc.arg(owner_id)
+  AND artifacts.deleted_at IS NULL
+  AND artifacts.status = 'active'
+ORDER BY artifacts.updated_at DESC, artifacts.id DESC
+LIMIT sqlc.arg(lim);
+
+-- name: GetArtifactByID :one
+SELECT * FROM artifacts
+WHERE id = $1 AND deleted_at IS NULL AND status = 'active';
+
+-- name: ListArtifactRevisions :many
+SELECT
+    id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, created_at
+FROM artifact_revisions
+WHERE artifact_id = $1
+ORDER BY revision_no DESC;
+
+-- name: GetArtifactRevision :one
+SELECT
+    id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, created_at
+FROM artifact_revisions
+WHERE id = $1 AND artifact_id = $2;
+
+-- name: GetArtifactBlob :one
+SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status
+FROM artifact_blobs
+WHERE id = $1;

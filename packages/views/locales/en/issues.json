@@ -1480,6 +1480,12 @@
     "overview_empty": "No deliverables of this type.",
     "group_comment_by": "Comment by {{name}}"
   },
+  "artifacts": {
+    "section_title": "Artifacts",
+    "revision": "v{{version}}",
+    "download": "Download",
+    "preview_failed": "Preview is not available for this file."
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "Every status, no handoffs",

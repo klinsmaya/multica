@@ -1431,6 +1431,12 @@
     "overview_empty": "没有这类产物。",
     "group_comment_by": "{{name}} 的评论"
   },
+  "artifacts": {
+    "section_title": "版本产物",
+    "revision": "v{{version}}",
+    "download": "下载",
+    "preview_failed": "这个文件暂时不能预览。"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "全部状态，不自动交接",
