@@ -48,21 +48,116 @@ WHERE artifact_id = $1;
 INSERT INTO artifact_blobs (
     id, storage_key, size_bytes, sha256, detected_media_type, scan_status, encryption_scope
 ) VALUES (
-    $1, $2, $3, $4, $5, 'unchecked', 'workspace'
+    $1, $2, $3, $4, $5, $6, 'workspace'
 )
 RETURNING *;
 
 -- name: InsertArtifactUpload :one
+-- Opens a staging binding. State starts at created; commit is a later transition.
 INSERT INTO artifact_uploads (
     id, workspace_id, actor_id, artifact_id, base_revision_id,
-    expected_size_bytes, expected_sha256, staging_key, state,
-    expires_at, consumed_at, committed_revision_id
+    expected_size_bytes, expected_sha256, staging_key,
+    declared_media_type, filename, state, expires_at
 ) VALUES (
-    $1, $2, $3, $4, sqlc.narg(base_revision_id),
-    $5, $6, $7, 'committed',
-    now(), now(), $8
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(actor_id), sqlc.arg(artifact_id),
+    sqlc.narg(base_revision_id),
+    sqlc.arg(expected_size_bytes), sqlc.arg(expected_sha256), sqlc.arg(staging_key),
+    sqlc.arg(declared_media_type), sqlc.arg(filename), 'created', sqlc.arg(expires_at)
 )
 RETURNING *;
+
+-- name: LockArtifactUpload :one
+SELECT * FROM artifact_uploads
+WHERE id = sqlc.arg(id) AND workspace_id = sqlc.arg(workspace_id)
+FOR UPDATE;
+
+-- name: TransitionArtifactUpload :one
+UPDATE artifact_uploads
+SET state = sqlc.arg(to_state)
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND state = sqlc.arg(from_state)
+RETURNING *;
+
+-- name: ConsumeArtifactUpload :one
+UPDATE artifact_uploads
+SET state = 'committed',
+    consumed_at = now(),
+    committed_revision_id = sqlc.arg(committed_revision_id)
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND state = 'ready'
+RETURNING *;
+
+-- name: RetainArtifactUploadConflict :one
+-- The verified bytes stay in staging. A sweeper (A14) expires the row;
+-- this statement only records the retention deadline.
+UPDATE artifact_uploads
+SET state = 'conflict_draft',
+    expires_at = now() + interval '7 days'
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND state = 'ready'
+RETURNING *;
+
+-- name: GetArtifactOperation :one
+SELECT * FROM artifact_operations
+WHERE workspace_id = $1 AND actor_id = $2 AND idempotency_key = $3;
+
+-- name: LockWorkspaceArtifactQuota :exec
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(workspace_id)::uuid::text || ':artifact-quota', 604));
+
+-- name: SumWorkspaceArtifactBytes :one
+WITH reserved_uploads AS (
+    SELECT COALESCE(SUM(artifact_uploads.expected_size_bytes), 0)::bigint AS bytes
+    FROM artifact_uploads
+    WHERE artifact_uploads.workspace_id = sqlc.arg(workspace_id)
+      AND artifact_uploads.state IN (
+          'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+      )
+      AND artifact_uploads.expires_at > now()
+),
+reserved_revisions AS (
+    SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint AS bytes
+    FROM artifact_revisions
+    WHERE artifact_revisions.artifact_id IN (
+        SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
+    )
+)
+SELECT (reserved_uploads.bytes + reserved_revisions.bytes)::bigint
+FROM reserved_uploads, reserved_revisions;
+
+-- name: SumActorArtifactBytes :one
+WITH reserved_uploads AS (
+    SELECT COALESCE(SUM(artifact_uploads.expected_size_bytes), 0)::bigint AS bytes
+    FROM artifact_uploads
+    WHERE artifact_uploads.workspace_id = sqlc.arg(workspace_id)
+      AND artifact_uploads.actor_id = sqlc.arg(actor_id)
+      AND artifact_uploads.state IN (
+          'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+      )
+      AND artifact_uploads.expires_at > now()
+),
+reserved_revisions AS (
+    SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint AS bytes
+    FROM artifact_revisions
+    WHERE artifact_revisions.actor_id = sqlc.arg(actor_id)
+      AND artifact_revisions.artifact_id IN (
+          SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
+      )
+)
+SELECT (reserved_uploads.bytes + reserved_revisions.bytes)::bigint
+FROM reserved_uploads, reserved_revisions;
+
+-- name: ListExpiredArtifactUploads :many
+SELECT * FROM artifact_uploads
+WHERE artifact_uploads.workspace_id = sqlc.arg(workspace_id)
+  AND artifact_uploads.expires_at <= now()
+  AND artifact_uploads.state IN (
+      'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+  )
+ORDER BY artifact_uploads.expires_at
+LIMIT sqlc.arg(lim);
 
 -- name: InsertArtifactRevision :one
 INSERT INTO artifact_revisions (

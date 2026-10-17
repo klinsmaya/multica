@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -30,9 +31,22 @@ type TxBeginner interface {
 
 // Service commits artifact revisions. Store is the same storage.Storage
 // implementation attachments use; this package only supplies the object key.
+//
+// Bytes land in a private staging key first. Finalize verifies the size and
+// server-side sha256, sniffs the media type, and only then copies the object
+// to the immutable blob key.
 type Service struct {
 	DB    TxBeginner
 	Store storage.Storage
+	// Scanner classifies staged bytes. Nil uses NopScanner, which returns
+	// clean as an explicit no-op. A timeout must surface as ScanPending and
+	// must not become ready.
+	Scanner Scanner
+	// WorkspaceQuotaBytes and ActorQuotaBytes cap open staging reservations
+	// plus committed revision bytes. Zero selects the built-in defaults.
+	// Settlement, refunds, and the sweeper schedule belong to A14.
+	WorkspaceQuotaBytes int64
+	ActorQuotaBytes     int64
 }
 
 // CreateInput opens an artifact with no revision. Title is a display name.
@@ -131,195 +145,94 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Artifact, error) 
 	return artifactFromRow(row), nil
 }
 
-// Commit seals in.Data as a new immutable revision when head still equals
-// BaseRevisionID, or returns the stored result of the same idempotency key.
+// Commit stages in.Data, verifies it, and seals a new immutable revision when
+// head still equals BaseRevisionID. The same idempotency key and request hash
+// returns the stored result and does not open a second upload.
 func (s *Service) Commit(ctx context.Context, in CommitInput) (CommitResult, error) {
-	if s == nil || s.DB == nil || s.Store == nil {
-		return CommitResult{}, fmt.Errorf("%w: service is not configured", ErrInvalidInput)
+	if err := s.configured(); err != nil {
+		return CommitResult{}, err
 	}
 	norm, hash, err := normalizeCommit(in)
 	if err != nil {
 		return CommitResult{}, err
 	}
 	sum := sha256.Sum256(norm.Data)
-	got := hex.EncodeToString(sum[:])
-	if got != norm.SHA256 {
+	if hex.EncodeToString(sum[:]) != norm.SHA256 {
 		return CommitResult{}, ErrDigestMismatch
 	}
+	if result, done, err := s.peekCommit(ctx, norm, hash); done || err != nil {
+		return result, err
+	}
 
+	up, err := s.CreateUpload(ctx, CreateUploadInput{
+		WorkspaceID:    norm.WorkspaceID,
+		ActorID:        norm.ActorID,
+		ArtifactID:     norm.ArtifactID,
+		BaseRevisionID: norm.BaseRevisionID,
+		ExpectedSize:   int64(len(norm.Data)),
+		ExpectedSHA256: norm.SHA256,
+		Filename:       norm.Filename,
+		MediaType:      norm.MediaType,
+	})
+	if err != nil {
+		return CommitResult{}, err
+	}
+	if err := s.WriteStaging(ctx, norm.WorkspaceID, up.ID, norm.Data); err != nil {
+		return CommitResult{}, err
+	}
+	if err := s.VerifyUpload(ctx, norm.WorkspaceID, up.ID); err != nil {
+		return CommitResult{}, err
+	}
+	return s.finalize(ctx, FinalizeInput{
+		WorkspaceID:    norm.WorkspaceID,
+		ActorID:        norm.ActorID,
+		UploadID:       up.ID,
+		IdempotencyKey: norm.IdempotencyKey,
+		Source:         norm.Source,
+		TaskRunID:      norm.TaskRunID,
+	}, hash)
+}
+
+// peekCommit reports an operation that already owns this key. done is false
+// only when the key is unused. The hash is the A03 commit identity, which
+// does not include the upload id, so a retry does not look like a new request.
+func (s *Service) peekCommit(ctx context.Context, in CommitInput, hash string) (CommitResult, bool, error) {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return CommitResult{}, err
+		return CommitResult{}, false, err
 	}
-	committed := false
-	uploadedKey := ""
-	defer func() {
-		if committed {
-			return
-		}
-		_ = tx.Rollback(ctx)
-		if uploadedKey != "" {
-			s.Store.Delete(ctx, uploadedKey)
-		}
-	}()
+	defer tx.Rollback(ctx)
 
-	q := db.New(tx)
-	art, err := q.LockArtifact(ctx, db.LockArtifactParams{
-		ID:          pgUUID(norm.ArtifactID),
-		WorkspaceID: pgUUID(norm.WorkspaceID),
+	op, err := db.New(tx).GetArtifactOperation(ctx, db.GetArtifactOperationParams{
+		WorkspaceID:    pgUUID(in.WorkspaceID),
+		ActorID:        pgUUID(in.ActorID),
+		IdempotencyKey: in.IdempotencyKey,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return CommitResult{}, ErrNotFound
+		return CommitResult{}, false, nil
 	}
 	if err != nil {
-		return CommitResult{}, err
+		return CommitResult{}, false, err
 	}
-	if art.DeletedAt.Valid || art.Status == "deleted" {
-		return CommitResult{}, ErrNotFound
+	if op.RequestHash != hash {
+		return CommitResult{}, true, ErrIdempotencyReused
 	}
-
-	opID, err := uuid.NewV7()
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("new operation id: %w", err)
-	}
-	op, err := q.InsertArtifactOperation(ctx, db.InsertArtifactOperationParams{
-		ID:             pgUUID(opID),
-		WorkspaceID:    pgUUID(norm.WorkspaceID),
-		ActorID:        pgUUID(norm.ActorID),
-		IdempotencyKey: norm.IdempotencyKey,
-		RequestHash:    hash,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return s.replayOperation(ctx, q, tx, &committed, norm, hash)
-	}
-	if err != nil {
-		return CommitResult{}, err
-	}
-
-	if !headMatches(art.HeadRevisionID, norm.BaseRevisionID) {
-		if _, err := q.FinishArtifactOperation(ctx, db.FinishArtifactOperationParams{
-			State:     "failed",
-			ErrorCode: pgText(CodeRevisionConflict),
-			ID:        op.ID,
-		}); err != nil {
-			return CommitResult{}, err
+	switch op.State {
+	case "succeeded":
+		result, err := decodeCommitResult(op.ResultRef)
+		if err != nil {
+			return CommitResult{}, true, err
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return CommitResult{}, err
+		result.Replayed = true
+		return result, true, nil
+	case "failed":
+		if op.ErrorCode.Valid && op.ErrorCode.String == CodeRevisionConflict {
+			return CommitResult{}, true, ErrRevisionConflict
 		}
-		committed = true
-		return CommitResult{}, ErrRevisionConflict
+		return CommitResult{}, true, fmt.Errorf("%w: operation failed", ErrInvalidInput)
+	default:
+		return CommitResult{}, true, ErrOperationPending
 	}
-
-	blobID, err := uuid.NewV7()
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("new blob id: %w", err)
-	}
-	revID, err := uuid.NewV7()
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("new revision id: %w", err)
-	}
-	uploadID, err := uuid.NewV7()
-	if err != nil {
-		return CommitResult{}, fmt.Errorf("new upload id: %w", err)
-	}
-	key := storageKey(norm.WorkspaceID, blobID)
-	if keyContainsFilename(key, norm.Filename) {
-		return CommitResult{}, fmt.Errorf("%w: storage key contains filename", ErrInvalidInput)
-	}
-
-	if _, err := s.Store.Upload(ctx, key, norm.Data, norm.MediaType, norm.Filename); err != nil {
-		return CommitResult{}, fmt.Errorf("store artifact blob: %w", err)
-	}
-	uploadedKey = key
-
-	if _, err := q.InsertArtifactBlob(ctx, db.InsertArtifactBlobParams{
-		ID:                pgUUID(blobID),
-		StorageKey:        key,
-		SizeBytes:         int64(len(norm.Data)),
-		Sha256:            norm.SHA256,
-		DetectedMediaType: norm.MediaType,
-	}); err != nil {
-		return CommitResult{}, err
-	}
-	if _, err := q.InsertArtifactUpload(ctx, db.InsertArtifactUploadParams{
-		ID:                  pgUUID(uploadID),
-		WorkspaceID:         pgUUID(norm.WorkspaceID),
-		ActorID:             pgUUID(norm.ActorID),
-		ArtifactID:          pgUUID(norm.ArtifactID),
-		BaseRevisionID:      pgUUIDPtr(norm.BaseRevisionID),
-		ExpectedSizeBytes:   int64(len(norm.Data)),
-		ExpectedSha256:      norm.SHA256,
-		StagingKey:          key,
-		CommittedRevisionID: pgUUID(revID),
-	}); err != nil {
-		return CommitResult{}, err
-	}
-
-	revNo, err := q.NextArtifactRevisionNo(ctx, pgUUID(norm.ArtifactID))
-	if err != nil {
-		return CommitResult{}, err
-	}
-	if _, err := q.InsertArtifactRevision(ctx, db.InsertArtifactRevisionParams{
-		ID:                pgUUID(revID),
-		ArtifactID:        pgUUID(norm.ArtifactID),
-		RevisionNo:        revNo,
-		ParentRevisionID:  pgUUIDPtr(norm.BaseRevisionID),
-		BaseRevisionID:    pgUUIDPtr(norm.BaseRevisionID),
-		BlobID:            pgUUID(blobID),
-		SourceUploadID:    pgUUID(uploadID),
-		CommitOperationID: op.ID,
-		MediaType:         norm.MediaType,
-		SizeBytes:         int64(len(norm.Data)),
-		Sha256:            norm.SHA256,
-		Filename:          norm.Filename,
-		Source:            norm.Source,
-		ActorID:           pgUUID(norm.ActorID),
-		TaskRunID:         pgUUIDPtr(norm.TaskRunID),
-	}); err != nil {
-		return CommitResult{}, err
-	}
-
-	rowVersion, err := q.CasArtifactHead(ctx, db.CasArtifactHeadParams{
-		HeadRevisionID: pgUUID(revID),
-		ID:             pgUUID(norm.ArtifactID),
-		WorkspaceID:    pgUUID(norm.WorkspaceID),
-		BaseRevisionID: pgUUIDPtr(norm.BaseRevisionID),
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return CommitResult{}, ErrRevisionConflict
-	}
-	if err != nil {
-		return CommitResult{}, err
-	}
-
-	result := CommitResult{
-		ArtifactID:     norm.ArtifactID,
-		RevisionID:     revID,
-		RevisionNo:     revNo,
-		BlobID:         blobID,
-		OperationID:    uuid.UUID(op.ID.Bytes),
-		StorageKey:     key,
-		RowVersion:     rowVersion,
-		HeadRevisionID: revID,
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return CommitResult{}, err
-	}
-	if _, err := q.FinishArtifactOperation(ctx, db.FinishArtifactOperationParams{
-		State:     "succeeded",
-		ResultRef: encoded,
-		ID:        op.ID,
-	}); err != nil {
-		return CommitResult{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return CommitResult{}, err
-	}
-	committed = true
-	uploadedKey = ""
-	return result, nil
 }
 
 func (s *Service) replayOperation(ctx context.Context, q *db.Queries, tx pgx.Tx, committed *bool, in CommitInput, hash string) (CommitResult, error) {
@@ -482,6 +395,10 @@ func pgText(s string) pgtype.Text {
 		return pgtype.Text{}
 	}
 	return pgtype.Text{String: s, Valid: true}
+}
+
+func pgTime(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
 }
 
 func validOwnerScope(scope string) bool {

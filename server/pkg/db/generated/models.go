@@ -271,6 +271,8 @@ type ArtifactUpload struct {
 	ConsumedAt          pgtype.Timestamptz `json:"consumed_at"`
 	CommittedRevisionID pgtype.UUID        `json:"committed_revision_id"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	DeclaredMediaType   string             `json:"declared_media_type"`
+	Filename            string             `json:"filename"`
 }
 
 type Attachment struct {

@@ -44,6 +44,46 @@ func (q *Queries) CasArtifactHead(ctx context.Context, arg CasArtifactHeadParams
 	return row_version, err
 }
 
+const consumeArtifactUpload = `-- name: ConsumeArtifactUpload :one
+UPDATE artifact_uploads
+SET state = 'committed',
+    consumed_at = now(),
+    committed_revision_id = $1
+WHERE id = $2
+  AND workspace_id = $3
+  AND state = 'ready'
+RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename
+`
+
+type ConsumeArtifactUploadParams struct {
+	CommittedRevisionID pgtype.UUID `json:"committed_revision_id"`
+	ID                  pgtype.UUID `json:"id"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) ConsumeArtifactUpload(ctx context.Context, arg ConsumeArtifactUploadParams) (ArtifactUpload, error) {
+	row := q.db.QueryRow(ctx, consumeArtifactUpload, arg.CommittedRevisionID, arg.ID, arg.WorkspaceID)
+	var i ArtifactUpload
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ExpectedSizeBytes,
+		&i.ExpectedSha256,
+		&i.StagingKey,
+		&i.State,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CommittedRevisionID,
+		&i.CreatedAt,
+		&i.DeclaredMediaType,
+		&i.Filename,
+	)
+	return i, err
+}
+
 const createArtifact = `-- name: CreateArtifact :one
 
 INSERT INTO artifacts (
@@ -179,11 +219,40 @@ func (q *Queries) FinishArtifactOperation(ctx context.Context, arg FinishArtifac
 	return i, err
 }
 
+const getArtifactOperation = `-- name: GetArtifactOperation :one
+SELECT id, workspace_id, actor_id, idempotency_key, request_hash, state, result_ref, error_code, created_at, updated_at FROM artifact_operations
+WHERE workspace_id = $1 AND actor_id = $2 AND idempotency_key = $3
+`
+
+type GetArtifactOperationParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ActorID        pgtype.UUID `json:"actor_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+}
+
+func (q *Queries) GetArtifactOperation(ctx context.Context, arg GetArtifactOperationParams) (ArtifactOperation, error) {
+	row := q.db.QueryRow(ctx, getArtifactOperation, arg.WorkspaceID, arg.ActorID, arg.IdempotencyKey)
+	var i ArtifactOperation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.IdempotencyKey,
+		&i.RequestHash,
+		&i.State,
+		&i.ResultRef,
+		&i.ErrorCode,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const insertArtifactBlob = `-- name: InsertArtifactBlob :one
 INSERT INTO artifact_blobs (
     id, storage_key, size_bytes, sha256, detected_media_type, scan_status, encryption_scope
 ) VALUES (
-    $1, $2, $3, $4, $5, 'unchecked', 'workspace'
+    $1, $2, $3, $4, $5, $6, 'workspace'
 )
 RETURNING id, storage_key, size_bytes, sha256, detected_media_type, scan_status, encryption_scope, created_at
 `
@@ -194,6 +263,7 @@ type InsertArtifactBlobParams struct {
 	SizeBytes         int64       `json:"size_bytes"`
 	Sha256            string      `json:"sha256"`
 	DetectedMediaType string      `json:"detected_media_type"`
+	ScanStatus        string      `json:"scan_status"`
 }
 
 func (q *Queries) InsertArtifactBlob(ctx context.Context, arg InsertArtifactBlobParams) (ArtifactBlob, error) {
@@ -203,6 +273,7 @@ func (q *Queries) InsertArtifactBlob(ctx context.Context, arg InsertArtifactBlob
 		arg.SizeBytes,
 		arg.Sha256,
 		arg.DetectedMediaType,
+		arg.ScanStatus,
 	)
 	var i ArtifactBlob
 	err := row.Scan(
@@ -334,39 +405,45 @@ func (q *Queries) InsertArtifactRevision(ctx context.Context, arg InsertArtifact
 const insertArtifactUpload = `-- name: InsertArtifactUpload :one
 INSERT INTO artifact_uploads (
     id, workspace_id, actor_id, artifact_id, base_revision_id,
-    expected_size_bytes, expected_sha256, staging_key, state,
-    expires_at, consumed_at, committed_revision_id
+    expected_size_bytes, expected_sha256, staging_key,
+    declared_media_type, filename, state, expires_at
 ) VALUES (
-    $1, $2, $3, $4, $9,
-    $5, $6, $7, 'committed',
-    now(), now(), $8
+    $1, $2, $3, $4,
+    $5,
+    $6, $7, $8,
+    $9, $10, 'created', $11
 )
-RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at
+RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename
 `
 
 type InsertArtifactUploadParams struct {
-	ID                  pgtype.UUID `json:"id"`
-	WorkspaceID         pgtype.UUID `json:"workspace_id"`
-	ActorID             pgtype.UUID `json:"actor_id"`
-	ArtifactID          pgtype.UUID `json:"artifact_id"`
-	ExpectedSizeBytes   int64       `json:"expected_size_bytes"`
-	ExpectedSha256      string      `json:"expected_sha256"`
-	StagingKey          string      `json:"staging_key"`
-	CommittedRevisionID pgtype.UUID `json:"committed_revision_id"`
-	BaseRevisionID      pgtype.UUID `json:"base_revision_id"`
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ActorID           pgtype.UUID        `json:"actor_id"`
+	ArtifactID        pgtype.UUID        `json:"artifact_id"`
+	BaseRevisionID    pgtype.UUID        `json:"base_revision_id"`
+	ExpectedSizeBytes int64              `json:"expected_size_bytes"`
+	ExpectedSha256    string             `json:"expected_sha256"`
+	StagingKey        string             `json:"staging_key"`
+	DeclaredMediaType string             `json:"declared_media_type"`
+	Filename          string             `json:"filename"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
 }
 
+// Opens a staging binding. State starts at created; commit is a later transition.
 func (q *Queries) InsertArtifactUpload(ctx context.Context, arg InsertArtifactUploadParams) (ArtifactUpload, error) {
 	row := q.db.QueryRow(ctx, insertArtifactUpload,
 		arg.ID,
 		arg.WorkspaceID,
 		arg.ActorID,
 		arg.ArtifactID,
+		arg.BaseRevisionID,
 		arg.ExpectedSizeBytes,
 		arg.ExpectedSha256,
 		arg.StagingKey,
-		arg.CommittedRevisionID,
-		arg.BaseRevisionID,
+		arg.DeclaredMediaType,
+		arg.Filename,
+		arg.ExpiresAt,
 	)
 	var i ArtifactUpload
 	err := row.Scan(
@@ -383,6 +460,8 @@ func (q *Queries) InsertArtifactUpload(ctx context.Context, arg InsertArtifactUp
 		&i.ConsumedAt,
 		&i.CommittedRevisionID,
 		&i.CreatedAt,
+		&i.DeclaredMediaType,
+		&i.Filename,
 	)
 	return i, err
 }
@@ -417,6 +496,58 @@ func (q *Queries) ListArtifactStorageKeysByWorkspace(ctx context.Context, worksp
 			return nil, err
 		}
 		items = append(items, storage_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredArtifactUploads = `-- name: ListExpiredArtifactUploads :many
+SELECT id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename FROM artifact_uploads
+WHERE artifact_uploads.workspace_id = $1
+  AND artifact_uploads.expires_at <= now()
+  AND artifact_uploads.state IN (
+      'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+  )
+ORDER BY artifact_uploads.expires_at
+LIMIT $2
+`
+
+type ListExpiredArtifactUploadsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Lim         int32       `json:"lim"`
+}
+
+func (q *Queries) ListExpiredArtifactUploads(ctx context.Context, arg ListExpiredArtifactUploadsParams) ([]ArtifactUpload, error) {
+	rows, err := q.db.Query(ctx, listExpiredArtifactUploads, arg.WorkspaceID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ArtifactUpload{}
+	for rows.Next() {
+		var i ArtifactUpload
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorID,
+			&i.ArtifactID,
+			&i.BaseRevisionID,
+			&i.ExpectedSizeBytes,
+			&i.ExpectedSha256,
+			&i.StagingKey,
+			&i.State,
+			&i.ExpiresAt,
+			&i.ConsumedAt,
+			&i.CommittedRevisionID,
+			&i.CreatedAt,
+			&i.DeclaredMediaType,
+			&i.Filename,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -486,6 +617,49 @@ func (q *Queries) LockArtifactOperation(ctx context.Context, arg LockArtifactOpe
 	return i, err
 }
 
+const lockArtifactUpload = `-- name: LockArtifactUpload :one
+SELECT id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename FROM artifact_uploads
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE
+`
+
+type LockArtifactUploadParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LockArtifactUpload(ctx context.Context, arg LockArtifactUploadParams) (ArtifactUpload, error) {
+	row := q.db.QueryRow(ctx, lockArtifactUpload, arg.ID, arg.WorkspaceID)
+	var i ArtifactUpload
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ExpectedSizeBytes,
+		&i.ExpectedSha256,
+		&i.StagingKey,
+		&i.State,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CommittedRevisionID,
+		&i.CreatedAt,
+		&i.DeclaredMediaType,
+		&i.Filename,
+	)
+	return i, err
+}
+
+const lockWorkspaceArtifactQuota = `-- name: LockWorkspaceArtifactQuota :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text || ':artifact-quota', 604))
+`
+
+func (q *Queries) LockWorkspaceArtifactQuota(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockWorkspaceArtifactQuota, workspaceID)
+	return err
+}
+
 const nextArtifactRevisionNo = `-- name: NextArtifactRevisionNo :one
 SELECT (COALESCE(MAX(revision_no), 0) + 1)::bigint
 FROM artifact_revisions
@@ -497,4 +671,151 @@ func (q *Queries) NextArtifactRevisionNo(ctx context.Context, artifactID pgtype.
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const retainArtifactUploadConflict = `-- name: RetainArtifactUploadConflict :one
+UPDATE artifact_uploads
+SET state = 'conflict_draft',
+    expires_at = now() + interval '7 days'
+WHERE id = $1
+  AND workspace_id = $2
+  AND state = 'ready'
+RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename
+`
+
+type RetainArtifactUploadConflictParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The verified bytes stay in staging. A sweeper (A14) expires the row;
+// this statement only records the retention deadline.
+func (q *Queries) RetainArtifactUploadConflict(ctx context.Context, arg RetainArtifactUploadConflictParams) (ArtifactUpload, error) {
+	row := q.db.QueryRow(ctx, retainArtifactUploadConflict, arg.ID, arg.WorkspaceID)
+	var i ArtifactUpload
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ExpectedSizeBytes,
+		&i.ExpectedSha256,
+		&i.StagingKey,
+		&i.State,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CommittedRevisionID,
+		&i.CreatedAt,
+		&i.DeclaredMediaType,
+		&i.Filename,
+	)
+	return i, err
+}
+
+const sumActorArtifactBytes = `-- name: SumActorArtifactBytes :one
+WITH reserved_uploads AS (
+    SELECT COALESCE(SUM(artifact_uploads.expected_size_bytes), 0)::bigint AS bytes
+    FROM artifact_uploads
+    WHERE artifact_uploads.workspace_id = $1
+      AND artifact_uploads.actor_id = $2
+      AND artifact_uploads.state IN (
+          'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+      )
+      AND artifact_uploads.expires_at > now()
+),
+reserved_revisions AS (
+    SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint AS bytes
+    FROM artifact_revisions
+    WHERE artifact_revisions.actor_id = $2
+      AND artifact_revisions.artifact_id IN (
+          SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
+      )
+)
+SELECT (reserved_uploads.bytes + reserved_revisions.bytes)::bigint
+FROM reserved_uploads, reserved_revisions
+`
+
+type SumActorArtifactBytesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+}
+
+func (q *Queries) SumActorArtifactBytes(ctx context.Context, arg SumActorArtifactBytesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumActorArtifactBytes, arg.WorkspaceID, arg.ActorID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sumWorkspaceArtifactBytes = `-- name: SumWorkspaceArtifactBytes :one
+WITH reserved_uploads AS (
+    SELECT COALESCE(SUM(artifact_uploads.expected_size_bytes), 0)::bigint AS bytes
+    FROM artifact_uploads
+    WHERE artifact_uploads.workspace_id = $1
+      AND artifact_uploads.state IN (
+          'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+      )
+      AND artifact_uploads.expires_at > now()
+),
+reserved_revisions AS (
+    SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint AS bytes
+    FROM artifact_revisions
+    WHERE artifact_revisions.artifact_id IN (
+        SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
+    )
+)
+SELECT (reserved_uploads.bytes + reserved_revisions.bytes)::bigint
+FROM reserved_uploads, reserved_revisions
+`
+
+func (q *Queries) SumWorkspaceArtifactBytes(ctx context.Context, workspaceID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumWorkspaceArtifactBytes, workspaceID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const transitionArtifactUpload = `-- name: TransitionArtifactUpload :one
+UPDATE artifact_uploads
+SET state = $1
+WHERE id = $2
+  AND workspace_id = $3
+  AND state = $4
+RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename
+`
+
+type TransitionArtifactUploadParams struct {
+	ToState     string      `json:"to_state"`
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	FromState   string      `json:"from_state"`
+}
+
+func (q *Queries) TransitionArtifactUpload(ctx context.Context, arg TransitionArtifactUploadParams) (ArtifactUpload, error) {
+	row := q.db.QueryRow(ctx, transitionArtifactUpload,
+		arg.ToState,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.FromState,
+	)
+	var i ArtifactUpload
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ActorID,
+		&i.ArtifactID,
+		&i.BaseRevisionID,
+		&i.ExpectedSizeBytes,
+		&i.ExpectedSha256,
+		&i.StagingKey,
+		&i.State,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CommittedRevisionID,
+		&i.CreatedAt,
+		&i.DeclaredMediaType,
+		&i.Filename,
+	)
+	return i, err
 }

@@ -19,10 +19,27 @@ var (
 	ErrRevisionConflict = errors.New("revision conflict")
 	// ErrIdempotencyReused means the key was already used for another request.
 	ErrIdempotencyReused = errors.New("idempotency key reused")
-	// ErrDigestMismatch means the bytes do not match the declared sha256.
+	// ErrDigestMismatch means the bytes do not match the declared sha256 or size.
 	ErrDigestMismatch = errors.New("digest mismatch")
+	// ErrMediaTypeMismatch means the sniffed type contradicts the declared type.
+	ErrMediaTypeMismatch = errors.New("media type mismatch")
 	// ErrInvalidInput means the commit or create request is malformed.
 	ErrInvalidInput = errors.New("invalid artifact request")
 	// ErrOperationPending means a same-key operation was left unfinished.
 	ErrOperationPending = errors.New("artifact operation pending")
+	// ErrUploadConsumed means this upload already sealed a revision.
+	ErrUploadConsumed = errors.New("upload consumed")
+	// ErrUploadNotReady means finalize ran before the upload reached ready.
+	ErrUploadNotReady = errors.New("upload not ready")
+	// ErrScanPending means the scanner has not cleared the bytes.
+	// Pending is not approval. A timeout stays pending.
+	ErrScanPending = errors.New("scan pending")
+	// ErrUploadRejected means verify or the scanner rejected the bytes.
+	ErrUploadRejected = errors.New("upload rejected")
+	// ErrQuotaExceeded means the workspace or actor reservation does not fit.
+	ErrQuotaExceeded = errors.New("artifact quota exceeded")
+	// ErrUploadExpired means the staging binding passed its deadline.
+	ErrUploadExpired = errors.New("upload expired")
+	// ErrUploadCancelled means the caller cancelled the staging binding.
+	ErrUploadCancelled = errors.New("upload cancelled")
 )
