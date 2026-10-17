@@ -1664,8 +1664,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// middleware.Auth and never call this (MUL-7436).
 		r.Post("/api/auth/refresh", h.RefreshSession)
 		r.Post("/api/upload-file", h.UploadFile)
-		// Artifact read, task-scoped submit, and text edit-session routes
-		// mount only while artifacts_v1 is on. Attachment routes above and
+		// Artifact read, task-scoped submit, text edit-session, and restore
+		// routes mount only while artifacts_v1 is on. Attachment routes above and
 		// below are not part of that group.
 		handler.MountArtifactRoutes(r, h)
 		r.Post("/api/feedback", h.CreateFeedback)

@@ -22,13 +22,14 @@ import (
 // artifactCommandResponse is the stable JSON the CLI prints for create,
 // update, get, and status. It never includes a storage key.
 type artifactCommandResponse struct {
-	ArtifactID  string `json:"artifact_id"`
-	RevisionID  string `json:"revision_id"`
-	OperationID string `json:"operation_id"`
-	State       string `json:"state"`
-	Title       string `json:"title,omitempty"`
-	Filename    string `json:"filename,omitempty"`
-	RevisionNo  int64  `json:"revision_no,omitempty"`
+	ArtifactID             string `json:"artifact_id"`
+	RevisionID             string `json:"revision_id"`
+	OperationID            string `json:"operation_id"`
+	State                  string `json:"state"`
+	Title                  string `json:"title,omitempty"`
+	Filename               string `json:"filename,omitempty"`
+	RevisionNo             int64  `json:"revision_no,omitempty"`
+	RestoredFromRevisionID string `json:"restored_from_revision_id,omitempty"`
 }
 
 // CreateArtifact — POST /api/artifacts

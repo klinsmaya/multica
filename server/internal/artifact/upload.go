@@ -444,30 +444,6 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 	}
 
 	base := uuidPtrFromPG(up.BaseRevisionID)
-	if !headMatches(art.HeadRevisionID, base) {
-		if _, err := q.RetainArtifactUploadConflict(ctx, db.RetainArtifactUploadConflictParams{
-			ID:          up.ID,
-			WorkspaceID: up.WorkspaceID,
-		}); err != nil {
-			return CommitResult{}, err
-		}
-		if _, err := q.FinishArtifactOperation(ctx, db.FinishArtifactOperationParams{
-			State:     "failed",
-			ErrorCode: pgText(CodeRevisionConflict),
-			ID:        op.ID,
-		}); err != nil {
-			return CommitResult{}, err
-		}
-		if err := releaseEditLease(ctx, q, in.EditLease); err != nil {
-			return CommitResult{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return CommitResult{}, err
-		}
-		committed = true
-		return CommitResult{}, ErrRevisionConflict
-	}
-
 	data, err := readObjectLimited(ctx, s.Store, up.StagingKey, up.ExpectedSizeBytes)
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("read staged artifact: %w", err)
@@ -480,6 +456,48 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 	if !ok {
 		rejectAfter = true
 		return CommitResult{}, ErrMediaTypeMismatch
+	}
+	sealBytes := data
+	sealSHA := up.ExpectedSha256
+	sealSize := up.ExpectedSizeBytes
+	parent := base
+	casBase := base
+	media := detected
+	if !headMatches(art.HeadRevisionID, base) {
+		merged, mergedOK := s.mergeStaleText(ctx, q, art, up, data)
+		if !mergedOK {
+			if _, err := q.RetainArtifactUploadConflict(ctx, db.RetainArtifactUploadConflictParams{
+				ID:          up.ID,
+				WorkspaceID: up.WorkspaceID,
+			}); err != nil {
+				return CommitResult{}, err
+			}
+			if _, err := q.FinishArtifactOperation(ctx, db.FinishArtifactOperationParams{
+				State:     "failed",
+				ErrorCode: pgText(CodeRevisionConflict),
+				ID:        op.ID,
+			}); err != nil {
+				return CommitResult{}, err
+			}
+			if err := releaseEditLease(ctx, q, in.EditLease); err != nil {
+				return CommitResult{}, err
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return CommitResult{}, err
+			}
+			committed = true
+			return CommitResult{}, ErrRevisionConflict
+		}
+		sum := sha256.Sum256(merged)
+		sealBytes = merged
+		sealSHA = hex.EncodeToString(sum[:])
+		sealSize = int64(len(merged))
+		headID := uuid.UUID(art.HeadRevisionID.Bytes)
+		parent = &headID
+		casBase = &headID
+		if next, ok := resolveMediaType(merged, up.DeclaredMediaType); ok {
+			media = next
+		}
 	}
 
 	blobID, err := uuid.NewV7()
@@ -494,24 +512,24 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 	if keyContainsFilename(key, up.Filename) {
 		return CommitResult{}, fmt.Errorf("%w: storage key contains filename", ErrInvalidInput)
 	}
-	if _, err := s.Store.Upload(ctx, key, data, detected, up.Filename); err != nil {
+	if _, err := s.Store.Upload(ctx, key, sealBytes, media, up.Filename); err != nil {
 		return CommitResult{}, fmt.Errorf("seal artifact blob: %w", err)
 	}
 	sealedKey = key
-	sealed, err := readObjectLimited(ctx, s.Store, key, up.ExpectedSizeBytes)
+	sealed, err := readObjectLimited(ctx, s.Store, key, sealSize)
 	if err != nil {
 		return CommitResult{}, fmt.Errorf("read sealed artifact: %w", err)
 	}
-	if problem := digestProblem(sealed, up.ExpectedSizeBytes, up.ExpectedSha256); problem != nil {
+	if problem := digestProblem(sealed, sealSize, sealSHA); problem != nil {
 		return CommitResult{}, problem
 	}
 
 	if _, err := q.InsertArtifactBlob(ctx, db.InsertArtifactBlobParams{
 		ID:                pgUUID(blobID),
 		StorageKey:        key,
-		SizeBytes:         up.ExpectedSizeBytes,
-		Sha256:            up.ExpectedSha256,
-		DetectedMediaType: detected,
+		SizeBytes:         sealSize,
+		Sha256:            sealSHA,
+		DetectedMediaType: media,
 		ScanStatus:        "clean",
 	}); err != nil {
 		return CommitResult{}, err
@@ -524,14 +542,14 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		ID:                pgUUID(revID),
 		ArtifactID:        up.ArtifactID,
 		RevisionNo:        revNo,
-		ParentRevisionID:  pgUUIDPtr(base),
+		ParentRevisionID:  pgUUIDPtr(parent),
 		BaseRevisionID:    pgUUIDPtr(base),
 		BlobID:            pgUUID(blobID),
 		SourceUploadID:    up.ID,
 		CommitOperationID: op.ID,
-		MediaType:         detected,
-		SizeBytes:         up.ExpectedSizeBytes,
-		Sha256:            up.ExpectedSha256,
+		MediaType:         media,
+		SizeBytes:         sealSize,
+		Sha256:            sealSHA,
 		Filename:          up.Filename,
 		Source:            in.Source,
 		ActorID:           up.ActorID,
@@ -543,7 +561,7 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		HeadRevisionID: pgUUID(revID),
 		ID:             up.ArtifactID,
 		WorkspaceID:    up.WorkspaceID,
-		BaseRevisionID: pgUUIDPtr(base),
+		BaseRevisionID: pgUUIDPtr(casBase),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		s.Store.Delete(ctx, sealedKey)
@@ -603,6 +621,11 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		ResultRef: encoded,
 		ID:        op.ID,
 	}); err != nil {
+		return CommitResult{}, err
+	}
+	opUUID := uuid.UUID(op.ID.Bytes)
+	artUUID := uuid.UUID(up.ArtifactID.Bytes)
+	if err := insertEvents(ctx, q, uuid.UUID(up.WorkspaceID.Bytes), artUUID, &revID, &opUUID, EventRevisionCommitted, EventPreviewReady); err != nil {
 		return CommitResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

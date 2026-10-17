@@ -1,0 +1,1 @@
+ALTER TABLE artifact_event_receipts DROP CONSTRAINT IF EXISTS artifact_event_receipts_pkey;

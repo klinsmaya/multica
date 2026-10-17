@@ -99,15 +99,16 @@ type CommitInput struct {
 // CommitResult is the sealed revision. Replayed is true when an earlier
 // commit with the same key and request already won.
 type CommitResult struct {
-	ArtifactID     uuid.UUID `json:"artifact_id"`
-	RevisionID     uuid.UUID `json:"revision_id"`
-	RevisionNo     int64     `json:"revision_no"`
-	BlobID         uuid.UUID `json:"blob_id"`
-	OperationID    uuid.UUID `json:"operation_id"`
-	StorageKey     string    `json:"storage_key"`
-	RowVersion     int64     `json:"row_version"`
-	HeadRevisionID uuid.UUID `json:"head_revision_id"`
-	Replayed       bool      `json:"-"`
+	ArtifactID             uuid.UUID `json:"artifact_id"`
+	RevisionID             uuid.UUID `json:"revision_id"`
+	RevisionNo             int64     `json:"revision_no"`
+	BlobID                 uuid.UUID `json:"blob_id"`
+	OperationID            uuid.UUID `json:"operation_id"`
+	StorageKey             string    `json:"storage_key"`
+	RowVersion             int64     `json:"row_version"`
+	HeadRevisionID         uuid.UUID `json:"head_revision_id"`
+	RestoredFromRevisionID uuid.UUID `json:"restored_from_revision_id,omitempty"`
+	Replayed               bool      `json:"-"`
 }
 
 // Create inserts an artifact. It does not upload bytes or create a revision.
@@ -143,6 +144,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Artifact, error) 
 		CreatedBy:   pgUUID(in.CreatedBy),
 	})
 	if err != nil {
+		return Artifact{}, err
+	}
+	if err := insertEvents(ctx, db.New(tx), in.WorkspaceID, id, nil, nil, EventCreated); err != nil {
 		return Artifact{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

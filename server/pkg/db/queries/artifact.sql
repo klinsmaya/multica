@@ -163,11 +163,11 @@ LIMIT sqlc.arg(lim);
 INSERT INTO artifact_revisions (
     id, artifact_id, revision_no, parent_revision_id, base_revision_id,
     blob_id, source_upload_id, commit_operation_id, media_type, size_bytes,
-    sha256, filename, source, actor_id, task_run_id
+    sha256, filename, source, actor_id, task_run_id, restored_from_revision_id
 ) VALUES (
     $1, $2, $3, sqlc.narg(parent_revision_id), sqlc.narg(base_revision_id),
     $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, sqlc.narg(task_run_id)
+    $9, $10, $11, $12, sqlc.narg(task_run_id), sqlc.narg(restored_from_revision_id)
 )
 RETURNING *;
 
@@ -240,6 +240,17 @@ deleted_operations AS (
 deleted_edit_sessions AS (
     DELETE FROM artifact_edit_sessions
     WHERE artifact_edit_sessions.artifact_id IN (SELECT doomed.id FROM doomed)
+),
+deleted_event_receipts AS (
+    DELETE FROM artifact_event_receipts
+    WHERE artifact_event_receipts.event_id IN (
+        SELECT artifact_events.id FROM artifact_events
+        WHERE artifact_events.workspace_id = sqlc.arg(workspace_id)
+    )
+),
+deleted_events AS (
+    DELETE FROM artifact_events
+    WHERE artifact_events.workspace_id = sqlc.arg(workspace_id)
 ),
 deleted_artifacts AS (
     DELETE FROM artifacts
@@ -386,6 +397,25 @@ LIMIT 1;
 UPDATE artifact_edit_sessions
 SET draft_ref = sqlc.arg(draft_ref)
 WHERE id = sqlc.arg(id) AND state = 'open';
+
+-- name: GetArtifactRevisionRecord :one
+SELECT * FROM artifact_revisions
+WHERE id = $1 AND artifact_id = $2;
+
+-- name: InsertArtifactEvent :exec
+INSERT INTO artifact_events (
+    id, workspace_id, artifact_id, revision_id, operation_id, event_type
+) VALUES (
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(artifact_id),
+    sqlc.narg(revision_id), sqlc.narg(operation_id), sqlc.arg(event_type)
+);
+
+-- name: ClaimArtifactEventReceipt :execrows
+INSERT INTO artifact_event_receipts (event_id)
+SELECT artifact_events.id
+FROM artifact_events
+WHERE artifact_events.id = $1
+ON CONFLICT (event_id) DO NOTHING;
 
 -- name: GetArtifactBlob :one
 SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status

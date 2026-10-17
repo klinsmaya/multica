@@ -228,6 +228,21 @@ type ArtifactEditSession struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type ArtifactEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ArtifactID  pgtype.UUID        `json:"artifact_id"`
+	RevisionID  pgtype.UUID        `json:"revision_id"`
+	OperationID pgtype.UUID        `json:"operation_id"`
+	EventType   string             `json:"event_type"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ArtifactEventReceipt struct {
+	EventID   pgtype.UUID        `json:"event_id"`
+	AppliedAt pgtype.Timestamptz `json:"applied_at"`
+}
+
 type ArtifactLink struct {
 	ID           pgtype.UUID        `json:"id"`
 	ArtifactID   pgtype.UUID        `json:"artifact_id"`
@@ -253,22 +268,23 @@ type ArtifactOperation struct {
 }
 
 type ArtifactRevision struct {
-	ID                pgtype.UUID        `json:"id"`
-	ArtifactID        pgtype.UUID        `json:"artifact_id"`
-	RevisionNo        int64              `json:"revision_no"`
-	ParentRevisionID  pgtype.UUID        `json:"parent_revision_id"`
-	BaseRevisionID    pgtype.UUID        `json:"base_revision_id"`
-	BlobID            pgtype.UUID        `json:"blob_id"`
-	SourceUploadID    pgtype.UUID        `json:"source_upload_id"`
-	CommitOperationID pgtype.UUID        `json:"commit_operation_id"`
-	MediaType         string             `json:"media_type"`
-	SizeBytes         int64              `json:"size_bytes"`
-	Sha256            string             `json:"sha256"`
-	Filename          string             `json:"filename"`
-	Source            string             `json:"source"`
-	ActorID           pgtype.UUID        `json:"actor_id"`
-	TaskRunID         pgtype.UUID        `json:"task_run_id"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ID                     pgtype.UUID        `json:"id"`
+	ArtifactID             pgtype.UUID        `json:"artifact_id"`
+	RevisionNo             int64              `json:"revision_no"`
+	ParentRevisionID       pgtype.UUID        `json:"parent_revision_id"`
+	BaseRevisionID         pgtype.UUID        `json:"base_revision_id"`
+	BlobID                 pgtype.UUID        `json:"blob_id"`
+	SourceUploadID         pgtype.UUID        `json:"source_upload_id"`
+	CommitOperationID      pgtype.UUID        `json:"commit_operation_id"`
+	MediaType              string             `json:"media_type"`
+	SizeBytes              int64              `json:"size_bytes"`
+	Sha256                 string             `json:"sha256"`
+	Filename               string             `json:"filename"`
+	Source                 string             `json:"source"`
+	ActorID                pgtype.UUID        `json:"actor_id"`
+	TaskRunID              pgtype.UUID        `json:"task_run_id"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	RestoredFromRevisionID pgtype.UUID        `json:"restored_from_revision_id"`
 }
 
 type ArtifactUpload struct {

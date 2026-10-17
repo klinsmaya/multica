@@ -45,9 +45,10 @@ const (
 	// the issue-detail Artifacts section. It is off unless FF_ARTIFACTS_V1
 	// is set. While it is off, no artifact route is mounted. Turning it on
 	// mounts the read routes (list, metadata, revisions, content, preview),
-	// the task-scoped submit routes the CLI calls, and the text edit-session
-	// routes. The CLI does not
-	// read this flag; a disabled server answers 404. Attachment upload,
+	// the task-scoped submit routes the CLI calls, the text edit-session
+	// routes, and history restore. Events are written only when those
+	// routes run. The CLI does not read this flag; a disabled server
+	// answers 404. Attachment upload,
 	// download, and `multica attachment` are not gated by this flag.
 	ArtifactsV1 = "artifacts_v1"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key

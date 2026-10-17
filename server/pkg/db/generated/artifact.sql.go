@@ -44,6 +44,22 @@ func (q *Queries) CasArtifactHead(ctx context.Context, arg CasArtifactHeadParams
 	return row_version, err
 }
 
+const claimArtifactEventReceipt = `-- name: ClaimArtifactEventReceipt :execrows
+INSERT INTO artifact_event_receipts (event_id)
+SELECT artifact_events.id
+FROM artifact_events
+WHERE artifact_events.id = $1
+ON CONFLICT (event_id) DO NOTHING
+`
+
+func (q *Queries) ClaimArtifactEventReceipt(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, claimArtifactEventReceipt, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const commitArtifactEditSession = `-- name: CommitArtifactEditSession :execrows
 UPDATE artifact_edit_sessions
 SET state = 'committed'
@@ -199,6 +215,17 @@ deleted_operations AS (
 deleted_edit_sessions AS (
     DELETE FROM artifact_edit_sessions
     WHERE artifact_edit_sessions.artifact_id IN (SELECT doomed.id FROM doomed)
+),
+deleted_event_receipts AS (
+    DELETE FROM artifact_event_receipts
+    WHERE artifact_event_receipts.event_id IN (
+        SELECT artifact_events.id FROM artifact_events
+        WHERE artifact_events.workspace_id = $1
+    )
+),
+deleted_events AS (
+    DELETE FROM artifact_events
+    WHERE artifact_events.workspace_id = $1
 ),
 deleted_artifacts AS (
     DELETE FROM artifacts
@@ -476,6 +503,41 @@ func (q *Queries) GetArtifactRevision(ctx context.Context, arg GetArtifactRevisi
 	return i, err
 }
 
+const getArtifactRevisionRecord = `-- name: GetArtifactRevisionRecord :one
+SELECT id, artifact_id, revision_no, parent_revision_id, base_revision_id, blob_id, source_upload_id, commit_operation_id, media_type, size_bytes, sha256, filename, source, actor_id, task_run_id, created_at, restored_from_revision_id FROM artifact_revisions
+WHERE id = $1 AND artifact_id = $2
+`
+
+type GetArtifactRevisionRecordParams struct {
+	ID         pgtype.UUID `json:"id"`
+	ArtifactID pgtype.UUID `json:"artifact_id"`
+}
+
+func (q *Queries) GetArtifactRevisionRecord(ctx context.Context, arg GetArtifactRevisionRecordParams) (ArtifactRevision, error) {
+	row := q.db.QueryRow(ctx, getArtifactRevisionRecord, arg.ID, arg.ArtifactID)
+	var i ArtifactRevision
+	err := row.Scan(
+		&i.ID,
+		&i.ArtifactID,
+		&i.RevisionNo,
+		&i.ParentRevisionID,
+		&i.BaseRevisionID,
+		&i.BlobID,
+		&i.SourceUploadID,
+		&i.CommitOperationID,
+		&i.MediaType,
+		&i.SizeBytes,
+		&i.Sha256,
+		&i.Filename,
+		&i.Source,
+		&i.ActorID,
+		&i.TaskRunID,
+		&i.CreatedAt,
+		&i.RestoredFromRevisionID,
+	)
+	return i, err
+}
+
 const insertArtifactBlob = `-- name: InsertArtifactBlob :one
 INSERT INTO artifact_blobs (
     id, storage_key, size_bytes, sha256, detected_media_type, scan_status, encryption_scope
@@ -568,6 +630,36 @@ func (q *Queries) InsertArtifactEditSession(ctx context.Context, arg InsertArtif
 	return i, err
 }
 
+const insertArtifactEvent = `-- name: InsertArtifactEvent :exec
+INSERT INTO artifact_events (
+    id, workspace_id, artifact_id, revision_id, operation_id, event_type
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6
+)
+`
+
+type InsertArtifactEventParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ArtifactID  pgtype.UUID `json:"artifact_id"`
+	RevisionID  pgtype.UUID `json:"revision_id"`
+	OperationID pgtype.UUID `json:"operation_id"`
+	EventType   string      `json:"event_type"`
+}
+
+func (q *Queries) InsertArtifactEvent(ctx context.Context, arg InsertArtifactEventParams) error {
+	_, err := q.db.Exec(ctx, insertArtifactEvent,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ArtifactID,
+		arg.RevisionID,
+		arg.OperationID,
+		arg.EventType,
+	)
+	return err
+}
+
 const insertArtifactOperation = `-- name: InsertArtifactOperation :one
 INSERT INTO artifact_operations (
     id, workspace_id, actor_id, idempotency_key, request_hash, state
@@ -614,31 +706,32 @@ const insertArtifactRevision = `-- name: InsertArtifactRevision :one
 INSERT INTO artifact_revisions (
     id, artifact_id, revision_no, parent_revision_id, base_revision_id,
     blob_id, source_upload_id, commit_operation_id, media_type, size_bytes,
-    sha256, filename, source, actor_id, task_run_id
+    sha256, filename, source, actor_id, task_run_id, restored_from_revision_id
 ) VALUES (
     $1, $2, $3, $13, $14,
     $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $15
+    $9, $10, $11, $12, $15, $16
 )
-RETURNING id, artifact_id, revision_no, parent_revision_id, base_revision_id, blob_id, source_upload_id, commit_operation_id, media_type, size_bytes, sha256, filename, source, actor_id, task_run_id, created_at
+RETURNING id, artifact_id, revision_no, parent_revision_id, base_revision_id, blob_id, source_upload_id, commit_operation_id, media_type, size_bytes, sha256, filename, source, actor_id, task_run_id, created_at, restored_from_revision_id
 `
 
 type InsertArtifactRevisionParams struct {
-	ID                pgtype.UUID `json:"id"`
-	ArtifactID        pgtype.UUID `json:"artifact_id"`
-	RevisionNo        int64       `json:"revision_no"`
-	BlobID            pgtype.UUID `json:"blob_id"`
-	SourceUploadID    pgtype.UUID `json:"source_upload_id"`
-	CommitOperationID pgtype.UUID `json:"commit_operation_id"`
-	MediaType         string      `json:"media_type"`
-	SizeBytes         int64       `json:"size_bytes"`
-	Sha256            string      `json:"sha256"`
-	Filename          string      `json:"filename"`
-	Source            string      `json:"source"`
-	ActorID           pgtype.UUID `json:"actor_id"`
-	ParentRevisionID  pgtype.UUID `json:"parent_revision_id"`
-	BaseRevisionID    pgtype.UUID `json:"base_revision_id"`
-	TaskRunID         pgtype.UUID `json:"task_run_id"`
+	ID                     pgtype.UUID `json:"id"`
+	ArtifactID             pgtype.UUID `json:"artifact_id"`
+	RevisionNo             int64       `json:"revision_no"`
+	BlobID                 pgtype.UUID `json:"blob_id"`
+	SourceUploadID         pgtype.UUID `json:"source_upload_id"`
+	CommitOperationID      pgtype.UUID `json:"commit_operation_id"`
+	MediaType              string      `json:"media_type"`
+	SizeBytes              int64       `json:"size_bytes"`
+	Sha256                 string      `json:"sha256"`
+	Filename               string      `json:"filename"`
+	Source                 string      `json:"source"`
+	ActorID                pgtype.UUID `json:"actor_id"`
+	ParentRevisionID       pgtype.UUID `json:"parent_revision_id"`
+	BaseRevisionID         pgtype.UUID `json:"base_revision_id"`
+	TaskRunID              pgtype.UUID `json:"task_run_id"`
+	RestoredFromRevisionID pgtype.UUID `json:"restored_from_revision_id"`
 }
 
 func (q *Queries) InsertArtifactRevision(ctx context.Context, arg InsertArtifactRevisionParams) (ArtifactRevision, error) {
@@ -658,6 +751,7 @@ func (q *Queries) InsertArtifactRevision(ctx context.Context, arg InsertArtifact
 		arg.ParentRevisionID,
 		arg.BaseRevisionID,
 		arg.TaskRunID,
+		arg.RestoredFromRevisionID,
 	)
 	var i ArtifactRevision
 	err := row.Scan(
@@ -677,6 +771,7 @@ func (q *Queries) InsertArtifactRevision(ctx context.Context, arg InsertArtifact
 		&i.ActorID,
 		&i.TaskRunID,
 		&i.CreatedAt,
+		&i.RestoredFromRevisionID,
 	)
 	return i, err
 }
