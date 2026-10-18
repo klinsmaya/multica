@@ -1436,6 +1436,8 @@
     "revision": "v{{version}}",
     "download": "ダウンロード",
     "preview_failed": "このファイルはプレビューできません。",
+    "office_pending": "読み取り専用プレビューを準備しています。",
+    "office_failed": "プレビューに失敗しました。",
     "edit": "編集",
     "save_draft": "下書きを保存",
     "save_revision": "新しい版として保存",

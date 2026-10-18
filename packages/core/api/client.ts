@@ -4097,6 +4097,17 @@ export class ApiClient {
     return res.text();
   }
 
+  async getArtifactOfficePreview(path: string): Promise<string> {
+    if (!path.startsWith("/api/artifacts/") || !path.endsWith("/office-preview") || path.includes("..")) {
+      throw new Error("invalid office preview path");
+    }
+    const res = await this.fetchRaw(path);
+    if (!res.ok) {
+      throw new Error("office preview failed");
+    }
+    return res.text();
+  }
+
   async getArtifactRevisionText(artifactId: string, revisionId: string): Promise<string> {
     const res = await this.fetchRaw(artifactRevisionPath(artifactId, revisionId, "content"));
     return res.text();

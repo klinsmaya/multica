@@ -1436,6 +1436,8 @@
     "revision": "v{{version}}",
     "download": "下载",
     "preview_failed": "这个文件暂时不能预览。",
+    "office_pending": "正在准备只读预览。",
+    "office_failed": "预览失败。",
     "edit": "编辑",
     "save_draft": "保存草稿",
     "save_revision": "保存为新版本",

@@ -1485,6 +1485,8 @@
     "revision": "v{{version}}",
     "download": "Télécharger",
     "preview_failed": "Aperçu indisponible pour ce fichier.",
+    "office_pending": "Préparation de l'aperçu en lecture seule.",
+    "office_failed": "Échec de l'aperçu.",
     "edit": "Modifier",
     "save_draft": "Enregistrer le brouillon",
     "save_revision": "Enregistrer comme nouvelle version",

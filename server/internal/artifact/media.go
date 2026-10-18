@@ -31,6 +31,13 @@ func resolveMediaType(data []byte, declared string) (string, bool) {
 		return sniffed, false
 	case "application/octet-stream":
 		return declared, true
+	case "application/zip":
+		switch declared {
+		case MediaTypeDocx, MediaTypeXlsx, MediaTypePptx:
+			return declared, true
+		default:
+			return sniffed, false
+		}
 	}
 	if declared == "text/plain" || declared == "application/octet-stream" {
 		return sniffed, true

@@ -44,3 +44,5 @@ A07 opens an `artifact_edit_sessions` row for Markdown, TXT, JSON, and CSV. A dr
 A08 restore and `artifact_events` write artifact rows only. Restore reuses an existing blob and inserts a new revision. Events store ids and an event type. Neither path inserts an attachment, changes attachment upload or download, or changes `multica attachment`.
 
 A09 static preview reads a sealed artifact blob and returns a sanitized fragment. It does not write an attachment row, and it does not change `POST /api/upload-file` or `multica attachment`.
+
+A10 writes an `artifact_derivatives` row and a derivative object for a DOCX, XLSX, or PPTX revision. That row is not an attachment and not a new revision. The original blob stays in place. `POST /api/upload-file` and `multica attachment` are unchanged.

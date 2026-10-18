@@ -214,6 +214,23 @@ type ArtifactBlob struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 }
 
+type ArtifactDerivative struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ArtifactID  pgtype.UUID        `json:"artifact_id"`
+	RevisionID  pgtype.UUID        `json:"revision_id"`
+	Format      string             `json:"format"`
+	Status      string             `json:"status"`
+	MediaType   string             `json:"media_type"`
+	StorageKey  string             `json:"storage_key"`
+	ErrorCode   string             `json:"error_code"`
+	PageCount   int32              `json:"page_count"`
+	SheetNames  string             `json:"sheet_names"`
+	SlideCount  int32              `json:"slide_count"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
 type ArtifactEditSession struct {
 	ID             pgtype.UUID        `json:"id"`
 	ArtifactID     pgtype.UUID        `json:"artifact_id"`

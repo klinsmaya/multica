@@ -239,10 +239,11 @@ func TestClassifyArtifactPreview(t *testing.T) {
 		{"text/csv", "rows.csv", "table"},
 		{"application/pdf", "a.pdf", "pdf"},
 		{"image/png", "a.png", "image"},
-		{"text/html", "page.html", "download"},
-		{"image/svg+xml", "pic.svg", "download"},
-		{"text/plain", "pic.svg", "download"},
-		{"application/octet-stream", "deck.pptx", "download"},
+		{"text/html", "page.html", "html"},
+		{"image/svg+xml", "pic.svg", "svg"},
+		{"text/plain", "pic.svg", "svg"},
+		{"application/octet-stream", "deck.pptx", "pptx"},
+		{artifact.MediaTypeDocx, "notes.docx", "docx"},
 	}
 	for _, tc := range cases {
 		kind, _ := classifyArtifactPreview(tc.media, tc.name)
@@ -259,6 +260,7 @@ func newArtifactReadRouter() http.Handler {
 	r.Get("/api/artifacts/{artifactID}/revisions", testHandler.ListArtifactRevisions)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/preview", testHandler.GetArtifactRevisionPreview)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/static-preview", testHandler.GetArtifactStaticPreview)
+	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/office-preview", testHandler.GetArtifactOfficePreview)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/resources/*", testHandler.GetArtifactPreviewResource)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/content", testHandler.GetArtifactRevisionContent)
 	return r

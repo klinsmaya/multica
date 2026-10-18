@@ -37,4 +37,14 @@ func TestResolveMediaTypeDoesNotTrustClientAlone(t *testing.T) {
 	if ok {
 		t.Fatalf("png declared as svg was accepted as %q", got)
 	}
+
+	docx := officePackage(map[string]string{"word/document.xml": "<w:document></w:document>"})
+	got, ok = resolveMediaType(docx, MediaTypeDocx)
+	if !ok || got != MediaTypeDocx {
+		t.Fatalf("docx = %q ok=%v", got, ok)
+	}
+	got, ok = resolveMediaType(docx, "text/html")
+	if ok {
+		t.Fatalf("zip declared as html was accepted as %q", got)
+	}
 }

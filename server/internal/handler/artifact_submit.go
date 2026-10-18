@@ -408,6 +408,12 @@ func declaredArtifactMediaType(filename string, data []byte) string {
 		return "image/svg+xml"
 	case ".pdf":
 		return "application/pdf"
+	case ".docx":
+		return artifact.MediaTypeDocx
+	case ".xlsx":
+		return artifact.MediaTypeXlsx
+	case ".pptx":
+		return artifact.MediaTypePptx
 	case ".txt", ".log":
 		return "text/plain"
 	}

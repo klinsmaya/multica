@@ -74,5 +74,11 @@ export interface ArtifactPreview {
   content_path: string;
   content_disposition: string;
   static_preview_path?: string;
+  office_status?: string;
+  office_error?: string;
+  office_preview_path?: string;
+  page_count?: number;
+  sheet_names?: string[];
+  slide_count?: number;
   active_content: boolean;
 }

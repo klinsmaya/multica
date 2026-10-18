@@ -73,6 +73,27 @@ describe("artifact read schemas", () => {
     expect(parsed.active_content).toBe(false);
   });
 
+  it("keeps an office preview and drops a malformed sheet list", () => {
+    const parsed = parseWithFallback<ArtifactPreview>(
+      {
+        preview_kind: "xlsx",
+        office_status: "ready",
+        office_preview_path: "/api/artifacts/art-1/revisions/rev-1/office-preview",
+        sheet_names: ["Budget", "Notes"],
+        page_count: "nope",
+        active_content: false,
+      },
+      ArtifactPreviewSchema,
+      EMPTY_ARTIFACT_PREVIEW,
+      { endpoint: "GET /api/artifacts/{id}/revisions/{rid}/preview" },
+    );
+    expect(parsed.preview_kind).toBe("xlsx");
+    expect(parsed.office_status).toBe("ready");
+    expect(parsed.sheet_names).toEqual(["Budget", "Notes"]);
+    expect(parsed.page_count).toBe(0);
+    expect(parsed.active_content).toBe(false);
+  });
+
   it("keeps a lease and drops a malformed edit session", () => {
     const parsed = parseWithFallback<ArtifactEditSession>(
       {

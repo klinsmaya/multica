@@ -29,8 +29,8 @@ func (h *Handler) RequireArtifactsV1(next http.Handler) http.Handler {
 // MountArtifactRoutes is the only place artifact HTTP may be registered.
 // The flag is read at process start. Off (the default) mounts nothing, so
 // /api/artifacts does not exist. On mounts the read routes, the
-// task-scoped submit routes, text edit sessions, history restore, and
-// static HTML/SVG preview.
+// task-scoped submit routes, text edit sessions, history restore,
+// static HTML/SVG preview, and read-only Office preview.
 // Attachment routes are not registered here.
 func MountArtifactRoutes(r chi.Router, h *Handler) {
 	if r == nil || h == nil || !featureflags.ArtifactsV1Enabled(context.Background(), h.FeatureFlags) {
@@ -47,6 +47,7 @@ func MountArtifactRoutes(r chi.Router, h *Handler) {
 		r.Post("/api/artifacts/{artifactID}/edit-sessions", h.CreateArtifactEditSession)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/preview", h.GetArtifactRevisionPreview)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/static-preview", h.GetArtifactStaticPreview)
+		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/office-preview", h.GetArtifactOfficePreview)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/resources/*", h.GetArtifactPreviewResource)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/content", h.GetArtifactRevisionContent)
 		r.Post("/api/artifact-edit-sessions/{sessionID}/heartbeat", h.HeartbeatArtifactEditSession)

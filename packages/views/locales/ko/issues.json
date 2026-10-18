@@ -1436,6 +1436,8 @@
     "revision": "v{{version}}",
     "download": "다운로드",
     "preview_failed": "이 파일은 미리 볼 수 없습니다.",
+    "office_pending": "읽기 전용 미리보기를 준비하는 중입니다.",
+    "office_failed": "미리보기에 실패했습니다.",
     "edit": "편집",
     "save_draft": "초안 저장",
     "save_revision": "새 버전으로 저장",

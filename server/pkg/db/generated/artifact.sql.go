@@ -44,6 +44,26 @@ func (q *Queries) CasArtifactHead(ctx context.Context, arg CasArtifactHeadParams
 	return row_version, err
 }
 
+const claimArtifactDerivativeRetry = `-- name: ClaimArtifactDerivativeRetry :exec
+UPDATE artifact_derivatives
+SET status = 'pending',
+    error_code = '',
+    media_type = '',
+    storage_key = '',
+    page_count = 0,
+    sheet_names = '',
+    slide_count = 0,
+    expires_at = NULL,
+    created_at = now()
+WHERE id = $1
+  AND status <> 'ready'
+`
+
+func (q *Queries) ClaimArtifactDerivativeRetry(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, claimArtifactDerivativeRetry, id)
+	return err
+}
+
 const claimArtifactEventReceipt = `-- name: ClaimArtifactEventReceipt :execrows
 INSERT INTO artifact_event_receipts (event_id)
 SELECT artifact_events.id
@@ -227,6 +247,10 @@ deleted_events AS (
     DELETE FROM artifact_events
     WHERE artifact_events.workspace_id = $1
 ),
+deleted_derivatives AS (
+    DELETE FROM artifact_derivatives
+    WHERE artifact_derivatives.workspace_id = $1
+),
 deleted_artifacts AS (
     DELETE FROM artifacts
     WHERE artifacts.workspace_id = $1
@@ -281,6 +305,64 @@ func (q *Queries) ExpireElapsedArtifactEditSessions(ctx context.Context, artifac
 		return nil, err
 	}
 	return items, nil
+}
+
+const finishArtifactDerivative = `-- name: FinishArtifactDerivative :one
+UPDATE artifact_derivatives
+SET status = $1,
+    media_type = $2,
+    storage_key = $3,
+    error_code = $4,
+    page_count = $5,
+    sheet_names = $6,
+    slide_count = $7,
+    expires_at = $8
+WHERE id = $9
+RETURNING id, workspace_id, artifact_id, revision_id, format, status, media_type, storage_key, error_code, page_count, sheet_names, slide_count, created_at, expires_at
+`
+
+type FinishArtifactDerivativeParams struct {
+	Status     string             `json:"status"`
+	MediaType  string             `json:"media_type"`
+	StorageKey string             `json:"storage_key"`
+	ErrorCode  string             `json:"error_code"`
+	PageCount  int32              `json:"page_count"`
+	SheetNames string             `json:"sheet_names"`
+	SlideCount int32              `json:"slide_count"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	ID         pgtype.UUID        `json:"id"`
+}
+
+func (q *Queries) FinishArtifactDerivative(ctx context.Context, arg FinishArtifactDerivativeParams) (ArtifactDerivative, error) {
+	row := q.db.QueryRow(ctx, finishArtifactDerivative,
+		arg.Status,
+		arg.MediaType,
+		arg.StorageKey,
+		arg.ErrorCode,
+		arg.PageCount,
+		arg.SheetNames,
+		arg.SlideCount,
+		arg.ExpiresAt,
+		arg.ID,
+	)
+	var i ArtifactDerivative
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ArtifactID,
+		&i.RevisionID,
+		&i.Format,
+		&i.Status,
+		&i.MediaType,
+		&i.StorageKey,
+		&i.ErrorCode,
+		&i.PageCount,
+		&i.SheetNames,
+		&i.SlideCount,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
 }
 
 const finishArtifactOperation = `-- name: FinishArtifactOperation :one
@@ -374,6 +456,40 @@ func (q *Queries) GetArtifactByID(ctx context.Context, id pgtype.UUID) (Artifact
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getArtifactDerivative = `-- name: GetArtifactDerivative :one
+SELECT id, workspace_id, artifact_id, revision_id, format, status, media_type, storage_key, error_code, page_count, sheet_names, slide_count, created_at, expires_at
+FROM artifact_derivatives
+WHERE revision_id = $1
+  AND format = $2
+`
+
+type GetArtifactDerivativeParams struct {
+	RevisionID pgtype.UUID `json:"revision_id"`
+	Format     string      `json:"format"`
+}
+
+func (q *Queries) GetArtifactDerivative(ctx context.Context, arg GetArtifactDerivativeParams) (ArtifactDerivative, error) {
+	row := q.db.QueryRow(ctx, getArtifactDerivative, arg.RevisionID, arg.Format)
+	var i ArtifactDerivative
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ArtifactID,
+		&i.RevisionID,
+		&i.Format,
+		&i.Status,
+		&i.MediaType,
+		&i.StorageKey,
+		&i.ErrorCode,
+		&i.PageCount,
+		&i.SheetNames,
+		&i.SlideCount,
+		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -575,6 +691,53 @@ func (q *Queries) InsertArtifactBlob(ctx context.Context, arg InsertArtifactBlob
 		&i.ScanStatus,
 		&i.EncryptionScope,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertArtifactDerivativePending = `-- name: InsertArtifactDerivativePending :one
+INSERT INTO artifact_derivatives (
+    id, workspace_id, artifact_id, revision_id, format, status
+) VALUES (
+    $1, $2, $3,
+    $4, $5, 'pending'
+)
+ON CONFLICT (revision_id, format) DO NOTHING
+RETURNING id, workspace_id, artifact_id, revision_id, format, status, media_type, storage_key, error_code, page_count, sheet_names, slide_count, created_at, expires_at
+`
+
+type InsertArtifactDerivativePendingParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ArtifactID  pgtype.UUID `json:"artifact_id"`
+	RevisionID  pgtype.UUID `json:"revision_id"`
+	Format      string      `json:"format"`
+}
+
+func (q *Queries) InsertArtifactDerivativePending(ctx context.Context, arg InsertArtifactDerivativePendingParams) (ArtifactDerivative, error) {
+	row := q.db.QueryRow(ctx, insertArtifactDerivativePending,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ArtifactID,
+		arg.RevisionID,
+		arg.Format,
+	)
+	var i ArtifactDerivative
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ArtifactID,
+		&i.RevisionID,
+		&i.Format,
+		&i.Status,
+		&i.MediaType,
+		&i.StorageKey,
+		&i.ErrorCode,
+		&i.PageCount,
+		&i.SheetNames,
+		&i.SlideCount,
+		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -940,6 +1103,11 @@ WHERE artifact_edit_sessions.draft_ref IS NOT NULL
   AND artifact_edit_sessions.artifact_id IN (
       SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
   )
+UNION
+SELECT artifact_derivatives.storage_key
+FROM artifact_derivatives
+WHERE artifact_derivatives.workspace_id = $1
+  AND artifact_derivatives.storage_key <> ''
 `
 
 func (q *Queries) ListArtifactStorageKeysByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]string, error) {

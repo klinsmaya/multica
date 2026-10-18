@@ -206,7 +206,12 @@ WHERE artifact_edit_sessions.draft_ref IS NOT NULL
   AND artifact_edit_sessions.draft_ref <> ''
   AND artifact_edit_sessions.artifact_id IN (
       SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
-  );
+  )
+UNION
+SELECT artifact_derivatives.storage_key
+FROM artifact_derivatives
+WHERE artifact_derivatives.workspace_id = sqlc.arg(workspace_id)
+  AND artifact_derivatives.storage_key <> '';
 
 -- name: DeleteWorkspaceArtifacts :exec
 -- Bottom-up delete for one workspace. Blob rows have no workspace_id; they
@@ -251,6 +256,10 @@ deleted_event_receipts AS (
 deleted_events AS (
     DELETE FROM artifact_events
     WHERE artifact_events.workspace_id = sqlc.arg(workspace_id)
+),
+deleted_derivatives AS (
+    DELETE FROM artifact_derivatives
+    WHERE artifact_derivatives.workspace_id = sqlc.arg(workspace_id)
 ),
 deleted_artifacts AS (
     DELETE FROM artifacts
@@ -421,3 +430,46 @@ ON CONFLICT (event_id) DO NOTHING;
 SELECT id, storage_key, size_bytes, sha256, detected_media_type, scan_status
 FROM artifact_blobs
 WHERE id = $1;
+
+-- name: GetArtifactDerivative :one
+SELECT *
+FROM artifact_derivatives
+WHERE revision_id = sqlc.arg(revision_id)
+  AND format = sqlc.arg(format);
+
+-- name: InsertArtifactDerivativePending :one
+INSERT INTO artifact_derivatives (
+    id, workspace_id, artifact_id, revision_id, format, status
+) VALUES (
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(artifact_id),
+    sqlc.arg(revision_id), sqlc.arg(format), 'pending'
+)
+ON CONFLICT (revision_id, format) DO NOTHING
+RETURNING *;
+
+-- name: ClaimArtifactDerivativeRetry :exec
+UPDATE artifact_derivatives
+SET status = 'pending',
+    error_code = '',
+    media_type = '',
+    storage_key = '',
+    page_count = 0,
+    sheet_names = '',
+    slide_count = 0,
+    expires_at = NULL,
+    created_at = now()
+WHERE id = sqlc.arg(id)
+  AND status <> 'ready';
+
+-- name: FinishArtifactDerivative :one
+UPDATE artifact_derivatives
+SET status = sqlc.arg(status),
+    media_type = sqlc.arg(media_type),
+    storage_key = sqlc.arg(storage_key),
+    error_code = sqlc.arg(error_code),
+    page_count = sqlc.arg(page_count),
+    sheet_names = sqlc.arg(sheet_names),
+    slide_count = sqlc.arg(slide_count),
+    expires_at = sqlc.narg(expires_at)
+WHERE id = sqlc.arg(id)
+RETURNING *;

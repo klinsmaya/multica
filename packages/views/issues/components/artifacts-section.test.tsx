@@ -11,6 +11,7 @@ const apiMock = vi.hoisted(() => ({
   listArtifactRevisions: vi.fn(),
   getArtifactPreview: vi.fn(),
   getArtifactStaticPreview: vi.fn(),
+  getArtifactOfficePreview: vi.fn(),
   getArtifactRevisionText: vi.fn(),
   getArtifactRevisionBlob: vi.fn(),
   createArtifactEditSession: vi.fn(),
@@ -90,6 +91,7 @@ describe("ArtifactsSection", () => {
     apiMock.listArtifactRevisions.mockReset();
     apiMock.getArtifactPreview.mockReset();
     apiMock.getArtifactStaticPreview.mockReset();
+    apiMock.getArtifactOfficePreview.mockReset();
     apiMock.getArtifactRevisionText.mockReset();
     apiMock.getArtifactRevisionBlob.mockReset();
     apiMock.createArtifactEditSession.mockReset();
@@ -212,6 +214,123 @@ describe("ArtifactsSection", () => {
     const source = await screen.findByTestId("artifact-source");
     expect(source.textContent).toContain("<script>alert(1)</script>");
     expect(fallback.container.querySelector("iframe")).toBeNull();
+  });
+
+  it("shows a read-only office preview and keeps download", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-1",
+          revision_no: 1,
+          media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          filename: "notes.docx",
+          size_bytes: 32,
+          updated_at: "2026-10-17T00:00:00Z",
+          created_at: "2026-10-17T00:00:00Z",
+          row_version: 1,
+        },
+      ],
+    });
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      filename: "notes.docx",
+      media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      preview_kind: "docx",
+      office_status: "ready",
+      office_preview_path: "/api/artifacts/art-1/revisions/rev-1/office-preview",
+      page_count: 2,
+    });
+    apiMock.getArtifactOfficePreview.mockResolvedValue("<pre>Hello artifact</pre>");
+    renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    const frame = await screen.findByTestId("artifact-office-preview");
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("srcdoc")).toContain("Hello artifact");
+    expect(screen.getByText("Download")).toBeTruthy();
+    expect(screen.queryByTestId("artifact-edit")).toBeNull();
+    expect(apiMock.getArtifactRevisionText).not.toHaveBeenCalled();
+  });
+
+  it("shows a failed office preview without hiding download", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-1",
+          revision_no: 1,
+          media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          filename: "notes.docx",
+          size_bytes: 32,
+          updated_at: "2026-10-17T00:00:00Z",
+          created_at: "2026-10-17T00:00:00Z",
+          row_version: 1,
+        },
+      ],
+    });
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      filename: "notes.docx",
+      preview_kind: "docx",
+      office_status: "failed",
+      office_error: "CONVERSION_FAILED",
+    });
+    renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    expect((await screen.findByTestId("artifact-office-status")).textContent).toContain("Preview failed");
+    expect(screen.getByText("Download")).toBeTruthy();
+    expect(screen.queryByTestId("artifact-office-preview")).toBeNull();
+    expect(apiMock.getArtifactOfficePreview).not.toHaveBeenCalled();
+  });
+
+  it("shows a pending office preview and keeps download", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-1",
+          revision_no: 1,
+          media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          filename: "budget.xlsx",
+          size_bytes: 32,
+          updated_at: "2026-10-17T00:00:00Z",
+          created_at: "2026-10-17T00:00:00Z",
+          row_version: 1,
+        },
+      ],
+    });
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      filename: "budget.xlsx",
+      preview_kind: "xlsx",
+      office_status: "pending",
+    });
+    renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    expect((await screen.findByTestId("artifact-office-status")).textContent).toContain("Preparing a read-only preview");
+    expect(screen.getByText("Download")).toBeTruthy();
+    expect(screen.queryByTestId("artifact-edit")).toBeNull();
   });
 
   it("saves a markdown draft and commits a revision", async () => {

@@ -136,6 +136,18 @@ function ArtifactRevisionPanel({
         }
       }
       if (
+        (entry.preview_kind === "docx" || entry.preview_kind === "xlsx" || entry.preview_kind === "pptx") &&
+        entry.office_status === "ready" &&
+        entry.office_preview_path
+      ) {
+        try {
+          const safeDocument = await api.getArtifactOfficePreview(entry.office_preview_path);
+          return { entry, text: "", safeDocument, objectUrl: "" };
+        } catch {
+          return { entry: { ...entry, office_status: "failed" }, text: "", safeDocument: "", objectUrl: "" };
+        }
+      }
+      if (
         artifactPreviewIsSourceOnly(entry) ||
         entry.preview_kind === "markdown" ||
         entry.preview_kind === "text" ||
@@ -301,6 +313,25 @@ export function ArtifactPreviewBody({
   safeDocument?: string;
   objectUrl?: string;
 }) {
+  const { t } = useT("issues");
+  if (preview.preview_kind === "docx" || preview.preview_kind === "xlsx" || preview.preview_kind === "pptx") {
+    if (preview.office_status === "ready" && safeDocument) {
+      return (
+        <iframe
+          data-testid="artifact-office-preview"
+          title={preview.filename}
+          sandbox=""
+          referrerPolicy="no-referrer"
+          srcDoc={safeDocument}
+          ref={(node) => {
+            node?.setAttribute("csp", ARTIFACT_STATIC_PREVIEW_CSP);
+          }}
+        />
+      );
+    }
+    const label = preview.office_status === "failed" ? t(($) => $.artifacts.office_failed) : t(($) => $.artifacts.office_pending);
+    return <p data-testid="artifact-office-status">{label}</p>;
+  }
   if ((preview.preview_kind === "html" || preview.preview_kind === "svg") && safeDocument) {
     return (
       <iframe

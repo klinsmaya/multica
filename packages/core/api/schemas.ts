@@ -3883,6 +3883,12 @@ export const ArtifactPreviewSchema = z
     content_path: z.string().catch(""),
     content_disposition: z.string().catch("attachment"),
     static_preview_path: z.string().optional().catch(""),
+    office_status: z.string().optional().catch(""),
+    office_error: z.string().optional().catch(""),
+    office_preview_path: z.string().optional().catch(""),
+    page_count: z.number().optional().catch(0),
+    sheet_names: z.array(z.string()).optional().catch([]),
+    slide_count: z.number().optional().catch(0),
     active_content: z.boolean().catch(false),
   })
   .loose();

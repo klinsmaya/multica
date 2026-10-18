@@ -54,16 +54,22 @@ type artifactRevisionResponse struct {
 }
 
 type artifactPreviewResponse struct {
-	ArtifactID         string `json:"artifact_id"`
-	RevisionID         string `json:"revision_id"`
-	Filename           string `json:"filename"`
-	MediaType          string `json:"media_type"`
-	SizeBytes          int64  `json:"size_bytes"`
-	RevisionNo         int64  `json:"revision_no"`
-	PreviewKind        string `json:"preview_kind"`
-	ContentPath        string `json:"content_path"`
-	ContentDisposition string `json:"content_disposition"`
-	StaticPreviewPath  string `json:"static_preview_path,omitempty"`
+	ArtifactID         string   `json:"artifact_id"`
+	RevisionID         string   `json:"revision_id"`
+	Filename           string   `json:"filename"`
+	MediaType          string   `json:"media_type"`
+	SizeBytes          int64    `json:"size_bytes"`
+	RevisionNo         int64    `json:"revision_no"`
+	PreviewKind        string   `json:"preview_kind"`
+	ContentPath        string   `json:"content_path"`
+	ContentDisposition string   `json:"content_disposition"`
+	StaticPreviewPath  string   `json:"static_preview_path,omitempty"`
+	OfficeStatus       string   `json:"office_status,omitempty"`
+	OfficeError        string   `json:"office_error,omitempty"`
+	OfficePreviewPath  string   `json:"office_preview_path,omitempty"`
+	PageCount          int      `json:"page_count,omitempty"`
+	SheetNames         []string `json:"sheet_names,omitempty"`
+	SlideCount         int      `json:"slide_count,omitempty"`
 	// ActiveContent stays false. Static preview is a separate sanitized
 	// document. This flag does not enable scripts.
 	ActiveContent bool `json:"active_content"`
@@ -175,7 +181,7 @@ func (h *Handler) ListArtifactRevisions(w http.ResponseWriter, r *http.Request) 
 // Returns a preview entry. The body is JSON, never the file. HTML and SVG
 // are classified as download so the client does not render them as a document.
 func (h *Handler) GetArtifactRevisionPreview(w http.ResponseWriter, r *http.Request) {
-	_, rev, ok := h.loadArtifactRevisionForMember(w, r)
+	art, rev, ok := h.loadArtifactRevisionForMember(w, r)
 	if !ok {
 		return
 	}
@@ -194,6 +200,9 @@ func (h *Handler) GetArtifactRevisionPreview(w http.ResponseWriter, r *http.Requ
 	}
 	if (kind == "html" || kind == "svg") && rev.SizeBytes <= artifact.MaxStaticPreviewBytes {
 		resp.StaticPreviewPath = artifactStaticPreviewPath(uuidToString(rev.ArtifactID), uuidToString(rev.ID))
+	}
+	if kind == artifact.FormatDocx || kind == artifact.FormatXlsx || kind == artifact.FormatPptx {
+		h.attachOfficePreview(r, art, rev, &resp)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -436,6 +445,9 @@ func artifactStaticPreviewPath(artifactID, revisionID string) string {
 func classifyArtifactPreview(mediaType, filename string) (kind, disposition string) {
 	if kind, ok := artifact.StaticPreviewKind(mediaType, filename); ok {
 		return kind, "attachment"
+	}
+	if format, ok := artifact.OfficeFormat(mediaType, filename); ok {
+		return format, "attachment"
 	}
 	mt := canonicalMediaType(mediaType)
 	ext := fileExt(filename)
