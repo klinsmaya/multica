@@ -2006,6 +2006,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/listings", h.BrowseMarketListings)
 				r.Get("/listings/{listingId}", h.GetMarketListing)
 				r.Post("/listings/{listingId}/preflight", h.PreflightMarketInstall)
+				r.Post("/operations", h.CommitMarketOperation)
+				r.Get("/operations/{operationID}", h.GetMarketOperation)
+				r.Post("/operations/{operationID}/reconcile", h.ReconcileMarketOperation)
+				r.Get("/instances", h.ListMarketInstances)
+				r.Get("/instances/{instanceID}", h.GetMarketInstance)
 			})
 
 			// Issues

@@ -775,6 +775,9 @@ func main() {
 	if h.SeatCapacityWorker != nil {
 		go h.SeatCapacityWorker.Run(sweepCtx)
 	}
+	if h.MarketInstall != nil {
+		go h.MarketInstall.Run(sweepCtx)
+	}
 	if h.TelegramOutbound != nil {
 		h.TelegramOutbound.Start(sweepCtx)
 	}

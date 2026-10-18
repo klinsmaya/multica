@@ -2,8 +2,8 @@ import type { ZodType } from "zod";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
-import type { MarketBrowseQuery, MarketListing, MarketListingPage, MarketPreflight, MarketPreflightInput } from "../types/market";
-import { EMPTY_MARKET_LISTING_PAGE, MarketListingPageSchema, MarketListingSchema, MarketPreflightSchema, UNREADABLE_PREFLIGHT } from "./schemas";
+import type { MarketBrowseQuery, MarketListing, MarketListingPage, MarketOperationResult, MarketPreflight, MarketPreflightInput } from "../types/market";
+import { EMPTY_MARKET_LISTING_PAGE, MarketListingPageSchema, MarketListingSchema, MarketOperationSchema, MarketPreflightSchema, UNREADABLE_MARKET_OPERATION, UNREADABLE_PREFLIGHT } from "./schemas";
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { configStore } from "../config";
@@ -1338,6 +1338,29 @@ export class ApiClient {
     );
     return parseWithFallback<MarketPreflight>(raw, MarketPreflightSchema, UNREADABLE_PREFLIGHT, {
       endpoint: "POST /api/market/listings/{id}/preflight",
+    });
+  }
+
+  async commitMarketOperation(body: unknown): Promise<MarketOperationResult> {
+    const raw = await this.fetch<unknown>("/api/market/operations", { method: "POST", body: JSON.stringify(body) });
+    return parseWithFallback(raw, MarketOperationSchema, UNREADABLE_MARKET_OPERATION, {
+      endpoint: "POST /api/market/operations",
+    });
+  }
+
+  async getMarketOperation(operationId: string): Promise<MarketOperationResult> {
+    const raw = await this.fetch<unknown>(`/api/market/operations/${encodeURIComponent(operationId)}`);
+    return parseWithFallback(raw, MarketOperationSchema, UNREADABLE_MARKET_OPERATION, {
+      endpoint: "GET /api/market/operations/{id}",
+    });
+  }
+
+  async reconcileMarketOperation(operationId: string): Promise<MarketOperationResult> {
+    const raw = await this.fetch<unknown>(`/api/market/operations/${encodeURIComponent(operationId)}/reconcile`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, MarketOperationSchema, UNREADABLE_MARKET_OPERATION, {
+      endpoint: "POST /api/market/operations/{id}/reconcile",
     });
   }
 

@@ -199,6 +199,15 @@ cleared_agent_mcp_bindings AS (
 cleared_workspace_mcp_servers AS (
     DELETE FROM workspace_mcp_server WHERE workspace_id = $1
 ),
+cleared_market_install_bindings AS (
+    DELETE FROM market_install_binding WHERE workspace_id = $1
+),
+cleared_market_install_operations AS (
+    DELETE FROM market_install_operation WHERE workspace_id = $1
+),
+cleared_market_install_instances AS (
+    DELETE FROM market_install_instance WHERE workspace_id = $1
+),
 deleted_pending_check_suites AS (
     DELETE FROM github_pending_check_suite WHERE workspace_id = $1
 ),

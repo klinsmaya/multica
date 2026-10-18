@@ -133,3 +133,30 @@ export interface UnreadablePreflight {
 }
 
 export type MarketPreflight = ReadyPreflight | OpenPreflight | UnreadablePreflight;
+
+export interface MarketInstallStep {
+  key: string;
+  kind: string;
+  phase: string;
+  output_id?: string;
+  reason?: string;
+}
+
+export interface MarketOperation {
+  id: string;
+  instance_id?: string;
+  status: "planned" | "running" | "reconciling" | "succeeded" | "partially_succeeded" | "failed";
+  readiness: "ready" | "not_ready";
+  idempotency_key: string;
+  plan_hash: string;
+  steps: MarketInstallStep[];
+}
+
+export interface UnreadableMarketOperation {
+  id: "";
+  status: "unreadable";
+  readiness: "not_ready";
+  steps: [];
+}
+
+export type MarketOperationResult = MarketOperation | UnreadableMarketOperation;

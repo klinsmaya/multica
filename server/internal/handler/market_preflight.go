@@ -149,6 +149,33 @@ const (
 	reasonRequirementUnsupported blockReason = "requirement_unsupported"
 )
 
+// allBlockReasons is the checklist for the install stale-code map. A new
+// block reason belongs here and in staleCodeFor.
+func allBlockReasons() []blockReason {
+	return []blockReason{
+		reasonNoRuntimeForProvider,
+		reasonNoUsableRuntime,
+		reasonRuntimeNotFound,
+		reasonRuntimeProviderMismatch,
+		reasonRuntimePrivate,
+		reasonRuntimeOwnerless,
+		reasonModelCatalogUnknown,
+		reasonModelSelectionUnsupported,
+		reasonModelUnavailable,
+		reasonModelNotOffered,
+		reasonMcpAttachForbidden,
+		reasonMcpServerMissing,
+		reasonMcpLibraryAdminOnly,
+		reasonConnectionProviderUnsupported,
+		reasonConnectionsUnavailable,
+		reasonConnectionNotConnected,
+		reasonKnowledgeSourceUnsupported,
+		reasonSkillBindForbidden,
+		reasonSkillMissing,
+		reasonRequirementUnsupported,
+	}
+}
+
 type bindAction string
 
 const (

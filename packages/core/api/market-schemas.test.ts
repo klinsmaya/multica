@@ -1,14 +1,16 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PREFLIGHT_BLOCK_REASONS } from "../types/market-block-reasons";
-import type { MarketPreflight } from "../types/market";
+import type { MarketOperationResult, MarketPreflight } from "../types/market";
 import { ApiClient } from "./client";
 import { parseWithFallback } from "./schema";
 import {
   EMPTY_MARKET_LISTING_PAGE,
   MarketListingPageSchema,
   MarketListingSchema,
+  MarketOperationSchema,
   MarketPreflightSchema,
+  UNREADABLE_MARKET_OPERATION,
   UNREADABLE_PREFLIGHT,
 } from "./schemas";
 
@@ -148,5 +150,35 @@ describe("ApiClient market preflight", () => {
       version: "1.0.0",
     });
     expect(report).toEqual(UNREADABLE_PREFLIGHT);
+  });
+});
+
+const readyOperation = {
+  id: "00000000-0000-4000-8000-000000000001",
+  status: "succeeded",
+  readiness: "ready",
+  idempotency_key: "idempotency-key-1",
+  plan_hash: "sha256:abc",
+  steps: [
+    { key: "agent", kind: "agent", phase: "applied", output_id: "00000000-0000-4000-8000-000000000002" },
+    { key: "task", kind: "task", phase: "refused", reason: "task_create_not_uniquely_retryable" },
+  ],
+};
+
+describe("MarketOperationSchema", () => {
+  const parseOperation = (raw: unknown) =>
+    parseWithFallback<MarketOperationResult>(raw, MarketOperationSchema, UNREADABLE_MARKET_OPERATION, { endpoint: "test" });
+
+  it("parses a ready operation that refused the task", () => {
+    const operation = parseOperation(readyOperation);
+    expect(operation.status).toBe("succeeded");
+    if (operation.status === "unreadable") return;
+    expect(operation.readiness).toBe("ready");
+    expect(operation.steps[1]?.reason).toBe("task_create_not_uniquely_retryable");
+  });
+
+  it("reads a malformed operation as unreadable", () => {
+    expect(parseOperation({ id: "op", status: "started", steps: [] })).toEqual(UNREADABLE_MARKET_OPERATION);
+    expect(parseOperation({ status: "succeeded" })).toEqual(UNREADABLE_MARKET_OPERATION);
   });
 });

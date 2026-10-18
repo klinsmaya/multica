@@ -53,11 +53,24 @@ type ListingPage struct {
 }
 
 type Listing struct {
-	Source      Source
-	Summary     ListingSummary
-	Version     Version
-	Description string
-	Manifest    Manifest
+	Source         Source
+	Summary        ListingSummary
+	Version        Version
+	Description    string
+	Manifest       Manifest
+	PolicyVersion  string
+	TargetRevision int64
+	ReleaseDigest  string
+	ReleaseState   string
+}
+
+// ReleaseFacts is the NocoBase release pin carried beside the manifest.
+// Empty facts are a closed gate for install, not a match.
+type ReleaseFacts struct {
+	PolicyVersion  string
+	TargetRevision int64
+	ReleaseDigest  string
+	ReleaseState   string
 }
 
 type Manifest struct {
