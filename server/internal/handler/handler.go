@@ -34,6 +34,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/multica-ai/multica/server/internal/marketcatalog"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
@@ -112,8 +113,14 @@ type Config struct {
 	// CloudURL enables the SaaS-only multica-cloud connection when set. Empty
 	// keeps self-hosted deployments explicit: Cloud endpoints return 403 instead
 	// of attempting to dial a hard-coded private service.
-	CloudURL                 string
-	CloudTimeout             time.Duration
+	CloudURL     string
+	CloudTimeout time.Duration
+	// MarketCatalogURL is the Market catalog's NocoBase base URL. Empty serves
+	// the built-in sample catalog, whose listings are never installable.
+	// MarketCatalogToken is sent as a bearer token and never logged or
+	// returned to a client.
+	MarketCatalogURL         string
+	MarketCatalogToken       string
 	AttachmentDownloadMode   string
 	AttachmentDownloadURLTTL time.Duration
 	// AttachmentFrameAncestors are trusted browser origins allowed to embed
@@ -265,6 +272,7 @@ type Handler struct {
 	InvitationRateLimiters       InvitationRateLimiters
 	WebhookDeliveryWorker        *WebhookDeliveryWorker
 	CloudRuntime                 cloudRuntimeProxy
+	MarketCatalog                *marketcatalog.Client
 	// Test-only HTTP override; nil uses the default client in production.
 	googleOAuthHTTPClient *http.Client
 	// Lark integration. All three are nil when the Lark master key
@@ -515,6 +523,10 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		CloudRuntime: cloudruntime.NewClient(cloudruntime.Config{
 			BaseURL: cfg.CloudURL,
 			Timeout: cfg.CloudTimeout,
+		}),
+		MarketCatalog: marketcatalog.New(marketcatalog.Config{
+			BaseURL: cfg.MarketCatalogURL,
+			Token:   cfg.MarketCatalogToken,
 		}),
 		LLM: llmClient,
 		cfg: cfg,
