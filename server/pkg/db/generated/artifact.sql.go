@@ -207,6 +207,22 @@ func (q *Queries) CreateArtifact(ctx context.Context, arg CreateArtifactParams) 
 	return i, err
 }
 
+const deleteArtifactShareGrants = `-- name: DeleteArtifactShareGrants :exec
+DELETE FROM artifact_share_grants
+WHERE snapshot_id = $1
+  AND workspace_id = $2
+`
+
+type DeleteArtifactShareGrantsParams struct {
+	SnapshotID  pgtype.UUID `json:"snapshot_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) DeleteArtifactShareGrants(ctx context.Context, arg DeleteArtifactShareGrantsParams) error {
+	_, err := q.db.Exec(ctx, deleteArtifactShareGrants, arg.SnapshotID, arg.WorkspaceID)
+	return err
+}
+
 const deleteWorkspaceArtifacts = `-- name: DeleteWorkspaceArtifacts :exec
 WITH doomed AS (
     SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
@@ -215,6 +231,22 @@ doomed_blobs AS (
     SELECT DISTINCT artifact_revisions.blob_id AS id
     FROM artifact_revisions
     WHERE artifact_revisions.artifact_id IN (SELECT doomed.id FROM doomed)
+    UNION
+    SELECT artifact_publish_snapshots.manifest_blob_id
+    FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = $1
+),
+deleted_share_grants AS (
+    DELETE FROM artifact_share_grants
+    WHERE artifact_share_grants.workspace_id = $1
+),
+deleted_publish_snapshots AS (
+    DELETE FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = $1
+),
+deleted_audit_events AS (
+    DELETE FROM artifact_audit_events
+    WHERE artifact_audit_events.workspace_id = $1
 ),
 deleted_links AS (
     DELETE FROM artifact_links
@@ -574,6 +606,62 @@ func (q *Queries) GetArtifactOperationByID(ctx context.Context, arg GetArtifactO
 	return i, err
 }
 
+const getArtifactPublishSnapshotByID = `-- name: GetArtifactPublishSnapshotByID :one
+SELECT id, workspace_id, artifact_id, revision_id, manifest_blob_id, audience, token_hash, expires_at, revoked_at, created_by, created_at
+FROM artifact_publish_snapshots
+WHERE id = $1
+  AND workspace_id = $2
+`
+
+type GetArtifactPublishSnapshotByIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetArtifactPublishSnapshotByID(ctx context.Context, arg GetArtifactPublishSnapshotByIDParams) (ArtifactPublishSnapshot, error) {
+	row := q.db.QueryRow(ctx, getArtifactPublishSnapshotByID, arg.ID, arg.WorkspaceID)
+	var i ArtifactPublishSnapshot
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ArtifactID,
+		&i.RevisionID,
+		&i.ManifestBlobID,
+		&i.Audience,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getArtifactPublishSnapshotByTokenHash = `-- name: GetArtifactPublishSnapshotByTokenHash :one
+SELECT id, workspace_id, artifact_id, revision_id, manifest_blob_id, audience, token_hash, expires_at, revoked_at, created_by, created_at
+FROM artifact_publish_snapshots
+WHERE token_hash = $1
+`
+
+func (q *Queries) GetArtifactPublishSnapshotByTokenHash(ctx context.Context, tokenHash string) (ArtifactPublishSnapshot, error) {
+	row := q.db.QueryRow(ctx, getArtifactPublishSnapshotByTokenHash, tokenHash)
+	var i ArtifactPublishSnapshot
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ArtifactID,
+		&i.RevisionID,
+		&i.ManifestBlobID,
+		&i.Audience,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getArtifactRevision = `-- name: GetArtifactRevision :one
 SELECT
     id, artifact_id, revision_no, blob_id, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
@@ -652,6 +740,58 @@ func (q *Queries) GetArtifactRevisionRecord(ctx context.Context, arg GetArtifact
 		&i.RestoredFromRevisionID,
 	)
 	return i, err
+}
+
+const getArtifactShareGrantByTokenHash = `-- name: GetArtifactShareGrantByTokenHash :one
+SELECT id, workspace_id, snapshot_id, grantee_user_id, token_hash, created_at
+FROM artifact_share_grants
+WHERE token_hash = $1
+`
+
+func (q *Queries) GetArtifactShareGrantByTokenHash(ctx context.Context, tokenHash string) (ArtifactShareGrant, error) {
+	row := q.db.QueryRow(ctx, getArtifactShareGrantByTokenHash, tokenHash)
+	var i ArtifactShareGrant
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.SnapshotID,
+		&i.GranteeUserID,
+		&i.TokenHash,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertArtifactAuditEvent = `-- name: InsertArtifactAuditEvent :exec
+INSERT INTO artifact_audit_events (
+    id, workspace_id, actor_id, action, target_id, result, request_id
+) VALUES (
+    $1, $2, $3,
+    $4, $5, $6, $7
+)
+`
+
+type InsertArtifactAuditEventParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+	Action      string      `json:"action"`
+	TargetID    pgtype.UUID `json:"target_id"`
+	Result      string      `json:"result"`
+	RequestID   string      `json:"request_id"`
+}
+
+func (q *Queries) InsertArtifactAuditEvent(ctx context.Context, arg InsertArtifactAuditEventParams) error {
+	_, err := q.db.Exec(ctx, insertArtifactAuditEvent,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ActorID,
+		arg.Action,
+		arg.TargetID,
+		arg.Result,
+		arg.RequestID,
+	)
+	return err
 }
 
 const insertArtifactBlob = `-- name: InsertArtifactBlob :one
@@ -795,10 +935,11 @@ func (q *Queries) InsertArtifactEditSession(ctx context.Context, arg InsertArtif
 
 const insertArtifactEvent = `-- name: InsertArtifactEvent :exec
 INSERT INTO artifact_events (
-    id, workspace_id, artifact_id, revision_id, operation_id, event_type
+    id, workspace_id, artifact_id, revision_id, operation_id, event_type, snapshot_id
 ) VALUES (
     $1, $2, $3,
-    $4, $5, $6
+    $4, $5, $6,
+    $7
 )
 `
 
@@ -809,6 +950,7 @@ type InsertArtifactEventParams struct {
 	RevisionID  pgtype.UUID `json:"revision_id"`
 	OperationID pgtype.UUID `json:"operation_id"`
 	EventType   string      `json:"event_type"`
+	SnapshotID  pgtype.UUID `json:"snapshot_id"`
 }
 
 func (q *Queries) InsertArtifactEvent(ctx context.Context, arg InsertArtifactEventParams) error {
@@ -819,6 +961,7 @@ func (q *Queries) InsertArtifactEvent(ctx context.Context, arg InsertArtifactEve
 		arg.RevisionID,
 		arg.OperationID,
 		arg.EventType,
+		arg.SnapshotID,
 	)
 	return err
 }
@@ -863,6 +1006,44 @@ func (q *Queries) InsertArtifactOperation(ctx context.Context, arg InsertArtifac
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const insertArtifactPublishSnapshot = `-- name: InsertArtifactPublishSnapshot :exec
+INSERT INTO artifact_publish_snapshots (
+    id, workspace_id, artifact_id, revision_id, manifest_blob_id,
+    audience, token_hash, expires_at, created_by
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9
+)
+`
+
+type InsertArtifactPublishSnapshotParams struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ArtifactID     pgtype.UUID        `json:"artifact_id"`
+	RevisionID     pgtype.UUID        `json:"revision_id"`
+	ManifestBlobID pgtype.UUID        `json:"manifest_blob_id"`
+	Audience       string             `json:"audience"`
+	TokenHash      string             `json:"token_hash"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+}
+
+func (q *Queries) InsertArtifactPublishSnapshot(ctx context.Context, arg InsertArtifactPublishSnapshotParams) error {
+	_, err := q.db.Exec(ctx, insertArtifactPublishSnapshot,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ArtifactID,
+		arg.RevisionID,
+		arg.ManifestBlobID,
+		arg.Audience,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.CreatedBy,
+	)
+	return err
 }
 
 const insertArtifactRevision = `-- name: InsertArtifactRevision :one
@@ -937,6 +1118,34 @@ func (q *Queries) InsertArtifactRevision(ctx context.Context, arg InsertArtifact
 		&i.RestoredFromRevisionID,
 	)
 	return i, err
+}
+
+const insertArtifactShareGrant = `-- name: InsertArtifactShareGrant :exec
+INSERT INTO artifact_share_grants (
+    id, workspace_id, snapshot_id, grantee_user_id, token_hash
+) VALUES (
+    $1, $2, $3,
+    $4, $5
+)
+`
+
+type InsertArtifactShareGrantParams struct {
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	SnapshotID    pgtype.UUID `json:"snapshot_id"`
+	GranteeUserID pgtype.UUID `json:"grantee_user_id"`
+	TokenHash     string      `json:"token_hash"`
+}
+
+func (q *Queries) InsertArtifactShareGrant(ctx context.Context, arg InsertArtifactShareGrantParams) error {
+	_, err := q.db.Exec(ctx, insertArtifactShareGrant,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.SnapshotID,
+		arg.GranteeUserID,
+		arg.TokenHash,
+	)
+	return err
 }
 
 const insertArtifactUpload = `-- name: InsertArtifactUpload :one
@@ -1028,6 +1237,48 @@ func (q *Queries) LatestActorEditDraft(ctx context.Context, arg LatestActorEditD
 	return draft_ref, err
 }
 
+const listArtifactAuditEventsForTarget = `-- name: ListArtifactAuditEventsForTarget :many
+SELECT id, workspace_id, actor_id, action, target_id, result, request_id, created_at
+FROM artifact_audit_events
+WHERE workspace_id = $1
+  AND target_id = $2
+ORDER BY created_at
+`
+
+type ListArtifactAuditEventsForTargetParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TargetID    pgtype.UUID `json:"target_id"`
+}
+
+func (q *Queries) ListArtifactAuditEventsForTarget(ctx context.Context, arg ListArtifactAuditEventsForTargetParams) ([]ArtifactAuditEvent, error) {
+	rows, err := q.db.Query(ctx, listArtifactAuditEventsForTarget, arg.WorkspaceID, arg.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ArtifactAuditEvent{}
+	for rows.Next() {
+		var i ArtifactAuditEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorID,
+			&i.Action,
+			&i.TargetID,
+			&i.Result,
+			&i.RequestID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listArtifactRevisions = `-- name: ListArtifactRevisions :many
 SELECT
     id, artifact_id, revision_no, media_type, size_bytes, filename, source, actor_id, commit_operation_id, created_at
@@ -1108,6 +1359,14 @@ SELECT artifact_derivatives.storage_key
 FROM artifact_derivatives
 WHERE artifact_derivatives.workspace_id = $1
   AND artifact_derivatives.storage_key <> ''
+UNION
+SELECT artifact_blobs.storage_key
+FROM artifact_blobs
+WHERE artifact_blobs.id IN (
+    SELECT artifact_publish_snapshots.manifest_blob_id
+    FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = $1
+)
 `
 
 func (q *Queries) ListArtifactStorageKeysByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]string, error) {
@@ -1553,6 +1812,27 @@ func (q *Queries) RetainArtifactUploadConflict(ctx context.Context, arg RetainAr
 		&i.Filename,
 	)
 	return i, err
+}
+
+const revokeArtifactPublishSnapshot = `-- name: RevokeArtifactPublishSnapshot :execrows
+UPDATE artifact_publish_snapshots
+SET revoked_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND revoked_at IS NULL
+`
+
+type RevokeArtifactPublishSnapshotParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) RevokeArtifactPublishSnapshot(ctx context.Context, arg RevokeArtifactPublishSnapshotParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeArtifactPublishSnapshot, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const saveArtifactEditDraft = `-- name: SaveArtifactEditDraft :one

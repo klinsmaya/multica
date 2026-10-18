@@ -26,12 +26,13 @@ func (h *Handler) RequireArtifactsV1(next http.Handler) http.Handler {
 	})
 }
 
-// MountArtifactRoutes is the only place artifact HTTP may be registered.
-// The flag is read at process start. Off (the default) mounts nothing, so
-// /api/artifacts does not exist. On mounts the read routes, the
-// task-scoped submit routes, text edit sessions, history restore,
-// static HTML/SVG preview, and read-only Office preview.
-// Attachment routes are not registered here.
+// MountArtifactRoutes registers authenticated artifact HTTP. The flag is
+// read at process start. Off (the default) mounts nothing, so /api/artifacts
+// does not exist. On mounts the read routes, the task-scoped submit routes,
+// text edit sessions, history restore, static HTML/SVG preview, read-only
+// Office preview, and share publish/revoke. Attachment routes are not
+// registered here. Token reads are MountArtifactShareRoutes, outside the
+// session cookie group.
 func MountArtifactRoutes(r chi.Router, h *Handler) {
 	if r == nil || h == nil || !featureflags.ArtifactsV1Enabled(context.Background(), h.FeatureFlags) {
 		return
@@ -44,6 +45,8 @@ func MountArtifactRoutes(r chi.Router, h *Handler) {
 		r.Get("/api/artifacts/{artifactID}/revisions", h.ListArtifactRevisions)
 		r.Post("/api/artifacts/{artifactID}/revisions", h.UpdateArtifact)
 		r.Post("/api/artifacts/{artifactID}/restore", h.RestoreArtifact)
+		r.Post("/api/artifacts/{artifactID}/shares", h.PublishArtifactShare)
+		r.Post("/api/artifacts/{artifactID}/shares/{snapshotID}/revoke", h.RevokeArtifactShare)
 		r.Post("/api/artifacts/{artifactID}/edit-sessions", h.CreateArtifactEditSession)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/preview", h.GetArtifactRevisionPreview)
 		r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/static-preview", h.GetArtifactStaticPreview)
@@ -53,5 +56,20 @@ func MountArtifactRoutes(r chi.Router, h *Handler) {
 		r.Post("/api/artifact-edit-sessions/{sessionID}/heartbeat", h.HeartbeatArtifactEditSession)
 		r.Put("/api/artifact-edit-sessions/{sessionID}/draft", h.SaveArtifactEditDraft)
 		r.Get("/api/artifact-operations/{operationID}", h.GetArtifactOperationStatus)
+	})
+}
+
+// MountArtifactShareRoutes registers token reads. It must be called outside
+// the session Auth group. Off mounts nothing. A cookie is not a credential
+// on these routes.
+func MountArtifactShareRoutes(r chi.Router, h *Handler) {
+	if r == nil || h == nil || !featureflags.ArtifactsV1Enabled(context.Background(), h.FeatureFlags) {
+		return
+	}
+	r.Group(func(r chi.Router) {
+		r.Use(h.RequireArtifactsV1)
+		r.Get("/api/artifact-shares/{token}", h.GetArtifactShare)
+		r.Get("/api/artifact-shares/{token}/content", h.GetArtifactShareContent)
+		r.Get("/api/artifact-shares/{token}/resources/*", h.GetArtifactShareResource)
 	})
 }

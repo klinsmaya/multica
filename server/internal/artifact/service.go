@@ -50,6 +50,10 @@ type Service struct {
 	// EditLeaseTTL is how long a heartbeat extends a text-edit lease.
 	// Zero selects DefaultEditLeaseTTL.
 	EditLeaseTTL time.Duration
+	// ExternalShareEnabled allows audience external and public. It stays
+	// false unless a caller sets it from artifact_external_share. That flag
+	// defaults off. This field is not set by the server router.
+	ExternalShareEnabled bool
 }
 
 // CreateInput opens an artifact with no revision. Title is a display name.

@@ -15,6 +15,7 @@ func TestArtifactsV1RoutesStayUnmountedWhenOff(t *testing.T) {
 	h := &Handler{}
 	r := chi.NewRouter()
 	MountArtifactRoutes(r, h)
+	MountArtifactShareRoutes(r, h)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/artifacts", nil))
 	if rec.Code != http.StatusNotFound {
@@ -48,6 +49,8 @@ func TestArtifactsV1ReadRoutesMountWhenEnabled(t *testing.T) {
 		"/api/artifacts/{artifactID}/revisions/{revisionID}/content",
 		"/api/artifacts/{artifactID}/edit-sessions",
 		"/api/artifacts/{artifactID}/restore",
+		"/api/artifacts/{artifactID}/shares",
+		"/api/artifacts/{artifactID}/shares/{snapshotID}/revoke",
 		"/api/artifact-edit-sessions/{sessionID}/heartbeat",
 		"/api/artifact-edit-sessions/{sessionID}/draft",
 		"/api/artifact-operations/{operationID}",

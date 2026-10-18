@@ -51,6 +51,10 @@ const (
 	// The CLI does not read this flag; a disabled server answers 404. Attachment upload,
 	// download, and `multica attachment` are not gated by this flag.
 	ArtifactsV1 = "artifacts_v1"
+	// ArtifactExternalShare is the open product decision for external invitees
+	// and public links. It defaults off. Workspace-member and named-member
+	// snapshots do not read this flag. Do not enable it in this repository.
+	ArtifactExternalShare = "artifact_external_share"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
 	// entry on this config decision receive the permanently enabled behavior.
@@ -98,6 +102,10 @@ func LocalSearchIndexEnabled(ctx context.Context, flags *featureflag.Service) bo
 
 func ArtifactsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, ArtifactsV1, false)
+}
+
+func ArtifactExternalShareEnabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, ArtifactExternalShare, false)
 }
 
 func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service) map[string]bool {

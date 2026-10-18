@@ -1649,6 +1649,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		})
 	})
 
+	// Share token reads. Outside the session cookie group so a main-app
+	// cookie is not a credential. Off while artifacts_v1 is off.
+	handler.MountArtifactShareRoutes(r, h)
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(queries, patCache, cloudPATVerifier, cfSigner))
 		r.Use(middleware.RefreshCloudFrontCookies(cfSigner))
@@ -1674,8 +1678,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/auth/refresh", h.RefreshSession)
 		r.Post("/api/upload-file", h.UploadFile)
 		// Artifact read, task-scoped submit, text edit-session, restore,
-		// static HTML/SVG preview, and read-only Office preview routes mount only while artifacts_v1 is on. Attachment routes above and
-		// below are not part of that group.
+		// static HTML/SVG preview, read-only Office preview, and share
+		// publish/revoke mount only while artifacts_v1 is on. Attachment
+		// routes above and below are not part of that group. Token reads
+		// are mounted outside this cookie group.
 		handler.MountArtifactRoutes(r, h)
 		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)

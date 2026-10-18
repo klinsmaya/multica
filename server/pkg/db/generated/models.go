@@ -203,6 +203,17 @@ type Artifact struct {
 	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
+type ArtifactAuditEvent struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ActorID     pgtype.UUID        `json:"actor_id"`
+	Action      string             `json:"action"`
+	TargetID    pgtype.UUID        `json:"target_id"`
+	Result      string             `json:"result"`
+	RequestID   string             `json:"request_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type ArtifactBlob struct {
 	ID                pgtype.UUID        `json:"id"`
 	StorageKey        string             `json:"storage_key"`
@@ -253,6 +264,7 @@ type ArtifactEvent struct {
 	OperationID pgtype.UUID        `json:"operation_id"`
 	EventType   string             `json:"event_type"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	SnapshotID  pgtype.UUID        `json:"snapshot_id"`
 }
 
 type ArtifactEventReceipt struct {
@@ -284,6 +296,20 @@ type ArtifactOperation struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ArtifactPublishSnapshot struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ArtifactID     pgtype.UUID        `json:"artifact_id"`
+	RevisionID     pgtype.UUID        `json:"revision_id"`
+	ManifestBlobID pgtype.UUID        `json:"manifest_blob_id"`
+	Audience       string             `json:"audience"`
+	TokenHash      string             `json:"token_hash"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
 type ArtifactRevision struct {
 	ID                     pgtype.UUID        `json:"id"`
 	ArtifactID             pgtype.UUID        `json:"artifact_id"`
@@ -302,6 +328,15 @@ type ArtifactRevision struct {
 	TaskRunID              pgtype.UUID        `json:"task_run_id"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	RestoredFromRevisionID pgtype.UUID        `json:"restored_from_revision_id"`
+}
+
+type ArtifactShareGrant struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	SnapshotID    pgtype.UUID        `json:"snapshot_id"`
+	GranteeUserID pgtype.UUID        `json:"grantee_user_id"`
+	TokenHash     string             `json:"token_hash"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type ArtifactUpload struct {

@@ -211,7 +211,15 @@ UNION
 SELECT artifact_derivatives.storage_key
 FROM artifact_derivatives
 WHERE artifact_derivatives.workspace_id = sqlc.arg(workspace_id)
-  AND artifact_derivatives.storage_key <> '';
+  AND artifact_derivatives.storage_key <> ''
+UNION
+SELECT artifact_blobs.storage_key
+FROM artifact_blobs
+WHERE artifact_blobs.id IN (
+    SELECT artifact_publish_snapshots.manifest_blob_id
+    FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = sqlc.arg(workspace_id)
+);
 
 -- name: DeleteWorkspaceArtifacts :exec
 -- Bottom-up delete for one workspace. Blob rows have no workspace_id; they
@@ -225,6 +233,22 @@ doomed_blobs AS (
     SELECT DISTINCT artifact_revisions.blob_id AS id
     FROM artifact_revisions
     WHERE artifact_revisions.artifact_id IN (SELECT doomed.id FROM doomed)
+    UNION
+    SELECT artifact_publish_snapshots.manifest_blob_id
+    FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = sqlc.arg(workspace_id)
+),
+deleted_share_grants AS (
+    DELETE FROM artifact_share_grants
+    WHERE artifact_share_grants.workspace_id = sqlc.arg(workspace_id)
+),
+deleted_publish_snapshots AS (
+    DELETE FROM artifact_publish_snapshots
+    WHERE artifact_publish_snapshots.workspace_id = sqlc.arg(workspace_id)
+),
+deleted_audit_events AS (
+    DELETE FROM artifact_audit_events
+    WHERE artifact_audit_events.workspace_id = sqlc.arg(workspace_id)
 ),
 deleted_links AS (
     DELETE FROM artifact_links
@@ -413,10 +437,11 @@ WHERE id = $1 AND artifact_id = $2;
 
 -- name: InsertArtifactEvent :exec
 INSERT INTO artifact_events (
-    id, workspace_id, artifact_id, revision_id, operation_id, event_type
+    id, workspace_id, artifact_id, revision_id, operation_id, event_type, snapshot_id
 ) VALUES (
     sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(artifact_id),
-    sqlc.narg(revision_id), sqlc.narg(operation_id), sqlc.arg(event_type)
+    sqlc.narg(revision_id), sqlc.narg(operation_id), sqlc.arg(event_type),
+    sqlc.narg(snapshot_id)
 );
 
 -- name: ClaimArtifactEventReceipt :execrows
@@ -473,3 +498,64 @@ SET status = sqlc.arg(status),
     expires_at = sqlc.narg(expires_at)
 WHERE id = sqlc.arg(id)
 RETURNING *;
+
+-- name: InsertArtifactPublishSnapshot :exec
+INSERT INTO artifact_publish_snapshots (
+    id, workspace_id, artifact_id, revision_id, manifest_blob_id,
+    audience, token_hash, expires_at, created_by
+) VALUES (
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(artifact_id), sqlc.arg(revision_id),
+    sqlc.arg(manifest_blob_id), sqlc.arg(audience), sqlc.arg(token_hash),
+    sqlc.narg(expires_at), sqlc.arg(created_by)
+);
+
+-- name: InsertArtifactShareGrant :exec
+INSERT INTO artifact_share_grants (
+    id, workspace_id, snapshot_id, grantee_user_id, token_hash
+) VALUES (
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.arg(snapshot_id),
+    sqlc.arg(grantee_user_id), sqlc.arg(token_hash)
+);
+
+-- name: GetArtifactPublishSnapshotByTokenHash :one
+SELECT *
+FROM artifact_publish_snapshots
+WHERE token_hash = $1;
+
+-- name: GetArtifactShareGrantByTokenHash :one
+SELECT *
+FROM artifact_share_grants
+WHERE token_hash = $1;
+
+-- name: GetArtifactPublishSnapshotByID :one
+SELECT *
+FROM artifact_publish_snapshots
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id);
+
+-- name: RevokeArtifactPublishSnapshot :execrows
+UPDATE artifact_publish_snapshots
+SET revoked_at = now()
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND revoked_at IS NULL;
+
+-- name: DeleteArtifactShareGrants :exec
+DELETE FROM artifact_share_grants
+WHERE snapshot_id = sqlc.arg(snapshot_id)
+  AND workspace_id = sqlc.arg(workspace_id);
+
+-- name: InsertArtifactAuditEvent :exec
+INSERT INTO artifact_audit_events (
+    id, workspace_id, actor_id, action, target_id, result, request_id
+) VALUES (
+    sqlc.arg(id), sqlc.arg(workspace_id), sqlc.narg(actor_id),
+    sqlc.arg(action), sqlc.arg(target_id), sqlc.arg(result), sqlc.arg(request_id)
+);
+
+-- name: ListArtifactAuditEventsForTarget :many
+SELECT id, workspace_id, actor_id, action, target_id, result, request_id, created_at
+FROM artifact_audit_events
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND target_id = sqlc.arg(target_id)
+ORDER BY created_at;

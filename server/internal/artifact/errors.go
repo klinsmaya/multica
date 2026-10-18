@@ -15,6 +15,8 @@ const (
 	// different request. It is returned to the caller and is not stored on the
 	// original operation, which keeps its own result.
 	CodeIdempotencyReused = "IDEMPOTENCY_KEY_REUSED"
+	// CodeExternalShareDisabled means public or external audience is not enabled.
+	CodeExternalShareDisabled = "EXTERNAL_SHARE_DISABLED"
 )
 
 var (
@@ -54,4 +56,6 @@ var (
 	ErrLeaseExpired = errors.New("edit lease expired")
 	// ErrNotEditable means the head revision is not markdown, text, JSON, CSV, or DOCX.
 	ErrNotEditable = errors.New("artifact is not editable")
+	// ErrExternalShareDisabled means this process does not create external or public links.
+	ErrExternalShareDisabled = errors.New("external share is disabled")
 )

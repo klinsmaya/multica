@@ -50,3 +50,5 @@ A10 writes an `artifact_derivatives` row and a derivative object for a DOCX, XLS
 A11 DOCX edit posts a new artifact revision through the existing lease. It does not write an attachment row. XLSX and PPTX stay on the A10 preview. `POST /api/upload-file` and `multica attachment` are unchanged.
 
 A12 local candidates are not attachment rows and not artifact revisions until `Service.Commit` seals them. The bridge defaults off. `POST /api/upload-file` and `multica attachment` are unchanged.
+
+A13 publish snapshots are not attachment rows. A share token reads a pinned artifact revision. It does not call `POST /api/upload-file` or `multica attachment`. `artifact_external_share` stays off.

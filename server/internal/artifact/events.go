@@ -13,6 +13,7 @@ const (
 	EventCreated           = "artifact.created"
 	EventRevisionCommitted = "artifact.revision.committed"
 	EventPreviewReady      = "artifact.preview.ready"
+	EventShareRevoked      = "artifact.share.revoked"
 )
 
 func insertEvents(ctx context.Context, q *db.Queries, workspaceID, artifactID uuid.UUID, revisionID, operationID *uuid.UUID, kinds ...string) error {

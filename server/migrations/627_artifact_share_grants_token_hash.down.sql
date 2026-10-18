@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS artifact_share_grants_token_hash_uidx;
