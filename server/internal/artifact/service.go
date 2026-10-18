@@ -54,6 +54,15 @@ type Service struct {
 	// false unless a caller sets it from artifact_external_share. That flag
 	// defaults off. This field is not set by the server router.
 	ExternalShareEnabled bool
+	// Retention holds ops defaults for trash, staging, conflict drafts, and
+	// failed derivatives. Zero fields use the defaults in lifecycle.go.
+	// Those durations are not a product promise.
+	Retention OpsRetention
+	// GCPaused stops mark-and-sweep and the retention sweep. Nothing in the
+	// server process starts those sweeps.
+	GCPaused bool
+	// lastGCDeleted is the blob count from the last sweep that was not paused.
+	lastGCDeleted int
 }
 
 // CreateInput opens an artifact with no revision. Title is a display name.

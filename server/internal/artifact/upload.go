@@ -151,7 +151,7 @@ func (s *Service) CreateUpload(ctx context.Context, in CreateUploadInput) (Uploa
 		StagingKey:        key,
 		DeclaredMediaType: in.MediaType,
 		Filename:          in.Filename,
-		ExpiresAt:         pgTime(time.Now().Add(uploadLifetime)),
+		ExpiresAt:         pgTime(time.Now().Add(s.retention().Staging)),
 	})
 	if err != nil {
 		return Upload{}, err
@@ -292,7 +292,9 @@ func (s *Service) CancelUpload(ctx context.Context, workspaceID, uploadID uuid.U
 }
 
 // ExpireUploads marks this workspace's overdue open uploads expired and
-// deletes their staging objects. It is not scheduled; A14 owns the sweep.
+// deletes their staging objects. A conflict_draft stays until its own
+// expires_at, which is the conflict-draft retention and not the 24h staging
+// window. Nothing in the server process schedules this sweep.
 func (s *Service) ExpireUploads(ctx context.Context, workspaceID uuid.UUID, limit int) (int, error) {
 	if err := s.configured(); err != nil {
 		return 0, err
@@ -469,6 +471,7 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 			if _, err := q.RetainArtifactUploadConflict(ctx, db.RetainArtifactUploadConflictParams{
 				ID:          up.ID,
 				WorkspaceID: up.WorkspaceID,
+				ExpiresAt:   pgTime(time.Now().Add(s.retention().ConflictDraft)),
 			}); err != nil {
 				return CommitResult{}, err
 			}
@@ -569,6 +572,7 @@ func (s *Service) finalize(ctx context.Context, in FinalizeInput, requestHash st
 		if _, err := q.RetainArtifactUploadConflict(ctx, db.RetainArtifactUploadConflictParams{
 			ID:          up.ID,
 			WorkspaceID: up.WorkspaceID,
+			ExpiresAt:   pgTime(time.Now().Add(s.retention().ConflictDraft)),
 		}); err != nil {
 			return CommitResult{}, err
 		}

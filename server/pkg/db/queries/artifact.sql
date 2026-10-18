@@ -94,7 +94,7 @@ RETURNING *;
 -- this statement only records the retention deadline.
 UPDATE artifact_uploads
 SET state = 'conflict_draft',
-    expires_at = now() + interval '7 days'
+    expires_at = sqlc.arg(expires_at)
 WHERE id = sqlc.arg(id)
   AND workspace_id = sqlc.arg(workspace_id)
   AND state = 'ready'
@@ -559,3 +559,143 @@ FROM artifact_audit_events
 WHERE workspace_id = sqlc.arg(workspace_id)
   AND target_id = sqlc.arg(target_id)
 ORDER BY created_at;
+
+-- name: GetArtifactAnyStatus :one
+SELECT * FROM artifacts WHERE id = $1;
+
+-- name: MarkArtifactDeleted :execrows
+UPDATE artifacts
+SET status = 'deleted',
+    deleted_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND status = 'active'
+  AND deleted_at IS NULL;
+
+-- name: MarkArtifactRestored :execrows
+UPDATE artifacts
+SET status = 'active',
+    deleted_at = NULL,
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND status = 'deleted';
+
+-- name: ExpireOpenArtifactEditSessions :exec
+UPDATE artifact_edit_sessions
+SET state = 'expired',
+    lease_expires_at = now()
+WHERE artifact_id = sqlc.arg(artifact_id)
+  AND state = 'open';
+
+-- name: ListLiveArtifactPublishSnapshotIDs :many
+SELECT id
+FROM artifact_publish_snapshots
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND artifact_id = sqlc.arg(artifact_id)
+  AND revoked_at IS NULL;
+
+-- name: ListUnreferencedArtifactBlobs :many
+SELECT artifact_blobs.id, artifact_blobs.storage_key
+FROM artifact_blobs
+WHERE artifact_blobs.storage_key LIKE sqlc.arg(key_prefix) || '%'
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_revisions
+      WHERE artifact_revisions.blob_id = artifact_blobs.id
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_publish_snapshots
+      WHERE artifact_publish_snapshots.manifest_blob_id = artifact_blobs.id
+  )
+ORDER BY artifact_blobs.created_at
+LIMIT sqlc.arg(lim);
+
+-- name: DeleteUnreferencedArtifactBlob :execrows
+DELETE FROM artifact_blobs
+WHERE artifact_blobs.id = sqlc.arg(blob_id)
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_revisions
+      WHERE artifact_revisions.blob_id = artifact_blobs.id
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_publish_snapshots
+      WHERE artifact_publish_snapshots.manifest_blob_id = artifact_blobs.id
+  );
+
+-- name: ArtifactStorageKeyHeld :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM artifact_uploads
+        WHERE staging_key = sqlc.arg(storage_key)
+          AND state IN (
+              'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+          )
+          AND expires_at > now()
+    )
+    OR EXISTS (
+        SELECT 1 FROM artifact_edit_sessions
+        WHERE draft_ref = sqlc.arg(storage_key)
+          AND draft_ref <> ''
+    )
+    OR EXISTS (
+        SELECT 1 FROM artifact_derivatives
+        WHERE storage_key = sqlc.arg(storage_key)
+          AND storage_key <> ''
+          AND (
+              status IN ('pending', 'ready')
+              OR (status = 'failed' AND (expires_at IS NULL OR expires_at > now()))
+          )
+    )
+) AS held;
+
+-- name: SumReservedArtifactUploadBytes :one
+SELECT COALESCE(SUM(expected_size_bytes), 0)::bigint
+FROM artifact_uploads
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND state IN (
+      'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+  )
+  AND expires_at > now();
+
+-- name: SumCommittedArtifactRevisionBytes :one
+SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint
+FROM artifact_revisions
+WHERE artifact_revisions.artifact_id IN (
+    SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = sqlc.arg(workspace_id)
+);
+
+-- name: CountArtifactDerivativeQueue :one
+SELECT
+    count(*) FILTER (WHERE status = 'pending')::bigint AS pending,
+    count(*) FILTER (WHERE status = 'failed')::bigint AS failed
+FROM artifact_derivatives
+WHERE workspace_id = sqlc.arg(workspace_id);
+
+-- name: CountArtifactsPastTrash :one
+SELECT count(*)::bigint
+FROM artifacts
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND status = 'deleted'
+  AND deleted_at IS NOT NULL
+  AND deleted_at <= sqlc.arg(cutoff);
+
+-- name: ListExpiredFailedArtifactDerivatives :many
+SELECT id, storage_key
+FROM artifact_derivatives
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND status = 'failed'
+  AND storage_key <> ''
+  AND expires_at IS NOT NULL
+  AND expires_at <= now()
+ORDER BY expires_at
+LIMIT sqlc.arg(lim);
+
+-- name: ClearExpiredArtifactDerivativeKey :execrows
+UPDATE artifact_derivatives
+SET storage_key = ''
+WHERE id = sqlc.arg(id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND status = 'failed'
+  AND expires_at IS NOT NULL
+  AND expires_at <= now();

@@ -11,6 +11,40 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const artifactStorageKeyHeld = `-- name: ArtifactStorageKeyHeld :one
+SELECT (
+    EXISTS (
+        SELECT 1 FROM artifact_uploads
+        WHERE staging_key = $1
+          AND state IN (
+              'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+          )
+          AND expires_at > now()
+    )
+    OR EXISTS (
+        SELECT 1 FROM artifact_edit_sessions
+        WHERE draft_ref = $1
+          AND draft_ref <> ''
+    )
+    OR EXISTS (
+        SELECT 1 FROM artifact_derivatives
+        WHERE storage_key = $1
+          AND storage_key <> ''
+          AND (
+              status IN ('pending', 'ready')
+              OR (status = 'failed' AND (expires_at IS NULL OR expires_at > now()))
+          )
+    )
+) AS held
+`
+
+func (q *Queries) ArtifactStorageKeyHeld(ctx context.Context, storageKey string) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, artifactStorageKeyHeld, storageKey)
+	var held pgtype.Bool
+	err := row.Scan(&held)
+	return held, err
+}
+
 const casArtifactHead = `-- name: CasArtifactHead :one
 UPDATE artifacts
 SET head_revision_id = $1,
@@ -74,6 +108,29 @@ ON CONFLICT (event_id) DO NOTHING
 
 func (q *Queries) ClaimArtifactEventReceipt(ctx context.Context, id pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, claimArtifactEventReceipt, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const clearExpiredArtifactDerivativeKey = `-- name: ClearExpiredArtifactDerivativeKey :execrows
+UPDATE artifact_derivatives
+SET storage_key = ''
+WHERE id = $1
+  AND workspace_id = $2
+  AND status = 'failed'
+  AND expires_at IS NOT NULL
+  AND expires_at <= now()
+`
+
+type ClearExpiredArtifactDerivativeKeyParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) ClearExpiredArtifactDerivativeKey(ctx context.Context, arg ClearExpiredArtifactDerivativeKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearExpiredArtifactDerivativeKey, arg.ID, arg.WorkspaceID)
 	if err != nil {
 		return 0, err
 	}
@@ -154,6 +211,47 @@ func (q *Queries) ConsumeArtifactUpload(ctx context.Context, arg ConsumeArtifact
 	return i, err
 }
 
+const countArtifactDerivativeQueue = `-- name: CountArtifactDerivativeQueue :one
+SELECT
+    count(*) FILTER (WHERE status = 'pending')::bigint AS pending,
+    count(*) FILTER (WHERE status = 'failed')::bigint AS failed
+FROM artifact_derivatives
+WHERE workspace_id = $1
+`
+
+type CountArtifactDerivativeQueueRow struct {
+	Pending int64 `json:"pending"`
+	Failed  int64 `json:"failed"`
+}
+
+func (q *Queries) CountArtifactDerivativeQueue(ctx context.Context, workspaceID pgtype.UUID) (CountArtifactDerivativeQueueRow, error) {
+	row := q.db.QueryRow(ctx, countArtifactDerivativeQueue, workspaceID)
+	var i CountArtifactDerivativeQueueRow
+	err := row.Scan(&i.Pending, &i.Failed)
+	return i, err
+}
+
+const countArtifactsPastTrash = `-- name: CountArtifactsPastTrash :one
+SELECT count(*)::bigint
+FROM artifacts
+WHERE workspace_id = $1
+  AND status = 'deleted'
+  AND deleted_at IS NOT NULL
+  AND deleted_at <= $2
+`
+
+type CountArtifactsPastTrashParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Cutoff      pgtype.Timestamptz `json:"cutoff"`
+}
+
+func (q *Queries) CountArtifactsPastTrash(ctx context.Context, arg CountArtifactsPastTrashParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countArtifactsPastTrash, arg.WorkspaceID, arg.Cutoff)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createArtifact = `-- name: CreateArtifact :one
 
 INSERT INTO artifacts (
@@ -221,6 +319,27 @@ type DeleteArtifactShareGrantsParams struct {
 func (q *Queries) DeleteArtifactShareGrants(ctx context.Context, arg DeleteArtifactShareGrantsParams) error {
 	_, err := q.db.Exec(ctx, deleteArtifactShareGrants, arg.SnapshotID, arg.WorkspaceID)
 	return err
+}
+
+const deleteUnreferencedArtifactBlob = `-- name: DeleteUnreferencedArtifactBlob :execrows
+DELETE FROM artifact_blobs
+WHERE artifact_blobs.id = $1
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_revisions
+      WHERE artifact_revisions.blob_id = artifact_blobs.id
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_publish_snapshots
+      WHERE artifact_publish_snapshots.manifest_blob_id = artifact_blobs.id
+  )
+`
+
+func (q *Queries) DeleteUnreferencedArtifactBlob(ctx context.Context, blobID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUnreferencedArtifactBlob, blobID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteWorkspaceArtifacts = `-- name: DeleteWorkspaceArtifacts :exec
@@ -339,6 +458,19 @@ func (q *Queries) ExpireElapsedArtifactEditSessions(ctx context.Context, artifac
 	return items, nil
 }
 
+const expireOpenArtifactEditSessions = `-- name: ExpireOpenArtifactEditSessions :exec
+UPDATE artifact_edit_sessions
+SET state = 'expired',
+    lease_expires_at = now()
+WHERE artifact_id = $1
+  AND state = 'open'
+`
+
+func (q *Queries) ExpireOpenArtifactEditSessions(ctx context.Context, artifactID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, expireOpenArtifactEditSessions, artifactID)
+	return err
+}
+
 const finishArtifactDerivative = `-- name: FinishArtifactDerivative :one
 UPDATE artifact_derivatives
 SET status = $1,
@@ -433,6 +565,31 @@ func (q *Queries) FinishArtifactOperation(ctx context.Context, arg FinishArtifac
 		&i.ErrorCode,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getArtifactAnyStatus = `-- name: GetArtifactAnyStatus :one
+SELECT id, workspace_id, owner_scope, owner_id, title, kind, head_revision_id, row_version, status, created_by, created_at, updated_at, deleted_at FROM artifacts WHERE id = $1
+`
+
+func (q *Queries) GetArtifactAnyStatus(ctx context.Context, id pgtype.UUID) (Artifact, error) {
+	row := q.db.QueryRow(ctx, getArtifactAnyStatus, id)
+	var i Artifact
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OwnerScope,
+		&i.OwnerID,
+		&i.Title,
+		&i.Kind,
+		&i.HeadRevisionID,
+		&i.RowVersion,
+		&i.Status,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1542,6 +1699,127 @@ func (q *Queries) ListExpiredArtifactUploads(ctx context.Context, arg ListExpire
 	return items, nil
 }
 
+const listExpiredFailedArtifactDerivatives = `-- name: ListExpiredFailedArtifactDerivatives :many
+SELECT id, storage_key
+FROM artifact_derivatives
+WHERE workspace_id = $1
+  AND status = 'failed'
+  AND storage_key <> ''
+  AND expires_at IS NOT NULL
+  AND expires_at <= now()
+ORDER BY expires_at
+LIMIT $2
+`
+
+type ListExpiredFailedArtifactDerivativesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Lim         int32       `json:"lim"`
+}
+
+type ListExpiredFailedArtifactDerivativesRow struct {
+	ID         pgtype.UUID `json:"id"`
+	StorageKey string      `json:"storage_key"`
+}
+
+func (q *Queries) ListExpiredFailedArtifactDerivatives(ctx context.Context, arg ListExpiredFailedArtifactDerivativesParams) ([]ListExpiredFailedArtifactDerivativesRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredFailedArtifactDerivatives, arg.WorkspaceID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredFailedArtifactDerivativesRow{}
+	for rows.Next() {
+		var i ListExpiredFailedArtifactDerivativesRow
+		if err := rows.Scan(&i.ID, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveArtifactPublishSnapshotIDs = `-- name: ListLiveArtifactPublishSnapshotIDs :many
+SELECT id
+FROM artifact_publish_snapshots
+WHERE workspace_id = $1
+  AND artifact_id = $2
+  AND revoked_at IS NULL
+`
+
+type ListLiveArtifactPublishSnapshotIDsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ArtifactID  pgtype.UUID `json:"artifact_id"`
+}
+
+func (q *Queries) ListLiveArtifactPublishSnapshotIDs(ctx context.Context, arg ListLiveArtifactPublishSnapshotIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listLiveArtifactPublishSnapshotIDs, arg.WorkspaceID, arg.ArtifactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnreferencedArtifactBlobs = `-- name: ListUnreferencedArtifactBlobs :many
+SELECT artifact_blobs.id, artifact_blobs.storage_key
+FROM artifact_blobs
+WHERE artifact_blobs.storage_key LIKE $1 || '%'
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_revisions
+      WHERE artifact_revisions.blob_id = artifact_blobs.id
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM artifact_publish_snapshots
+      WHERE artifact_publish_snapshots.manifest_blob_id = artifact_blobs.id
+  )
+ORDER BY artifact_blobs.created_at
+LIMIT $2
+`
+
+type ListUnreferencedArtifactBlobsParams struct {
+	KeyPrefix pgtype.Text `json:"key_prefix"`
+	Lim       int32       `json:"lim"`
+}
+
+type ListUnreferencedArtifactBlobsRow struct {
+	ID         pgtype.UUID `json:"id"`
+	StorageKey string      `json:"storage_key"`
+}
+
+func (q *Queries) ListUnreferencedArtifactBlobs(ctx context.Context, arg ListUnreferencedArtifactBlobsParams) ([]ListUnreferencedArtifactBlobsRow, error) {
+	rows, err := q.db.Query(ctx, listUnreferencedArtifactBlobs, arg.KeyPrefix, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUnreferencedArtifactBlobsRow{}
+	for rows.Next() {
+		var i ListUnreferencedArtifactBlobsRow
+		if err := rows.Scan(&i.ID, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockArtifact = `-- name: LockArtifact :one
 SELECT id, workspace_id, owner_scope, owner_id, title, kind, head_revision_id, row_version, status, created_by, created_at, updated_at, deleted_at FROM artifacts
 WHERE id = $1 AND workspace_id = $2
@@ -1692,6 +1970,53 @@ func (q *Queries) LockWorkspaceArtifactQuota(ctx context.Context, workspaceID pg
 	return err
 }
 
+const markArtifactDeleted = `-- name: MarkArtifactDeleted :execrows
+UPDATE artifacts
+SET status = 'deleted',
+    deleted_at = now(),
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND status = 'active'
+  AND deleted_at IS NULL
+`
+
+type MarkArtifactDeletedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) MarkArtifactDeleted(ctx context.Context, arg MarkArtifactDeletedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markArtifactDeleted, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markArtifactRestored = `-- name: MarkArtifactRestored :execrows
+UPDATE artifacts
+SET status = 'active',
+    deleted_at = NULL,
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND status = 'deleted'
+`
+
+type MarkArtifactRestoredParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) MarkArtifactRestored(ctx context.Context, arg MarkArtifactRestoredParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markArtifactRestored, arg.ID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const nextArtifactFencingToken = `-- name: NextArtifactFencingToken :one
 SELECT (COALESCE(MAX(fencing_token), 0) + 1)::bigint
 FROM artifact_edit_sessions
@@ -1777,22 +2102,23 @@ func (q *Queries) RenewArtifactEditLease(ctx context.Context, arg RenewArtifactE
 const retainArtifactUploadConflict = `-- name: RetainArtifactUploadConflict :one
 UPDATE artifact_uploads
 SET state = 'conflict_draft',
-    expires_at = now() + interval '7 days'
-WHERE id = $1
-  AND workspace_id = $2
+    expires_at = $1
+WHERE id = $2
+  AND workspace_id = $3
   AND state = 'ready'
 RETURNING id, workspace_id, actor_id, artifact_id, base_revision_id, expected_size_bytes, expected_sha256, staging_key, state, expires_at, consumed_at, committed_revision_id, created_at, declared_media_type, filename
 `
 
 type RetainArtifactUploadConflictParams struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
 }
 
 // The verified bytes stay in staging. A sweeper (A14) expires the row;
 // this statement only records the retention deadline.
 func (q *Queries) RetainArtifactUploadConflict(ctx context.Context, arg RetainArtifactUploadConflictParams) (ArtifactUpload, error) {
-	row := q.db.QueryRow(ctx, retainArtifactUploadConflict, arg.ID, arg.WorkspaceID)
+	row := q.db.QueryRow(ctx, retainArtifactUploadConflict, arg.ExpiresAt, arg.ID, arg.WorkspaceID)
 	var i ArtifactUpload
 	err := row.Scan(
 		&i.ID,
@@ -1926,6 +2252,38 @@ type SumActorArtifactBytesParams struct {
 
 func (q *Queries) SumActorArtifactBytes(ctx context.Context, arg SumActorArtifactBytesParams) (int64, error) {
 	row := q.db.QueryRow(ctx, sumActorArtifactBytes, arg.WorkspaceID, arg.ActorID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sumCommittedArtifactRevisionBytes = `-- name: SumCommittedArtifactRevisionBytes :one
+SELECT COALESCE(SUM(artifact_revisions.size_bytes), 0)::bigint
+FROM artifact_revisions
+WHERE artifact_revisions.artifact_id IN (
+    SELECT artifacts.id FROM artifacts WHERE artifacts.workspace_id = $1
+)
+`
+
+func (q *Queries) SumCommittedArtifactRevisionBytes(ctx context.Context, workspaceID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumCommittedArtifactRevisionBytes, workspaceID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const sumReservedArtifactUploadBytes = `-- name: SumReservedArtifactUploadBytes :one
+SELECT COALESCE(SUM(expected_size_bytes), 0)::bigint
+FROM artifact_uploads
+WHERE workspace_id = $1
+  AND state IN (
+      'created', 'uploading', 'uploaded', 'verifying', 'scanning', 'ready', 'conflict_draft'
+  )
+  AND expires_at > now()
+`
+
+func (q *Queries) SumReservedArtifactUploadBytes(ctx context.Context, workspaceID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumReservedArtifactUploadBytes, workspaceID)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err

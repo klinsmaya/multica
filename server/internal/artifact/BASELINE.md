@@ -52,3 +52,5 @@ A11 DOCX edit posts a new artifact revision through the existing lease. It does 
 A12 local candidates are not attachment rows and not artifact revisions until `Service.Commit` seals them. The bridge defaults off. `POST /api/upload-file` and `multica attachment` are unchanged.
 
 A13 publish snapshots are not attachment rows. A share token reads a pinned artifact revision. It does not call `POST /api/upload-file` or `multica attachment`. `artifact_external_share` stays off.
+
+A14 trash, restore, GC, and quota health write artifact rows and artifact objects only. They do not insert or delete attachment rows. `POST /api/upload-file` and `multica attachment` are unchanged.

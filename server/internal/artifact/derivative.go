@@ -14,7 +14,7 @@ import (
 )
 
 // FailedDerivativeRetention is the ops default stored on a failed row.
-// Nothing in this process deletes the row when the time arrives.
+// SweepRetention may drop the object after that time. The row stays.
 const FailedDerivativeRetention = 7 * 24 * time.Hour
 
 // OfficeDerivative is one rebuildable preview for a revision. It is not a
@@ -150,7 +150,7 @@ func (s *Service) finishOfficeDerivative(ctx context.Context, q *db.Queries, row
 		if result.ErrorCode == "" {
 			result.ErrorCode = CodeConversionFailed
 		}
-		expires = pgtype.Timestamptz{Time: time.Now().Add(FailedDerivativeRetention), Valid: true}
+		expires = pgtype.Timestamptz{Time: time.Now().Add(s.retention().FailedDerivative), Valid: true}
 	}
 	finished, err := q.FinishArtifactDerivative(ctx, db.FinishArtifactDerivativeParams{
 		Status:     status,

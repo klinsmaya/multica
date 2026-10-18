@@ -58,4 +58,7 @@ var (
 	ErrNotEditable = errors.New("artifact is not editable")
 	// ErrExternalShareDisabled means this process does not create external or public links.
 	ErrExternalShareDisabled = errors.New("external share is disabled")
+	// ErrPurgeRefused means trash past the ops window is still not destroyed.
+	// This slice has no legal-hold record, so permanent delete stays refused.
+	ErrPurgeRefused = errors.New("artifact purge refused")
 )
