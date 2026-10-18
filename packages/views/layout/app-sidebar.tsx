@@ -73,7 +73,8 @@ import { chatSessionsOptions } from "@multica/core/chat/queries";
 import { countUnreadChatMessages } from "@multica/core/chat/unread";
 import { useChatStore } from "@multica/core/chat";
 import { api, ApiError } from "@multica/core/api";
-import { useConfigStore } from "@multica/core/config";
+import { useConfigStore, useFeatureEnabled } from "@multica/core/config";
+import { MARKET_CATALOG_V1_FLAG } from "@multica/core/feature-flags";
 import { pinListOptions } from "@multica/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@multica/core/pins/mutations";
 import { issueDetailOptions } from "@multica/core/issues/queries";
@@ -123,6 +124,7 @@ type NavKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 // Static schema (key only) — labels resolved at render via useT("layout"),
@@ -139,6 +141,7 @@ type NavLabelKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 // Nav icons are NOT declared here: they are derived from each item's
@@ -160,6 +163,7 @@ const aiTeamNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "agents", labelKey: "agents" },
   { key: "squads", labelKey: "squads" },
   { key: "skills", labelKey: "skills" },
+  { key: "market", labelKey: "market" },
   { key: "runtimes", labelKey: "runtimes" },
 ];
 
@@ -440,6 +444,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const logout = useLogout();
   const workspace = useCurrentWorkspace();
   const p = useWorkspacePaths();
+  const marketEnabled = useFeatureEnabled(MARKET_CATALOG_V1_FLAG, false);
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
@@ -886,7 +891,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             <SidebarGroupLabel>{t(($) => $.sidebar.ai_team_group)}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {aiTeamNav.map((item) => {
+                {aiTeamNav.filter((item) => item.key !== "market" || marketEnabled).map((item) => {
                   const href = p[item.key]();
                   const Icon = routeIconForPath(href);
                   const isActive = isNavActive(pathname, href);

@@ -41,6 +41,8 @@ import {
 import { issueDetailOptions, issueTimelineOptions } from "@multica/core/issues/queries";
 import { useWorkspaceId } from "@multica/core";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { useFeatureEnabled } from "@multica/core/config";
+import { MARKET_CATALOG_V1_FLAG } from "@multica/core/feature-flags";
 import { paths, useWorkspacePaths, WORKSPACE_PAGES } from "@multica/core/paths";
 import type { WorkspacePageKey, WorkspacePaths } from "@multica/core/paths";
 import { useModalStore } from "@multica/core/modals";
@@ -105,6 +107,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
   runtimes: ["runtimes", "environments", "machines", "运行时"],
   skills: ["skills", "library", "技能"],
+  market: ["market", "catalog", "市场"],
   settings: ["settings", "config", "preferences", "设置", "配置"],
 };
 
@@ -335,14 +338,15 @@ export function SearchCommand() {
   // copy under `search.pages`: one translated string per page, so the palette
   // can never disagree with the sidebar about what a page is called.
   const { t: tNav } = useT("layout");
+  const marketEnabled = useFeatureEnabled(MARKET_CATALOG_V1_FLAG, false);
   const navPages = useMemo<NavPage[]>(
     () =>
-      NAV_PAGE_KEYS.map((key) => ({
+      NAV_PAGE_KEYS.filter((key) => key !== "market" || marketEnabled).map((key) => ({
         key,
         label: tNav(($) => $.nav[WORKSPACE_PAGES[key].navKey]),
         keywords: PAGE_KEYWORDS[key],
       })),
-    [tNav],
+    [marketEnabled, tNav],
   );
   const { pathname, getShareableUrl } = useNavigation();
   const intentNavigate = useIntentNavigate();

@@ -34,6 +34,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/multica-ai/multica/server/internal/market"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
@@ -86,6 +87,9 @@ type Config struct {
 	// "missing key" message a cloud user cannot act on. Populated from
 	// MULTICA_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
+	// MarketCatalogBaseURL is the NocoBase origin for the market catalog.
+	// Empty selects the in-memory stub. Populated from MULTICA_MARKET_CATALOG_URL.
+	MarketCatalogBaseURL string
 	// PublicURL is the absolute base URL the API is reachable at from the
 	// public internet, with no trailing slash (e.g. "https://multica.ai").
 	// Used to build webhook_url responses and the fixed Remote MCP OAuth
@@ -251,6 +255,8 @@ type Handler struct {
 	// (stale-while-revalidate, MUL-5444). Nil-safe: every call site treats a nil
 	// cache as a permanent miss and falls back to the full discovery flow.
 	ModelCatalogCache ModelCatalogCache
+	// MarketCatalog is the publisher catalog. Nil falls back to the stub.
+	MarketCatalog market.Source
 	// Metrics is the shared business-metrics collector built by main.go.
 	// May be nil in tests / self-hosted with the metrics listener disabled;
 	// every Record* method is nil-safe and obsmetrics.RecordEvent treats a
@@ -519,6 +525,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		LLM: llmClient,
 		cfg: cfg,
 	}
+	h.MarketCatalog = market.NewSource(cfg.MarketCatalogBaseURL)
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
 	// The default passthrough scheduler reports sweeper-race recoveries so the
 	// daemon:register refresh fires even without the production batched wiring.

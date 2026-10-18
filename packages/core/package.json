@@ -154,6 +154,7 @@
     "./utils": "./utils.ts",
     "./constants/*": "./constants/*.ts",
     "./feature-flags": "./feature-flags/index.ts",
+    "./market": "./market/index.ts",
     "./platform": "./platform/index.ts",
     "./drafts": "./drafts/index.ts",
     "./drafts/*": "./drafts/*.ts",

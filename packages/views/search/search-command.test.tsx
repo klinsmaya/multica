@@ -8,6 +8,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
+import { configStore } from "@multica/core/config";
+import { MARKET_CATALOG_V1_FLAG } from "@multica/core/feature-flags";
 import { WORKSPACE_PAGES } from "@multica/core/paths";
 import { SearchCommand } from "./search-command";
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
@@ -236,6 +238,7 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     usage: () => "/ws-test/usage",
     runtimes: () => "/ws-test/runtimes",
     skills: () => "/ws-test/skills",
+    market: () => "/ws-test/market",
     settings: () => "/ws-test/settings",
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
     memberDetail: (id: string) => `/ws-test/members/${id}`,
@@ -359,6 +362,7 @@ describe("SearchCommand", () => {
     mockCommentExpandAll.mockReset();
     mockResolvedCollapseAll.mockReset();
     mockResolvedExpandAll.mockReset();
+    configStore.getState().setFeatureFlags({});
 
     // cmdk calls scrollIntoView on the first selected item, which jsdom doesn't implement
     Element.prototype.scrollIntoView = vi.fn();
@@ -417,6 +421,7 @@ describe("SearchCommand", () => {
   });
 
   it("offers every workspace nav page, not a hand-maintained subset", async () => {
+    configStore.getState().setFeatureFlags({ [MARKET_CATALOG_V1_FLAG]: true });
     const user = userEvent.setup();
     renderSearch();
     const input = screen.getByPlaceholderText("Type a command or search...");

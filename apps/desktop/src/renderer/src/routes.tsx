@@ -19,6 +19,8 @@ import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
 import { SkillsPage } from "@multica/views/skills";
+import { MarketCatalogPage } from "@multica/views/market";
+import { MarketDetailPage } from "./pages/market-detail-page";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
@@ -178,6 +180,12 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Runtime" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
+          { path: "market", element: <MarketCatalogPage />, handle: { title: "Market" } },
+          {
+            path: "market/:resourceId",
+            element: <MarketDetailPage />,
+            handle: { title: "Market" },
+          },
           {
             path: "skills/:id",
             element: <SkillDetailPage />,

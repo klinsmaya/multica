@@ -1,0 +1,12 @@
+{
+  "title": "市场",
+  "loading": "正在加载。",
+  "catalog_error": "无法加载目录。",
+  "empty": "没有资源。",
+  "resource_error": "无法加载此资源。",
+  "unavailable": "此资源不可用。",
+  "check_plan": "检查计划",
+  "check_failed": "检查失败。",
+  "ready": "计划已就绪。这次检查不会开始执行。",
+  "unreadable": "无法读取检查结果。"
+}
