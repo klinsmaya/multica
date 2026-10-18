@@ -83,6 +83,9 @@ func TestOfficeGoldenSamples(t *testing.T) {
 	if !strings.Contains(docx.Text, "Hello artifact") || !strings.Contains(docx.Text, "Second page") {
 		t.Fatalf("docx text = %q", docx.Text)
 	}
+	if strings.Contains(string(docx.HTML), "<p>2</p>") {
+		t.Fatalf("page count leaked into the document: %s", docx.HTML)
+	}
 
 	xlsx, err := ConvertIsolated(ctx, goldenXlsx(), OfficeLimits{Format: FormatXlsx})
 	if err != nil {

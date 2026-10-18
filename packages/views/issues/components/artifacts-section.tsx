@@ -2,12 +2,14 @@
 
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { renderAsync } from "docx-preview";
 import { ChevronRight, Download } from "lucide-react";
 import { api, errorCode } from "@multica/core/api";
 import { ARTIFACTS_V1_FLAG } from "@multica/core/feature-flags";
 import { useFeatureEnabled } from "@multica/core/config";
 import { useActorName } from "@multica/core/workspace/hooks";
 import type { ArtifactEditSession, ArtifactPreview, ArtifactSummary } from "@multica/core/types";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { formatBytes } from "../../common/format-bytes";
 import { ReadonlyContent } from "../../editor/readonly-content";
@@ -87,17 +89,29 @@ export function ArtifactsSection({
                   key={artifact.id}
                   artifact={artifact}
                   selected={artifact.id === selectedId}
-                  onOpen={() => setSelectedId(artifact.id === selectedId ? null : artifact.id)}
+                  onOpen={() => setSelectedId(artifact.id)}
                 />
               ))}
+            </div>
+          )}
+          <Dialog
+            open={selected != null}
+            onOpenChange={(next) => {
+              if (!next) setSelectedId(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>{selected?.title}</DialogTitle>
+              </DialogHeader>
               {selected?.head_revision_id && (
                 <ArtifactRevisionPanel
                   artifactId={selected.id}
                   revisionId={selected.head_revision_id}
                 />
               )}
-            </div>
-          )}
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>
@@ -158,7 +172,13 @@ function ArtifactRevisionPanel({
   });
   const preview = useQuery({
     queryKey: ["artifact-preview", artifactId, picked] as const,
-    queryFn: async () => {
+    queryFn: async (): Promise<{
+      entry: ArtifactPreview;
+      text: string;
+      safeDocument: string;
+      objectUrl: string;
+      docxBlob?: Blob;
+    }> => {
       const entry = await api.getArtifactPreview(artifactId, picked);
       if (
         (entry.preview_kind === "html" || entry.preview_kind === "svg") &&
@@ -172,8 +192,12 @@ function ArtifactRevisionPanel({
           return { entry, text, safeDocument: "", objectUrl: "" };
         }
       }
+      if (entry.preview_kind === "docx") {
+        const docxBlob = await api.getArtifactRevisionBlob(artifactId, picked);
+        return { entry, text: "", safeDocument: "", objectUrl: "", docxBlob };
+      }
       if (
-        (entry.preview_kind === "docx" || entry.preview_kind === "xlsx" || entry.preview_kind === "pptx") &&
+        (entry.preview_kind === "xlsx" || entry.preview_kind === "pptx") &&
         entry.office_status === "ready" &&
         entry.office_preview_path
       ) {
@@ -223,7 +247,7 @@ function ArtifactRevisionPanel({
   }
 
   return (
-    <div className="mt-1 rounded-md border border-border p-2" data-testid="artifact-preview">
+    <div data-testid="artifact-preview">
       {revisions.data && revisions.data.revisions.length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {revisions.data.revisions.map((revision) => (
@@ -277,6 +301,7 @@ function ArtifactRevisionPanel({
           text={preview.data.text}
           safeDocument={preview.data.safeDocument}
           objectUrl={preview.data.objectUrl}
+          docxBlob={preview.data.docxBlob}
         />
       ) : preview.isError ? (
         <p className="text-caption text-muted-foreground">{t(($) => $.artifacts.preview_failed)}</p>
@@ -345,6 +370,82 @@ export function artifactTextEditable(filename: string, mediaType: string): boole
 const ARTIFACT_STATIC_PREVIEW_CSP =
   "sandbox; default-src 'none'; connect-src 'none'; img-src 'none'; font-src 'none'; style-src 'none'; script-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
 
+function DocxDocument({
+  blob,
+  preview,
+}: {
+  blob?: Blob;
+  preview: ArtifactPreview;
+}) {
+  const { t } = useT("issues");
+  const host = useRef<HTMLDivElement>(null);
+  const [fallback, setFallback] = useState("");
+  const [gaveUp, setGaveUp] = useState(false);
+  const [trackedBlob, setTrackedBlob] = useState(blob);
+  if (blob !== trackedBlob) {
+    setTrackedBlob(blob);
+    setFallback("");
+    setGaveUp(false);
+  }
+
+  useEffect(() => {
+    const node = host.current;
+    if (!node || !blob) return;
+    let cancel = false;
+    setFallback("");
+    setGaveUp(false);
+    node.replaceChildren();
+    renderAsync(blob, node, node).catch(async () => {
+      if (cancel) return;
+      if (preview.office_status === "ready" && preview.office_preview_path) {
+        let html = "";
+        try {
+          html = await api.getArtifactOfficePreview(preview.office_preview_path);
+        } catch {
+          html = "";
+        }
+        if (!cancel && html) {
+          setFallback(html);
+          return;
+        }
+      }
+      if (!cancel) setGaveUp(true);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [blob, preview.office_preview_path, preview.office_status]);
+
+  if (!blob || gaveUp) {
+    const label = preview.office_status === "failed"
+      ? t(($) => $.artifacts.office_failed)
+      : t(($) => $.artifacts.office_pending);
+    return <p data-testid="artifact-office-status">{label}</p>;
+  }
+  if (fallback) {
+    return (
+      <iframe
+        data-testid="artifact-office-preview"
+        title={preview.filename}
+        sandbox=""
+        referrerPolicy="no-referrer"
+        srcDoc={fallback}
+        className="min-h-96 w-full bg-white"
+        ref={(node) => {
+          node?.setAttribute("csp", ARTIFACT_STATIC_PREVIEW_CSP);
+        }}
+      />
+    );
+  }
+  return (
+    <div
+      ref={host}
+      data-testid="artifact-docx-preview"
+      className="min-h-96 overflow-auto bg-white text-neutral-900"
+    />
+  );
+}
+
 export function artifactPreviewIsSourceOnly(preview: ArtifactPreview): boolean {
   if (preview.static_preview_path && (preview.preview_kind === "html" || preview.preview_kind === "svg")) {
     return false;
@@ -369,14 +470,19 @@ export function ArtifactPreviewBody({
   text,
   safeDocument,
   objectUrl,
+  docxBlob,
 }: {
   preview: ArtifactPreview;
   text: string;
   safeDocument?: string;
   objectUrl?: string;
+  docxBlob?: Blob;
 }) {
   const { t } = useT("issues");
-  if (preview.preview_kind === "docx" || preview.preview_kind === "xlsx" || preview.preview_kind === "pptx") {
+  if (preview.preview_kind === "docx") {
+    return <DocxDocument blob={docxBlob} preview={preview} />;
+  }
+  if (preview.preview_kind === "xlsx" || preview.preview_kind === "pptx") {
     if (preview.office_status === "ready" && safeDocument) {
       return (
         <iframe

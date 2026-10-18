@@ -183,11 +183,6 @@ func isSlideXML(name string) bool {
 func officeHTML(ex officeExtract) []byte {
 	var b strings.Builder
 	b.WriteString("<article>")
-	if ex.PageCount > 0 {
-		b.WriteString("<p>")
-		b.WriteString(html.EscapeString(itoa(ex.PageCount)))
-		b.WriteString("</p>")
-	}
 	for _, name := range ex.SheetNames {
 		b.WriteString("<p>")
 		b.WriteString(html.EscapeString(name))

@@ -29,6 +29,12 @@ function errorCode(err: unknown): string | undefined {
 
 vi.mock("@multica/core/api", () => ({ api: apiMock, errorCode }));
 
+const docxRender = vi.hoisted(() => vi.fn(async (_data: Blob, el: HTMLElement) => {
+  el.textContent = "Rendered document";
+}));
+
+vi.mock("docx-preview", () => ({ renderAsync: docxRender }));
+
 vi.mock("./artifact-docx-editor", () => ({
   ArtifactDocxEditor: () => <div data-testid="artifact-docx-editor" />,
 }));
@@ -103,6 +109,10 @@ describe("ArtifactsSection", () => {
     apiMock.heartbeatArtifactEditSession.mockReset();
     apiMock.saveArtifactDraft.mockReset();
     apiMock.commitArtifactRevision.mockReset();
+    docxRender.mockReset();
+    docxRender.mockImplementation(async (_data: Blob, el: HTMLElement) => {
+      el.textContent = "Rendered document";
+    });
     apiMock.createArtifactEditSession.mockResolvedValue(editSession);
     apiMock.saveArtifactDraft.mockResolvedValue(editSession);
     apiMock.commitArtifactRevision.mockResolvedValue({
@@ -244,7 +254,17 @@ describe("ArtifactsSection", () => {
     expect(fallback.container.querySelector("iframe")).toBeNull();
   });
 
-  it("shows a read-only office preview and keeps download", async () => {
+  it("opens a dialog when a list item is clicked", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Weekly report");
+    expect(await screen.findByTestId("artifact-source")).toBeTruthy();
+    expect(screen.getByTestId("issue-artifacts").querySelector("[data-testid='artifact-preview']")).toBeNull();
+  });
+
+  it("renders a docx in the dialog and falls back to extracted text", async () => {
     configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
     apiMock.listArtifacts.mockResolvedValue({
       artifacts: [
@@ -277,14 +297,57 @@ describe("ArtifactsSection", () => {
       page_count: 2,
     });
     apiMock.getArtifactOfficePreview.mockResolvedValue("<pre>Hello artifact</pre>");
+    apiMock.getArtifactRevisionBlob.mockResolvedValue(new Blob(["docx"]));
+    const view = renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    const dialog = await screen.findByRole("dialog");
+    const rendered = await screen.findByTestId("artifact-docx-preview");
+    expect(dialog.contains(rendered)).toBe(true);
+    expect(rendered.textContent).toBe("Rendered document");
+    expect(screen.getByTestId("issue-artifacts").querySelector("[data-testid='artifact-preview']")).toBeNull();
+    expect(screen.getByText("Download")).toBeTruthy();
+    expect(screen.getByTestId("artifact-edit")).toBeTruthy();
+    expect(apiMock.getArtifactOfficePreview).not.toHaveBeenCalled();
+    expect(rendered.textContent).not.toMatch(/^2/);
+    view.unmount();
+
+    docxRender.mockRejectedValue(new Error("render failed"));
+    apiMock.getArtifactRevisionBlob.mockResolvedValue(new Blob(["docx"]));
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      filename: "notes.docx",
+      media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      preview_kind: "docx",
+      revision_id: "rev-2",
+      office_status: "ready",
+      office_preview_path: "/api/artifacts/art-1/revisions/rev-2/office-preview",
+    });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-2",
+          revision_no: 2,
+          media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          filename: "notes.docx",
+          size_bytes: 32,
+          updated_at: "2026-10-17T00:00:00Z",
+          created_at: "2026-10-17T00:00:00Z",
+          row_version: 2,
+        },
+      ],
+    });
     renderSection();
     fireEvent.click(await screen.findByText("Weekly report"));
     const frame = await screen.findByTestId("artifact-office-preview");
-    expect(frame.getAttribute("sandbox")).toBe("");
-    expect(frame.getAttribute("srcdoc")).toContain("Hello artifact");
-    expect(screen.getByText("Download")).toBeTruthy();
-    expect(screen.getByTestId("artifact-edit")).toBeTruthy();
-    expect(apiMock.getArtifactRevisionText).not.toHaveBeenCalled();
+    expect(frame.getAttribute("srcdoc")).toBe("<pre>Hello artifact</pre>");
+    expect(frame.getAttribute("srcdoc")).not.toContain("<p>2</p>");
   });
 
   it("opens the docx editor and leaves spreadsheets read only", async () => {
@@ -426,6 +489,9 @@ describe("ArtifactsSection", () => {
     apiMock.getArtifactRevisionText.mockResolvedValue("# report\n");
     renderSection();
     fireEvent.click(await screen.findByText("Weekly report"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector("[data-testid='artifact-preview']")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "report" })).toBeTruthy();
     fireEvent.click(await screen.findByTestId("artifact-edit"));
     const editor = await screen.findByTestId("artifact-editor");
     await waitFor(() => expect((screen.getByTestId("artifact-save-draft") as HTMLButtonElement).disabled).toBe(false));
