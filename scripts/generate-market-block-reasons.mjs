@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-// Regenerates packages/core/types/market-block-reasons.ts from
-// server/internal/handler/market_block_reasons.json (the single source of truth).
-//
-// Run via `pnpm generate:market-block-reasons`. CI re-runs the generator and
-// `git diff --exit-code`s the output, so the JSON and TS sides cannot drift.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";

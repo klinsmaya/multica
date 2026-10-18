@@ -115,10 +115,6 @@ type Config struct {
 	// of attempting to dial a hard-coded private service.
 	CloudURL     string
 	CloudTimeout time.Duration
-	// MarketCatalogURL is the Market catalog's NocoBase base URL. Empty serves
-	// the built-in sample catalog, whose listings are never installable.
-	// MarketCatalogToken is sent as a bearer token and never logged or
-	// returned to a client.
 	MarketCatalogURL         string
 	MarketCatalogToken       string
 	AttachmentDownloadMode   string

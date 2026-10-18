@@ -902,12 +902,6 @@ type runtimeLister interface {
 	ListVisibleAgentRuntimes(ctx context.Context, arg db.ListVisibleAgentRuntimesParams) ([]db.AgentRuntime, error)
 }
 
-// runtimesVisibleTo is the runtime list a member is shown. Owners and admins
-// see every runtime: governance visibility lets them find a private runtime
-// to rename or delete it, while the per-runtime read gate still denies data
-// and machine access. Everyone else sees public runtimes and their own.
-// ListAgentRuntimes and market preflight both read it, so a preflight option
-// never names a runtime the runtimes page hides.
 func runtimesVisibleTo(ctx context.Context, q runtimeLister, member db.Member) ([]db.AgentRuntime, error) {
 	if roleAllowed(member.Role, "owner", "admin") {
 		return q.ListAgentRuntimes(ctx, member.WorkspaceID)

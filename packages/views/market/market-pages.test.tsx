@@ -13,8 +13,6 @@ import enMarket from "../locales/en/market.json";
 const apiCalls = vi.hoisted(() => [] as { method: string; args: unknown[] }[]);
 const apiResults = vi.hoisted(() => ({}) as Record<string, unknown>);
 
-// Every api method is answered by this proxy and recorded, so a test can assert the
-// exact set of calls a page makes, including calls nobody thought to stub.
 vi.mock("@multica/core/api", async () => {
   const actual = await vi.importActual<typeof import("@multica/core/api")>("@multica/core/api");
   const api = new Proxy(

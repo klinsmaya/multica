@@ -3920,9 +3920,6 @@ const PreflightMetaSchema = z.object({
   evaluated_for: z.object({ user_id: z.string(), role: z.string() }),
 });
 
-// Ready has no defaults on its check lists. A ready report missing a list, or
-// carrying a stub source, matches no variant, so a default can never complete
-// a ready report.
 const ReadyPreflightSchema = PreflightMetaSchema.extend({
   status: z.literal("ready"),
   source: z.literal("live"),
@@ -3944,7 +3941,6 @@ const BlockedPreflightSchema = PreflightMetaSchema.extend({
 
 const ChoosePreflightSchema = BlockedPreflightSchema.extend({ status: z.literal("choose") });
 
-/** A "ready" with any non-satisfied check matches no variant and falls back to unreadable. */
 export const MarketPreflightSchema = z.discriminatedUnion("status", [
   ReadyPreflightSchema,
   BlockedPreflightSchema,

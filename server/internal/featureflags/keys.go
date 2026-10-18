@@ -41,9 +41,6 @@ const (
 	// makes those endpoints answer 404, so clients stop syncing and search
 	// through the server again without a client release.
 	LocalSearchIndex = "local_search_index"
-	// MarketV1 gates the Market catalog, listing detail, and install preflight
-	// on the server and in the clients. Off by default. With it off the routes
-	// answer 404 and the pages render nothing.
 	MarketV1 = "market_v1"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation

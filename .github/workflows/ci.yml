@@ -908,8 +908,6 @@ jobs:
           git diff --exit-code -- packages/core/paths/reserved-slugs.ts
 
       - name: Verify market-block-reasons.ts is up to date
-        # The Go consts are pinned to the same JSON by
-        # TestBlockReasonsMatchJSON, so Go, TypeScript, and copy share it.
         run: |
           node scripts/generate-market-block-reasons.mjs
           git diff --exit-code -- packages/core/types/market-block-reasons.ts

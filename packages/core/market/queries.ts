@@ -35,11 +35,6 @@ export function marketListingOptions(wsId: string, listingId: string, version?: 
   });
 }
 
-/**
- * Preflight is a read keyed by its input, so a new runtime pick is a new key.
- * staleTime 0 and refetch on focus recheck after the member fixes something
- * elsewhere, such as connecting an app. No retry: a catalog 502 shows at once.
- */
 export function marketPreflightOptions(wsId: string, input: MarketPreflightInput | null) {
   return queryOptions({
     queryKey: input ? marketKeys.preflight(wsId, input) : [...marketKeys.all(wsId), "preflight"],

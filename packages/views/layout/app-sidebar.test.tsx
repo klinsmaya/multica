@@ -295,8 +295,6 @@ describe("PinRow", () => {
   });
 });
 
-// The sidebar's NavKey and NavLabelKey unions are its own copies of the page
-// registry's keys; this keeps them, and the nav lists built from them, in step.
 describe("sidebar nav coverage", () => {
   it("lists every workspace page once, under the page's own label", () => {
     const items = SIDEBAR_NAV_GROUPS.flat();

@@ -29,7 +29,6 @@ func filterByTk(key string) url.Values {
 	return url.Values{"filterByTk": {key}}
 }
 
-// listQuery maps Text to a NocoBase $or of $includes on name and summary.
 func listQuery(q BrowseQuery) url.Values {
 	v := url.Values{
 		"page":     {fmt.Sprint(q.Page)},
@@ -90,7 +89,6 @@ type wireAgent struct {
 	Instructions string `json:"instructions"`
 }
 
-// wireRequirement is one flat record per need. Kind picks which fields matter.
 type wireRequirement struct {
 	Kind     string           `json:"kind"`
 	Name     string           `json:"name,omitempty"`
@@ -130,8 +128,6 @@ func catalogErrors(errs []wireError) error {
 	return fmt.Errorf("%w: catalog reported %q", ErrCatalogUnavailable, errs[0].Message)
 }
 
-// decodePage fails only on a broken envelope. An item that fails parseSummary
-// is dropped and logged, so one bad listing does not empty the browse page.
 func decodePage(body []byte) (ListingPage, error) {
 	var env wireEnvelope[[]json.RawMessage]
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -178,8 +174,6 @@ func decodeSummary(body []byte) (ListingSummary, error) {
 	return parseSummary(*env.Data)
 }
 
-// decodeVersion is strict. Any error here is ErrInvalidListing, and a listing
-// that does not parse is never installable.
 func decodeVersion(body []byte) (Version, string, Manifest, error) {
 	var env wireEnvelope[*wireVersion]
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -235,13 +229,6 @@ type knowledgeKey struct {
 	name   string
 }
 
-// parseManifest is the fail-closed policy for the wire shape.
-//   - agent missing or agent.name empty is ErrInvalidListing
-//   - exactly one kind "model" with a provider, else ErrInvalidListing
-//   - a known kind missing its required field is ErrInvalidListing
-//   - duplicates keep the first. Connections and knowledge dedupe on provider
-//     or source plus name, so an unknown provider never hides behind a known one.
-//   - an unknown kind becomes UnsupportedNeed, one per kind
 func parseManifest(w wireManifest) (Manifest, error) {
 	if w.Agent == nil || blank(w.Agent.Name) {
 		return Manifest{}, invalid("manifest has no agent name")
@@ -330,8 +317,6 @@ func parseManifest(w wireManifest) (Manifest, error) {
 	return m, nil
 }
 
-// The encoders are the inverse of the decoders. fixtureFetcher uses them, and
-// TestSamplesRoundTrip asserts decode(encode(l)) == l for every sample.
 func encodeSummary(s ListingSummary) wireListing {
 	return wireListing{
 		ID:            string(s.ID),
@@ -423,8 +408,6 @@ func (n nocobaseHTTP) get(ctx context.Context, resource string, q url.Values) ([
 	return body, nil
 }
 
-// fixtureFetcher ignores Text and paging. It returns every listing on page one.
-// A key it does not hold answers data null, as NocoBase does.
 type fixtureFetcher struct {
 	listings []Listing
 }

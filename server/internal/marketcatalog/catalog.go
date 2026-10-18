@@ -13,30 +13,21 @@ import (
 const defaultTimeout = 10 * time.Second
 
 type Config struct {
-	BaseURL    string // "" selects the sample catalog
+	BaseURL    string
 	Token      string
 	Timeout    time.Duration
 	HTTPClient *http.Client
 }
 
-// Client is the only way into the catalog. Browse and Listing return domain
-// types. Wire shapes, paging, version lookup, and the stub stay behind it.
 type Client struct {
 	source Source
 	fetch  fetcher
 }
 
-// fetcher returns the raw NocoBase response body for one resource action. It
-// is the adapter boundary. nocobaseHTTP talks to a server and fixtureFetcher
-// encodes typed listings into the same bytes, so one decoder serves both and
-// a sample listing cannot hold anything the live parser would reject.
 type fetcher interface {
 	get(ctx context.Context, resource string, query url.Values) ([]byte, error)
 }
 
-// New never falls back to the sample catalog when BaseURL is set. A malformed
-// BaseURL yields a Client with Source nocobase whose every call returns
-// ErrCatalogUnavailable, so a misconfigured server reads as down, not as live.
 func New(cfg Config) *Client {
 	raw := strings.TrimSpace(cfg.BaseURL)
 	if raw == "" {
@@ -63,16 +54,10 @@ func New(cfg Config) *Client {
 	}
 }
 
-// NewFixture serves listings as a stub catalog. The default sample catalog and
-// tests both use it. Several Listing values may share an ID to model versions.
-// The first one with a given ID supplies the summary.
 func NewFixture(listings ...Listing) *Client {
 	return &Client{source: SourceStub, fetch: fixtureFetcher{listings: listings}}
 }
 
-// FixtureHandler serves listings over the NocoBase HTTP contract. A Client
-// built by New against it is live, which is the only way a test reaches a
-// ready preflight, because a stub listing is never ready.
 func FixtureHandler(listings ...Listing) http.Handler {
 	f := fixtureFetcher{listings: listings}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,8 +78,8 @@ func FixtureHandler(listings ...Listing) http.Handler {
 
 type BrowseQuery struct {
 	Text     string
-	Page     int // clamped to >= 1
-	PageSize int // clamped to 1..50. 0 means 24.
+	Page     int
+	PageSize int
 }
 
 const (
@@ -137,7 +122,6 @@ func (c *Client) Browse(ctx context.Context, q BrowseQuery) (ListingPage, error)
 	return page, nil
 }
 
-// Listing returns version v of listing id. v == "" means the latest version.
 func (c *Client) Listing(ctx context.Context, id ListingID, v Version) (Listing, error) {
 	body, err := c.fetch.get(ctx, resListingsGet, filterByTk(string(id)))
 	if err != nil {

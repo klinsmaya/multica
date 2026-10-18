@@ -21,17 +21,11 @@ type preflightInput struct {
 	Choice  modelChoice
 }
 
-// modelChoice is the only choice a member makes. Tools, connections, and
-// knowledge resolve by name because each name is unique in its workspace
-// table, so there is nothing to pick.
 type modelChoice struct {
-	RuntimeID pgtype.UUID // invalid means resolution picks
-	ModelID   string      // "" means the listing's first acceptable id, or the runtime default
+	RuntimeID pgtype.UUID
+	ModelID   string
 }
 
-// marketReader is every database read preflight may make. *db.Queries bound to
-// any transaction satisfies it. TestMarketReaderIsReadOnly fails if a method
-// whose name does not start with Get or List is added.
 type marketReader interface {
 	runtimeLister
 	ListWorkspaceMcpServers(ctx context.Context, workspaceID pgtype.UUID) ([]db.WorkspaceMcpServer, error)
@@ -39,8 +33,6 @@ type marketReader interface {
 	ListActiveUserComposioConnections(ctx context.Context, userID pgtype.UUID) ([]db.UserComposioConnection, error)
 }
 
-// runMarketRead runs fn in a READ ONLY transaction. Postgres rejects any write
-// inside it, and REPEATABLE READ makes the reads share one snapshot.
 func (h *Handler) runMarketRead(ctx context.Context, fn func(q marketReader) error) error {
 	tx, err := h.TxStarter.Begin(ctx)
 	if err != nil {
@@ -58,21 +50,17 @@ func (h *Handler) runMarketRead(ctx context.Context, fn func(q marketReader) err
 	return tx.Commit(ctx)
 }
 
-// preflightFacts is everything evaluatePreflight reads. The loader fills it.
-// Tests build it by hand.
 type preflightFacts struct {
 	member     db.Member
-	runtimes   []db.AgentRuntime                // runtimesVisibleTo(member), every provider
-	catalogs   map[string]*ModelCatalogSnapshot // runtime id to last good catalog. Absent means unknown.
-	mcpServers []db.WorkspaceMcpServer          // loaded only when the manifest needs a tool
-	skills     map[string]db.Skill              // by name, only the names the manifest asks for
-	composio   *composioFacts                   // nil when Composio is not configured on this server
+	runtimes   []db.AgentRuntime
+	catalogs   map[string]*ModelCatalogSnapshot
+	mcpServers []db.WorkspaceMcpServer
+	skills     map[string]db.Skill
+	composio   *composioFacts
 }
 
-// composioFacts exists only when Composio is configured, so "configured" and
-// "the member's connections" cannot disagree.
 type composioFacts struct {
-	connections []db.UserComposioConnection // the member's active connections, newest first
+	connections []db.UserComposioConnection
 }
 
 func (h *Handler) loadPreflightFacts(ctx context.Context, q marketReader, member db.Member, m marketcatalog.Manifest) (preflightFacts, error) {
@@ -116,9 +104,6 @@ func (h *Handler) loadPreflightFacts(ctx context.Context, q marketReader, member
 	return f, nil
 }
 
-// preflightInstall is the one entry point for "could this member install this
-// listing". The HTTP handler calls it inside runMarketRead. M03 commit calls it
-// inside its write transaction and refuses unless the result is ready.
 func (h *Handler) preflightInstall(ctx context.Context, q marketReader, member db.Member, l marketcatalog.Listing, choice modelChoice) (preflightReport, error) {
 	f, err := h.loadPreflightFacts(ctx, q, member, l.Manifest)
 	if err != nil {
@@ -132,16 +117,9 @@ type checkStatus string
 const (
 	checkSatisfied checkStatus = "satisfied"
 	checkBlocked   checkStatus = "blocked"
-	checkChoose    checkStatus = "choose" // model only. More than one usable runtime and no choice.
+	checkChoose    checkStatus = "choose"
 )
 
-// blockReason names why a check blocks. A missing object and a missing
-// permission are both blocks. The reason, not a second status, tells them
-// apart, and each reason has exactly one remedy in the UI copy.
-//
-// The values are the list in market_block_reasons.json. TestBlockReasonsMatchJSON
-// parses this file with go/parser, collects every const of type blockReason,
-// and fails when that set and the JSON differ.
 type blockReason string
 
 const (
@@ -175,21 +153,19 @@ type bindAction string
 
 const (
 	bindUseExisting bindAction = "use_existing"
-	bindProvision   bindAction = "provision" // the commit would create it from the listing
+	bindProvision   bindAction = "provision"
 )
 
 type binding struct {
 	Action bindAction
-	ID     pgtype.UUID // valid iff Action is bindUseExisting
+	ID     pgtype.UUID
 }
 
-// check is a tool, connection, knowledge, or unsupported row. Build one with
-// satisfied or blocked only.
 type check struct {
 	Name    string
-	Status  checkStatus // checkSatisfied or checkBlocked
-	Reason  blockReason // set iff blocked
-	Binding binding     // meaningful iff satisfied
+	Status  checkStatus
+	Reason  blockReason
+	Binding binding
 }
 
 func satisfied(name string, b binding) check {
@@ -201,19 +177,19 @@ func blocked(name string, reason blockReason) check {
 
 type modelCheck struct {
 	Provider  string
-	Status    checkStatus     // any of the three
-	Reason    blockReason     // set iff blocked
-	RuntimeID pgtype.UUID     // valid iff satisfied
-	ModelID   string          // "" means the runtime default
-	Options   []runtimeOption // every visible runtime for Provider, each with its own verdict
+	Status    checkStatus
+	Reason    blockReason
+	RuntimeID pgtype.UUID
+	ModelID   string
+	Options   []runtimeOption
 }
 
 type runtimeOption struct {
 	RuntimeID pgtype.UUID
 	Label     string
 	Usable    bool
-	Reason    blockReason // set iff !Usable
-	Models    []string    // acceptable ids this runtime runs, listing order. All catalog ids when the listing pins none.
+	Reason    blockReason
+	Models    []string
 }
 
 type preflightReport struct {
@@ -225,7 +201,7 @@ type preflightReport struct {
 	Tools        []check
 	Connections  []check
 	Knowledge    []check
-	Unsupported  []check // always blocked
+	Unsupported  []check
 }
 
 type reportStatus string
@@ -236,8 +212,6 @@ const (
 	reportChoose  reportStatus = "choose"
 )
 
-// Status is derived and never stored. Any block wins over a pending choice,
-// and a listing that did not come from the live catalog is never ready.
 func (r preflightReport) Status() reportStatus {
 	if r.Model.Status == checkBlocked || r.Source != marketcatalog.SourceNocoBase {
 		return reportBlocked
@@ -255,10 +229,6 @@ func (r preflightReport) Status() reportStatus {
 	return reportReady
 }
 
-// projectedAgent is the agent a workspace-scope install creates, the row M03
-// commit inserts. Tool and knowledge checks judge it with the agent routes'
-// own predicates, so preflight and commit agree by construction. It is private,
-// so invoke rights and the owner's Composio connections stay with the member.
 func projectedAgent(member db.Member) db.Agent {
 	return db.Agent{WorkspaceID: member.WorkspaceID, OwnerID: member.UserID, PermissionMode: "private", Kind: "user"}
 }
@@ -345,7 +315,6 @@ func checkModel(need marketcatalog.ModelNeed, choice modelChoice, f preflightFac
 	return mc
 }
 
-// runtimeOptionFor judges one runtime for one need.
 func runtimeOptionFor(member db.Member, rt db.AgentRuntime, snap *ModelCatalogSnapshot, need marketcatalog.ModelNeed) runtimeOption {
 	opt := runtimeOption{RuntimeID: rt.ID, Label: runtimeLabel(rt), Models: []string{}}
 	if !canUseRuntimeForAgent(member, rt) {
@@ -387,8 +356,6 @@ func runtimeLabel(rt db.AgentRuntime) string {
 	return rt.Name
 }
 
-// bindModel applies the member's model pick to a usable option. reason "" means
-// bound. modelID "" means the runtime default. checkModel builds the modelCheck.
 func bindModel(opt runtimeOption, need marketcatalog.ModelNeed, want string) (modelID string, reason blockReason) {
 	switch {
 	case want != "" && !slices.Contains(opt.Models, want):
@@ -405,12 +372,6 @@ func bindModel(opt runtimeOption, need marketcatalog.ModelNeed, want string) (mo
 	}
 }
 
-// modelsOffered returns the acceptable ids the runtime's discovered catalog
-// runs, in listing order and in the catalog's spelling. Matching goes through
-// agent.QualifyModelID, the rule the daemon applies, so a bare id that the
-// catalog namespaces as provider/id still matches. reason is modelUnavailable
-// when an acceptable id sits only in snap.UnavailableModels, else
-// modelNotOffered.
 func modelsOffered(snap *ModelCatalogSnapshot, acceptable []string) (offered []string, reason blockReason) {
 	catalog := agent.Catalog{Models: make([]agent.Model, 0, len(snap.Models))}
 	runs := map[string]bool{}
@@ -462,9 +423,6 @@ func checkTool(need marketcatalog.ToolNeed, target db.Agent, f preflightFacts) c
 	return satisfied(need.ServerName, binding{Action: bindProvision})
 }
 
-// canCurateMcpLibrary mirrors the owner/admin gate on
-// POST /api/workspaces/{id}/mcp-servers. TestMarketMcpCuratorsMatchRouter
-// fails if the two disagree for any role.
 func canCurateMcpLibrary(member db.Member) bool { return roleAllowed(member.Role, "owner", "admin") }
 
 func checkConnection(need marketcatalog.ConnectionNeed, f preflightFacts) check {
@@ -474,17 +432,12 @@ func checkConnection(need marketcatalog.ConnectionNeed, f preflightFacts) check 
 	if f.composio == nil {
 		return blocked(need.Toolkit, reasonConnectionsUnavailable)
 	}
-	// An empty result means dispatch would skip the overlay and the task
-	// would run without the toolkit.
 	for _, row := range composio.MountableToolkits(f.composio.connections, []string{need.Toolkit}) {
 		return satisfied(need.Toolkit, binding{Action: bindUseExisting, ID: row.ID})
 	}
 	return blocked(need.Toolkit, reasonConnectionNotConnected)
 }
 
-// checkKnowledge marks a missing bundled skill provision because
-// POST /api/skills admits every member. TestMarketSkillCreatorsMatchRouter
-// fails if the route grows a role gate this check does not know.
 func checkKnowledge(need marketcatalog.KnowledgeNeed, target db.Agent, f preflightFacts) check {
 	if need.Source != marketcatalog.KnowledgeSkill {
 		return blocked(need.Name, reasonKnowledgeSourceUnsupported)

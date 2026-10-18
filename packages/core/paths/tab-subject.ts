@@ -116,8 +116,6 @@ export function parseTabSubject(url: string): TabSubject {
     case "skills":
       return id ? { kind: "skill", id } : { kind: "page", page: "skills" };
     case "market":
-      // Listing detail and install check show as the Market page; a listing
-      // is a catalog entry, not a workspace resource with its own identity.
       return { kind: "page", page: "market" };
     case "settings":
       return { kind: "page", page: "settings" };

@@ -1320,7 +1320,6 @@ export class ApiClient {
     });
   }
 
-  /** null means the response did not parse. HTTP errors throw ApiError as usual. */
   async getMarketListing(listingId: string, version?: string): Promise<MarketListing | null> {
     const qs = version ? `?${new URLSearchParams({ version })}` : "";
     const raw = await this.fetch<unknown>(`/api/market/listings/${encodeURIComponent(listingId)}${qs}`);
@@ -1330,7 +1329,6 @@ export class ApiClient {
   }
 
   async preflightMarketInstall(input: MarketPreflightInput): Promise<MarketPreflight> {
-    // Built field by field: spreading input would let an extra property reach the server.
     const body: { version: string; runtime_id?: string; model?: string } = { version: input.version };
     if (input.runtimeId) body.runtime_id = input.runtimeId;
     if (input.model) body.model = input.model;

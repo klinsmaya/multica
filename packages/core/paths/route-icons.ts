@@ -83,7 +83,6 @@ export interface WorkspacePage {
   icon: RouteIconName;
   /** `layout.nav.<navKey>` — the localized page name. */
   navKey: NavLabelKey;
-  /** When set, the page exists only while this flag is on. Sidebar and search both read it. */
   flag?: string;
 }
 

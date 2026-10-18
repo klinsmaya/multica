@@ -16,8 +16,6 @@ import (
 
 const marketTargetScope = "workspace"
 
-// RequireMarketV1 answers 404 while market_v1 is off, so clients treat the
-// Market routes like an older server without them.
 func (h *Handler) RequireMarketV1(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !featureflags.MarketV1Enabled(r.Context(), h.FeatureFlags) {
@@ -46,8 +44,6 @@ func (h *Handler) BrowseMarketListings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listingPageResponseFrom(result))
 }
 
-// optionalIntQuery reads an integer query parameter. Absent is 0. Bounds
-// belong to the catalog client.
 func optionalIntQuery(w http.ResponseWriter, q map[string][]string, name string) (int, bool) {
 	raw := ""
 	if v := q[name]; len(v) > 0 {
@@ -86,9 +82,6 @@ func (h *Handler) GetMarketListing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listingResponseFrom(listing))
 }
 
-// PreflightMarketInstall parses, fetches the pinned listing outside any
-// transaction, then loads facts and evaluates inside runMarketRead. It holds
-// no reference to TaskService.
 func (h *Handler) PreflightMarketInstall(w http.ResponseWriter, r *http.Request) {
 	member, ok := h.workspaceMember(w, r, ctxWorkspaceID(r.Context()))
 	if !ok {
@@ -116,9 +109,6 @@ func (h *Handler) PreflightMarketInstall(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, preflightResponseFrom(report))
 }
 
-// preflightRequest is the whole wire body. It has no actor field. The decoder
-// drops actor, user_id, and anything else unknown, and the member comes only
-// from the workspace middleware.
 type preflightRequest struct {
 	Version   string `json:"version"`
 	RuntimeID string `json:"runtime_id"`
@@ -173,8 +163,6 @@ func writeCatalogError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-// publicSource is the only place a catalog source becomes wire text. Clients
-// see live, stub, or unknown, never the adapter's name.
 func publicSource(s marketcatalog.Source) string {
 	switch s {
 	case marketcatalog.SourceNocoBase:
@@ -186,8 +174,6 @@ func publicSource(s marketcatalog.Source) string {
 	}
 }
 
-// Response DTOs. Only these carry JSON tags. Slices are always non-nil so the
-// client never sees null where it expects a list.
 
 type listingSummaryResponse struct {
 	ID            string  `json:"id"`
@@ -220,8 +206,6 @@ type agentTemplateResponse struct {
 	Description string `json:"description"`
 }
 
-// requirementsResponse omits template URLs and bundle bodies. Detail shows what
-// a listing needs, not what it would write.
 type requirementsResponse struct {
 	Model       modelNeedResponse        `json:"model"`
 	Tools       []toolNeedResponse       `json:"tools"`

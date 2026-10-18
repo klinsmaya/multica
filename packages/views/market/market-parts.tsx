@@ -26,7 +26,6 @@ export function MarketMessage({ children, action }: { children: ReactNode; actio
   );
 }
 
-/** A 404 is a missing listing; anything else is the catalog failing, which a retry may fix. */
 export function MarketError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useT("market");
   if (error instanceof ApiError && error.status === 404) {

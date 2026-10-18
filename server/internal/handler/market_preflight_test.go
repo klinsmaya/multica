@@ -32,8 +32,6 @@ func memberWithRole(name, role string) db.Member {
 	return db.Member{WorkspaceID: marketTestWorkspace, UserID: uuidFor(name), Role: role}
 }
 
-// listingNeeding builds a live listing. Needs are ToolNeed, ConnectionNeed,
-// KnowledgeNeed, or UnsupportedNeed values.
 func listingNeeding(model marketcatalog.ModelNeed, needs ...any) marketcatalog.Listing {
 	m := marketcatalog.Manifest{Agent: marketcatalog.AgentTemplate{Name: "Test agent"}, Model: model}
 	for _, n := range needs {
@@ -72,8 +70,6 @@ func catalogOf(ids ...string) *ModelCatalogSnapshot {
 	return snap
 }
 
-// factsWithUsableRuntime gives member one public claude runtime they own,
-// whose catalog runs usableModel.
 func factsWithUsableRuntime(member db.Member) preflightFacts {
 	rt := runtimeFor("usable-runtime", "claude", "public", member.UserID)
 	return preflightFacts{

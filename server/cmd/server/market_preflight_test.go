@@ -24,9 +24,6 @@ import (
 	"github.com/multica-ai/multica/server/pkg/featureflag"
 )
 
-// marketFixture is a router with market_v1 on, a live catalog served over
-// HTTP from typed listings, and a workspace of its own so row counts and
-// runtime visibility see only this test's rows.
 type marketFixture struct {
 	*testutil.Fixture
 	h   *handler.Handler
@@ -265,9 +262,6 @@ func TestMarketPreflightReadyEnqueuesNothing(t *testing.T) {
 	}
 }
 
-// TestMarketSkillCreatorsMatchRouter pins checkKnowledge's provision verdict
-// to POST /api/skills. If the route grows a role gate, the role it rejects
-// must stop getting provision from preflight.
 func TestMarketSkillCreatorsMatchRouter(t *testing.T) {
 	fx := newMarketTestServer(t, liveListing("acme.skills", marketcatalog.Manifest{
 		Model: marketcatalog.ModelNeed{Provider: "claude"},
@@ -301,8 +295,6 @@ func TestMarketSkillCreatorsMatchRouter(t *testing.T) {
 	}
 }
 
-// TestMarketMcpCuratorsMatchRouter pins canCurateMcpLibrary to the role gate
-// on POST /api/workspaces/{id}/mcp-servers for every role.
 func TestMarketMcpCuratorsMatchRouter(t *testing.T) {
 	fx := newMarketTestServer(t, liveListing("acme.tools", marketcatalog.Manifest{
 		Model: marketcatalog.ModelNeed{Provider: "claude"},
@@ -357,9 +349,6 @@ func TestMarketRoutesAre404WhenFlagOff(t *testing.T) {
 	}
 }
 
-// TestMarketRoutesRejectTaskTokens: the same member passes with a session and is
-// refused with a task token bound to them, so the refusal is RequireHumanActor's
-// and not a membership miss.
 func TestMarketRoutesRejectTaskTokens(t *testing.T) {
 	fx := newMarketTestServer(t, liveListing("acme.notes", marketcatalog.Manifest{Model: marketcatalog.ModelNeed{Provider: "claude"}}))
 	member := fx.memberWithJWT(t, "member")

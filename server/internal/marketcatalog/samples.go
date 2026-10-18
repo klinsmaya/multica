@@ -1,9 +1,5 @@
 package marketcatalog
 
-// sampleListings is the stub catalog. sample.pr-reviewer exercises all four
-// need kinds and has two versions. sample.notes needs only a model.
-// sample.squad-lead carries a squad requirement and a hermes_memory knowledge
-// need, so the stub always shows a blocked report too.
 var sampleListings = []Listing{
 	{
 		Source: SourceStub,

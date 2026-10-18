@@ -181,11 +181,7 @@ func normaliseAllowlistToSet(allow []string) map[string]struct{} {
 	return out
 }
 
-// MountableToolkits is what a task overlay mounts for an agent. It is the
-// allowlist intersected with the owner's active connections, newest connection
-// per toolkit, keyed by normalised slug. Rows must be ordered newest first.
-// BuildTaskOverlay and market preflight both read it, so preflight cannot
-// promise a toolkit that dispatch would silently skip.
+// Rows must be ordered newest first.
 func MountableToolkits(ownerConnections []db.UserComposioConnection, allowlist []string) map[string]db.UserComposioConnection {
 	allowSet := normaliseAllowlistToSet(allowlist)
 	mounted := make(map[string]db.UserComposioConnection, len(allowSet))

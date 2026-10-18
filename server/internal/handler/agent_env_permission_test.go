@@ -51,9 +51,6 @@ func TestCanManageAgentEnv_Pure(t *testing.T) {
 	}
 }
 
-// TestCanManageAgent_NullOwnerMatchesNobody pins canManageAgent to the same
-// rule as canManageAgentEnv. A NULL owner_id must not let a plain member
-// update the agent, while a workspace admin still can.
 func TestCanManageAgent_NullOwnerMatchesNobody(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

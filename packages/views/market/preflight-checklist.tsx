@@ -159,7 +159,6 @@ function LoadModelsButton({ runtimeId, onLoaded }: { runtimeId: string; onLoaded
     try {
       await queryClient.fetchQuery(runtimeModelsOptions(runtimeId));
     } catch {
-      // A failed discovery leaves the catalog unknown, and the recheck reports that.
     } finally {
       onLoaded();
     }

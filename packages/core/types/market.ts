@@ -2,7 +2,6 @@ import { PREFLIGHT_BLOCK_REASONS } from "./market-block-reasons";
 
 export { PREFLIGHT_BLOCK_REASONS };
 
-/** Where a listing came from. A stub listing is a sample and never installable. */
 export type MarketSource = "live" | "stub" | "unknown";
 
 export interface MarketListingSummary {
@@ -44,7 +43,6 @@ export interface MarketBrowseQuery {
   page?: number;
 }
 
-/** The whole preflight request. There is no actor field to fill. */
 export interface MarketPreflightInput {
   listingId: string;
   version: string;
@@ -52,7 +50,6 @@ export interface MarketPreflightInput {
   model?: string;
 }
 
-/** "unknown" is a reason a newer server sent that this client cannot name. It still blocks. */
 export type PreflightBlockReason = (typeof PREFLIGHT_BLOCK_REASONS)[number] | "unknown";
 
 export interface PreflightBinding {
@@ -112,7 +109,6 @@ interface PreflightMeta {
   evaluated_for: { user_id: string; role: string };
 }
 
-/** Ready carries only satisfied checks. The type cannot hold a ready report with a block in it. */
 export interface ReadyPreflight extends PreflightMeta {
   status: "ready";
   source: "live";
@@ -132,7 +128,6 @@ export interface OpenPreflight extends PreflightMeta {
   unsupported: BlockedCheck[];
 }
 
-/** Client-only. The response did not parse. Renders as not ready. */
 export interface UnreadablePreflight {
   status: "unreadable";
 }

@@ -68,8 +68,6 @@ function workspaceScoped(slug: string) {
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
     market: () => `${ws}/market`,
     marketListing: (id: string) => `${ws}/market/${encode(id)}`,
-    // The install page's state is its URL, so a refresh or a shared link
-    // re-runs the same preflight.
     marketInstall: (id: string, version: string, runtime?: string, model?: string) => {
       const search = new URLSearchParams({ version });
       if (runtime) search.set("runtime", runtime);
