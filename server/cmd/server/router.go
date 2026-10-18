@@ -431,6 +431,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
 		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		VCSIntegrationEnabled:    os.Getenv("MULTICA_VCS_INTEGRATION_ENABLED") == "true",
+		MarketCatalogBaseURL:     strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_MARKET_CATALOG_URL")), "/"),
 		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
 		AppURL:                   appURLFromEnv(),
 		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
@@ -1721,6 +1722,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// The payload is names and transports only; the stored
 					// entries are write-only.
 					r.Get("/mcp-servers", h.ListWorkspaceMcpServers)
+					// Market catalog and preflight are member-visible. The
+					// flag lives in the handler. Preflight only reports
+					// denials. It does not create an agent task.
+					r.Get("/market/catalog", h.ListMarketCatalog)
+					r.Get("/market/catalog/*", h.GetMarketCatalogResource)
+					r.Post("/market/preflight", h.PreflightMarket)
 					// Installed Plugins are member-visible so a member can
 					// see what is mounted in their workspace and which scopes
 					// it holds; install / configure / remove stay admin-only.

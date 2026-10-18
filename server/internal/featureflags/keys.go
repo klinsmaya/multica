@@ -36,6 +36,9 @@ const (
 	// workflows already in use working, and a project can always switch back
 	// to the Default workflow.
 	ProjectWorkflowsV1 = "project_workflows_v1"
+	// MarketCatalogV1 gates the market catalog and preflight routes.
+	// Off by default. A ready preflight does not start an agent task.
+	MarketCatalogV1 = "market_catalog_v1"
 	// LocalSearchIndex gates the sync endpoints behind Web/Desktop local search
 	// (MUL-7754). On by default. Turning it off (FF_LOCAL_SEARCH_INDEX=off)
 	// makes those endpoints answer 404, so clients stop syncing and search
@@ -63,6 +66,7 @@ var frontendPublicFlags = []string{
 	ComposioMCPApps,
 	PluginsV1,
 	ProjectWorkflowsV1,
+	MarketCatalogV1,
 }
 
 func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featureflag.Service) bool {
@@ -98,4 +102,8 @@ func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service
 
 func ProjectWorkflowsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, ProjectWorkflowsV1, false)
+}
+
+func MarketCatalogV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, MarketCatalogV1, false)
 }
