@@ -155,6 +155,91 @@ func TestIdempotencyConflictDoesNotDrive(t *testing.T) {
 	}
 }
 
+func TestReplayBeforeCatalog(t *testing.T) {
+	native := newScriptedNative()
+	catalog := &swapCatalog{listing: testListing()}
+	ledger := openMemory(newMemStore(), native, staticGate{admission: Admission{Ready: true}}, catalog)
+	doc := testDocument(t, testListing(), nil)
+	first, err := ledger.Commit(context.Background(), testActor(), doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.err = errors.New("catalog down")
+	second, err := ledger.Commit(context.Background(), testActor(), doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID || native.agentWrites != 1 {
+		t.Fatalf("replay id=%s writes=%d", second.ID, native.agentWrites)
+	}
+	other := testDocument(t, testListing(), func(plan map[string]any) {
+		plan["modelId"] = "other-model"
+	})
+	conflict, err := ledger.Commit(context.Background(), testActor(), other)
+	if !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("err = %v", err)
+	}
+	if conflict.ID != first.ID || native.agentWrites != 1 {
+		t.Fatalf("conflict id=%s writes=%d", conflict.ID, native.agentWrites)
+	}
+}
+
+func TestContentMismatchRefusesAdopt(t *testing.T) {
+	content := ContentDigest("review the diff")
+	cases := []struct {
+		name  string
+		prior ExistingResource
+	}{
+		{"wrong digest", ExistingResource{Name: "code-review", ID: "skill-existing", Digest: "not-the-content"}},
+		{"file body", ExistingResource{Name: "code-review", ID: "skill-existing", Digest: content, Files: []NamedDigest{{Name: "SKILL.md", Digest: content}}}},
+		{"empty digest", ExistingResource{Name: "code-review", ID: "skill-existing"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prior := tc.prior
+			ledger, native := testLedger(t, Admission{Ready: true, ExistingSkills: []ExistingResource{prior}})
+			op, err := ledger.Commit(context.Background(), testActor(), testDocument(t, testListing(), nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			skill := stepOf(op, KindSkill)
+			if skill.Phase != PhaseRefused || skill.Reason != CodeContentMismatch {
+				t.Fatalf("skill step = %+v", skill)
+			}
+			if native.skillWrites != 0 || native.agentWrites != 1 {
+				t.Fatalf("writes skill=%d agent=%d", native.skillWrites, native.agentWrites)
+			}
+			if op.Readiness() != ReadinessNotReady {
+				t.Fatalf("readiness = %s", op.Readiness())
+			}
+		})
+	}
+}
+
+func TestProvenSkillIsAdopted(t *testing.T) {
+	const skillID = "skill-existing"
+	ledger, native := testLedger(t, Admission{Ready: true, ExistingSkills: []ExistingResource{{
+		Name: "code-review", ID: skillID, Digest: ContentDigest("review the diff"),
+	}}})
+	native.skills[nativeKey(testActor().WorkspaceID, skillID)] = skillDraft{
+		ID: skillID, Workspace: testActor().WorkspaceID, Content: "review the diff",
+	}
+	op, err := ledger.Commit(context.Background(), testActor(), testDocument(t, testListing(), nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := stepOf(op, KindSkill)
+	if skill.Phase != PhaseApplied || skill.OutputID != skillID {
+		t.Fatalf("skill step = %+v", skill)
+	}
+	if native.skillWrites != 0 || native.agentWrites != 1 {
+		t.Fatalf("writes skill=%d agent=%d", native.skillWrites, native.agentWrites)
+	}
+	if op.Readiness() != ReadinessReady {
+		t.Fatalf("readiness = %s", op.Readiness())
+	}
+}
+
 func TestStaleGateWritesNoRow(t *testing.T) {
 	ledger, native := testLedger(t, Admission{Ready: false, Code: CodeStaleMapping})
 	_, err := ledger.Commit(context.Background(), testActor(), testDocument(t, testListing(), nil))
@@ -204,6 +289,18 @@ func (g staticGate) Admit(context.Context, Actor, Plan, marketcatalog.Listing) (
 type staticCatalog struct{ listing marketcatalog.Listing }
 
 func (c staticCatalog) Listing(context.Context, string, string) (marketcatalog.Listing, error) {
+	return c.listing, nil
+}
+
+type swapCatalog struct {
+	listing marketcatalog.Listing
+	err     error
+}
+
+func (c *swapCatalog) Listing(context.Context, string, string) (marketcatalog.Listing, error) {
+	if c.err != nil {
+		return marketcatalog.Listing{}, c.err
+	}
 	return c.listing, nil
 }
 

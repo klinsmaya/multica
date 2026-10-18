@@ -17,6 +17,16 @@ func newMemStore() *memStore {
 	return &memStore{ops: map[OperationID]Operation{}, byKey: map[string]OperationID{}}
 }
 
+func (s *memStore) Find(_ context.Context, workspace WorkspaceID, key IdempotencyKey) (Operation, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.byKey[string(workspace)+"\x00"+string(key)]
+	if !ok {
+		return Operation{}, false, nil
+	}
+	return s.ops[id].clone(), true, nil
+}
+
 func (s *memStore) Claim(_ context.Context, row Operation) (Operation, bool, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -1,6 +1,9 @@
 package marketinstall
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const maxInserts = 3
 
@@ -95,9 +98,29 @@ const (
 	ReadinessNotReady Readiness = "not_ready"
 )
 
-// Step is one recorded fact. Task and squad stay on ModeRecord and a refused
-// or failed phase, so the driver has no write path for them.
+// Step is one recorded fact. Callers outside this package see the key, kind,
+// phase, output id, and reason. The crash bookkeeping stays unexported and is
+// still stored with the operation.
 type Step struct {
+	Key      StepKey
+	Kind     Kind
+	Phase    Phase
+	OutputID CorrelationID
+	Reason   RefuseReason
+	Name     string
+
+	mode       Mode
+	parent     CorrelationID
+	child      CorrelationID
+	attempt    int
+	digest     string
+	transport  string
+	parentName string
+	childName  string
+	observedAt time.Time
+}
+
+type stepRecord struct {
 	Key        StepKey       `json:"key"`
 	Kind       Kind          `json:"kind"`
 	Phase      Phase         `json:"phase"`
@@ -113,6 +136,28 @@ type Step struct {
 	ParentName string        `json:"parent_name,omitempty"`
 	ChildName  string        `json:"child_name,omitempty"`
 	ObservedAt time.Time     `json:"observed_at,omitempty"`
+}
+
+func (s Step) MarshalJSON() ([]byte, error) {
+	return json.Marshal(stepRecord{
+		Key: s.Key, Kind: s.Kind, Phase: s.Phase, Mode: s.mode, OutputID: s.OutputID,
+		Parent: s.parent, Child: s.child, Attempt: s.attempt, Reason: s.Reason, Name: s.Name,
+		Digest: s.digest, Transport: s.transport, ParentName: s.parentName, ChildName: s.childName,
+		ObservedAt: s.observedAt,
+	})
+}
+
+func (s *Step) UnmarshalJSON(raw []byte) error {
+	var rec stepRecord
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return err
+	}
+	*s = Step{
+		Key: rec.Key, Kind: rec.Kind, Phase: rec.Phase, OutputID: rec.OutputID, Reason: rec.Reason, Name: rec.Name,
+		mode: rec.Mode, parent: rec.Parent, child: rec.Child, attempt: rec.Attempt, digest: rec.Digest,
+		transport: rec.Transport, parentName: rec.ParentName, childName: rec.ChildName, observedAt: rec.ObservedAt,
+	}
+	return nil
 }
 
 type Presence struct {
@@ -198,7 +243,7 @@ func afterLookup(step Step, saw Presence, now time.Time) (Step, error) {
 	if step.Phase != PhaseUnknown {
 		return step, errPhase
 	}
-	step.ObservedAt = now
+	step.observedAt = now
 	if !saw.Definitive {
 		return step, nil
 	}
@@ -207,14 +252,14 @@ func afterLookup(step Step, saw Presence, now time.Time) (Step, error) {
 		step.Reason = ""
 		return step, nil
 	}
-	if step.Attempt+1 >= maxInserts {
+	if step.attempt+1 >= maxInserts {
 		step.Phase = PhaseRefused
-		step.Mode = ModeRecord
+		step.mode = ModeRecord
 		step.Reason = CodePendingConfirmation
 		return step, nil
 	}
 	step.Phase = PhaseArmed
-	step.Attempt++
+	step.attempt++
 	step.Reason = ""
 	return step, nil
 }
@@ -223,11 +268,11 @@ func decideInsert(step Step, saw Presence, catalogDigest string) (bool, RefuseRe
 	if step.Phase != PhaseArmed || !saw.Definitive || saw.Found {
 		return false, CodePendingConfirmation
 	}
-	if step.Attempt >= maxInserts {
+	if step.attempt >= maxInserts {
 		return false, CodePendingConfirmation
 	}
 	if step.Kind == KindSkill || step.Kind == KindMCP {
-		if catalogDigest == "" || catalogDigest != step.Digest {
+		if catalogDigest == "" || catalogDigest != step.digest {
 			return false, RefuseReason(CodeStaleRelease)
 		}
 	}

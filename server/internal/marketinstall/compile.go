@@ -10,7 +10,7 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 			Key:    "squad",
 			Kind:   KindSquad,
 			Phase:  PhaseRefused,
-			Mode:   ModeRecord,
+			mode:   ModeRecord,
 			Reason: CodeSquadNotRetryable,
 			Name:   plan.Squad.Name,
 		}}, installPayload{}, false, nil
@@ -33,9 +33,9 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 		Key:    "agent",
 		Kind:   KindAgent,
 		Phase:  PhasePending,
-		Mode:   ModeWrite,
+		mode:   ModeWrite,
 		Name:   agent.Name,
-		Digest: ContentDigest(agent.Instructions),
+		digest: ContentDigest(agent.Instructions),
 	}}
 
 	skills, err := compileSkills(plan, admission, listing)
@@ -60,11 +60,11 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 			Key:        StepKey("bind_skill:" + step.Name),
 			Kind:       KindBindSkill,
 			Phase:      PhasePending,
-			Mode:       ModeBind,
+			mode:       ModeBind,
 			Name:       step.Name,
-			ParentName: agent.Name,
-			ChildName:  step.Name,
-			Digest:     step.Digest,
+			parentName: agent.Name,
+			childName:  step.Name,
+			digest:     step.digest,
 		})
 	}
 	for _, step := range mcps.steps {
@@ -75,11 +75,11 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 			Key:        StepKey("bind_mcp:" + step.Name),
 			Kind:       KindBindMCP,
 			Phase:      PhasePending,
-			Mode:       ModeBind,
+			mode:       ModeBind,
 			Name:       step.Name,
-			ParentName: agent.Name,
-			ChildName:  step.Name,
-			Digest:     step.Digest,
+			parentName: agent.Name,
+			childName:  step.Name,
+			digest:     step.digest,
 		})
 	}
 	taskName := ""
@@ -90,7 +90,7 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 		Key:    "task",
 		Kind:   KindTask,
 		Phase:  PhaseRefused,
-		Mode:   ModeRecord,
+		mode:   ModeRecord,
 		Reason: CodeTaskNotRetryable,
 		Name:   taskName,
 	})
@@ -132,16 +132,24 @@ func compileSkills(plan Plan, admission Admission, listing marketcatalog.Listing
 			return compiledSkills{}, Stale{Code: CodeStaleRelease}
 		}
 		if prior, ok := existing[need.Name]; ok {
-			if prior.ID == "" || prior.Digest == "" || prior.Digest != digest {
-				return compiledSkills{}, Stale{Code: CodeStaleMapping}
+			if !skillProven(prior, digest) {
+				out.steps = append(out.steps, Step{
+					Key:    StepKey("skill:" + need.Name),
+					Kind:   KindSkill,
+					Phase:  PhaseRefused,
+					mode:   ModeRecord,
+					Name:   need.Name,
+					Reason: CodeContentMismatch,
+				})
+				continue
 			}
 			out.steps = append(out.steps, Step{
 				Key:      StepKey("skill:" + need.Name),
 				Kind:     KindSkill,
 				Phase:    PhasePending,
-				Mode:     ModeAdopt,
+				mode:     ModeAdopt,
 				Name:     need.Name,
-				Digest:   digest,
+				digest:   digest,
 				OutputID: prior.ID,
 			})
 			continue
@@ -150,9 +158,9 @@ func compileSkills(plan Plan, admission Admission, listing marketcatalog.Listing
 			Key:    StepKey("skill:" + need.Name),
 			Kind:   KindSkill,
 			Phase:  PhasePending,
-			Mode:   ModeWrite,
+			mode:   ModeWrite,
 			Name:   need.Name,
-			Digest: digest,
+			digest: digest,
 		})
 		out.bodies = append(out.bodies, skillBody{
 			Name:        need.Name,
@@ -192,7 +200,7 @@ func compileMCPs(plan Plan, admission Admission, listing marketcatalog.Listing) 
 				Key:    StepKey("mcp:" + need.ServerName),
 				Kind:   KindMCP,
 				Phase:  PhaseRefused,
-				Mode:   ModeRecord,
+				mode:   ModeRecord,
 				Name:   need.ServerName,
 				Reason: CodeCredentialInURL,
 			})
@@ -210,10 +218,10 @@ func compileMCPs(plan Plan, admission Admission, listing marketcatalog.Listing) 
 				Key:       StepKey("mcp:" + need.ServerName),
 				Kind:      KindMCP,
 				Phase:     PhasePending,
-				Mode:      ModeAdopt,
+				mode:      ModeAdopt,
 				Name:      need.ServerName,
-				Digest:    digest,
-				Transport: need.Template.Transport,
+				digest:    digest,
+				transport: need.Template.Transport,
 				OutputID:  prior.ID,
 			})
 			continue
@@ -222,10 +230,10 @@ func compileMCPs(plan Plan, admission Admission, listing marketcatalog.Listing) 
 			Key:       StepKey("mcp:" + need.ServerName),
 			Kind:      KindMCP,
 			Phase:     PhasePending,
-			Mode:      ModeWrite,
+			mode:      ModeWrite,
 			Name:      need.ServerName,
-			Digest:    digest,
-			Transport: need.Template.Transport,
+			digest:    digest,
+			transport: need.Template.Transport,
 		})
 		out.bodies = append(out.bodies, mcpBody{
 			Name:      need.ServerName,
@@ -238,6 +246,16 @@ func compileMCPs(plan Plan, admission Admission, listing marketcatalog.Listing) 
 		return compiledMCPs{}, Stale{Code: CodeStaleCapabilities}
 	}
 	return out, nil
+}
+
+// skillProven is true only when the existing skill content matches the catalog
+// bundle and the skill has no files. A catalog bundle carries no file bodies,
+// so a file cannot be proved equal and must not be overwritten.
+func skillProven(prior ExistingResource, contentDigest string) bool {
+	if prior.ID == "" || prior.Digest == "" || prior.Digest != contentDigest {
+		return false
+	}
+	return len(prior.Files) == 0
 }
 
 func listingSkillDigests(listing marketcatalog.Listing) map[string]string {

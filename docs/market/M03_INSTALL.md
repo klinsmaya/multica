@@ -6,7 +6,7 @@ The installer is the only writer of a local Multica install. It accepts an appro
 
 ## What a commit does
 
-`POST /api/market/operations` parses the commit document, loads the listing from the server catalog, and runs the same preflight as the install page. A plan that is not ready writes no operation. The idempotency key is unique per workspace. The same key and the same plan hash drive the existing operation. A different plan hash returns 409 and does not step.
+`POST /api/market/operations` resolves the workspace idempotency key before it reads the catalog or runs preflight. A replay of the same plan hash returns the stored operation and can keep driving it when the catalog is unreachable. A different plan hash returns 409 and does not step. A new key parses the commit document, loads the listing, and runs the same preflight as the install page. A plan that is not ready writes no operation.
 
 The watcher claims due operations whose lease is empty or expired. Reconcile does the same for one operation. A live lease returns the snapshot and does not step.
 
@@ -16,7 +16,7 @@ A native id is committed on the step while the step is `armed`, in a transaction
 
 An ambiguous insert becomes `unknown`. That pass does not insert again. Reconcile looks the id up. A hit is applied. A definitive miss re-arms the step for a later tick. A lookup that is not definitive never inserts.
 
-A name collision is `name_collision`. The installer does not adopt the other row by name. A skill or MCP that already exists is adopted only when its content digest matches the catalog. Otherwise the commit is `stale.mapping` and nothing is overwritten.
+A name collision is `name_collision`. The installer does not adopt the other row by name. A skill name hit is adopted only when its content digest matches the catalog bundle and the skill has no files. Any other name hit is a refused step, `content_mismatch`, and that skill is not inserted or overwritten. An MCP name hit is adopted only when its digest matches. Otherwise the commit is `stale.mapping` and nothing is overwritten.
 
 ## Ready does not start a task
 

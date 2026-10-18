@@ -32,6 +32,25 @@ func newPGNatives(db Beginner) nativePort {
 
 type pgStore struct{ db Beginner }
 
+func (s pgStore) Find(ctx context.Context, workspace WorkspaceID, key IdempotencyKey) (Operation, bool, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Operation{}, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	row, err := loadByKey(ctx, tx, workspace, key)
+	if errors.Is(err, errMissing) {
+		return Operation{}, false, nil
+	}
+	if err != nil {
+		return Operation{}, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Operation{}, false, err
+	}
+	return row, true, nil
+}
+
 func (s pgStore) Claim(ctx context.Context, row Operation) (Operation, bool, bool, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {

@@ -39,14 +39,14 @@ func TestOperationViewOmitsCatalogBytes(t *testing.T) {
 		PlanHash: "sha256:abc",
 		Steps: []marketinstall.Step{{
 			Key: "agent", Kind: marketinstall.KindAgent, Phase: marketinstall.PhaseApplied,
-			Digest: "secret-digest", Name: "Reviewer",
+			Name: "Reviewer",
 		}},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
-	for _, hidden := range []string{"secret-digest", "instructions", "payload", "custom_env"} {
+	for _, hidden := range []string{"digest", "instructions", "payload", "custom_env"} {
 		if strings.Contains(text, hidden) {
 			t.Fatalf("response contains %s: %s", hidden, text)
 		}

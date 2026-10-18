@@ -1,7 +1,10 @@
 package marketinstall
 
-import "testing"
-import "time"
+import (
+	"encoding/json"
+	"testing"
+	"time"
+)
 
 func TestStatusFoldIgnoresRefusedTask(t *testing.T) {
 	steps := []Step{
@@ -54,14 +57,14 @@ func TestSquadOnlyIsFailed(t *testing.T) {
 }
 
 func TestAfterLookupDoesNotInsert(t *testing.T) {
-	unknown := Step{Kind: KindAgent, Phase: PhaseUnknown, Mode: ModeWrite, Attempt: 0, OutputID: "id-1"}
+	unknown := Step{Kind: KindAgent, Phase: PhaseUnknown, mode: ModeWrite, attempt: 0, OutputID: "id-1"}
 	now := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
 
 	miss, err := afterLookup(unknown, Presence{Definitive: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if miss.Phase != PhaseArmed || miss.Attempt != 1 {
+	if miss.Phase != PhaseArmed || miss.attempt != 1 {
 		t.Fatalf("miss = %+v", miss)
 	}
 	if mayInsert(unknown, Presence{Definitive: true}, "digest") {
@@ -84,12 +87,30 @@ func TestAfterLookupDoesNotInsert(t *testing.T) {
 }
 
 func TestPendingConfirmationStopsRearm(t *testing.T) {
-	unknown := Step{Kind: KindAgent, Phase: PhaseUnknown, Attempt: maxInserts - 1}
+	unknown := Step{Kind: KindAgent, Phase: PhaseUnknown, attempt: maxInserts - 1}
 	got, err := afterLookup(unknown, Presence{Definitive: true}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Phase != PhaseRefused || got.Reason != CodePendingConfirmation {
 		t.Fatalf("got = %+v", got)
+	}
+}
+
+func TestStepCrashFieldsRoundTrip(t *testing.T) {
+	in := Step{
+		Key: "agent", Kind: KindAgent, Phase: PhaseArmed, OutputID: "id-1", Name: "Reviewer",
+		mode: ModeWrite, attempt: 2, digest: "abc", parentName: "Reviewer",
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out Step
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.mode != ModeWrite || out.attempt != 2 || out.digest != "abc" || out.parentName != "Reviewer" || out.Phase != PhaseArmed {
+		t.Fatalf("round trip = %+v", out)
 	}
 }

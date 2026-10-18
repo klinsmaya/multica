@@ -36,6 +36,7 @@ type ExistingResource struct {
 	Name   string
 	ID     CorrelationID
 	Digest string
+	Files  []NamedDigest
 }
 
 type Gate interface {
@@ -162,6 +163,7 @@ type mcpDraft struct {
 }
 
 type installStore interface {
+	Find(ctx context.Context, workspace WorkspaceID, key IdempotencyKey) (Operation, bool, error)
 	Claim(ctx context.Context, row Operation) (Operation, bool, bool, error)
 	Load(ctx context.Context, workspace WorkspaceID, id OperationID) (Operation, error)
 	Save(ctx context.Context, row Operation) (Operation, error)
@@ -209,6 +211,16 @@ func (l *Ledger) Run(ctx context.Context) {
 }
 
 func (l *Ledger) Commit(ctx context.Context, caller Actor, doc CommitDocument) (Operation, error) {
+	// The idempotency key is resolved before the catalog and the gate. A replay
+	// returns the stored operation. A different plan hash does not drive.
+	if stored, ok, err := l.store.Find(ctx, caller.WorkspaceID, doc.IdempotencyKey); err != nil {
+		return Operation{}, err
+	} else if ok {
+		if stored.PlanHash != doc.DeclaredHash {
+			return stored, ErrIdempotencyConflict
+		}
+		return l.driveOwned(ctx, stored)
+	}
 	if doc.DeclaredHash == "" || doc.Plan.Hash != doc.DeclaredHash || doc.Approval.PlanHash != doc.DeclaredHash {
 		return Operation{}, Stale{Code: CodePlanHashMismatch}
 	}
@@ -410,7 +422,7 @@ func (l *Ledger) advance(ctx context.Context, row Operation, i int) (Operation, 
 	case PhaseArmed:
 		return l.persistArmed(ctx, row, i)
 	case PhasePending, PhaseRunning:
-		switch step.Mode {
+		switch step.mode {
 		case ModeAdopt:
 			return l.persistAdopt(ctx, row, i)
 		case ModeBind:
@@ -436,7 +448,7 @@ func (l *Ledger) armAndInsert(ctx context.Context, row Operation, i int) (Operat
 	step = row.Steps[i]
 	step.Phase = PhaseArmed
 	step.OutputID = CorrelationID(l.ids())
-	step.Attempt = 0
+	step.attempt = 0
 	row.Steps[i] = step
 	// The id is committed before the native insert. A later lookup by this id
 	// tells a lost insert from an insert whose applied mark was lost.
@@ -508,7 +520,7 @@ func (l *Ledger) persistAdopt(ctx context.Context, row Operation, i int) (Operat
 	if !saw.Found {
 		return l.markRefused(ctx, row, i, RefuseReason(CodeStaleMapping))
 	}
-	if saw.Digest != step.Digest {
+	if saw.Digest != step.digest {
 		return l.markRefused(ctx, row, i, CodeContentMismatch)
 	}
 	return l.markApplied(ctx, row, i)
@@ -521,8 +533,8 @@ func (l *Ledger) persistBind(ctx context.Context, row Operation, i int) (Operati
 	if step.Kind == KindBindMCP {
 		childKind = KindMCP
 	}
-	parent, parentState := resourceStep(row.Steps, parentKind, step.ParentName)
-	child, childState := resourceStep(row.Steps, childKind, step.ChildName)
+	parent, parentState := resourceStep(row.Steps, parentKind, step.parentName)
+	child, childState := resourceStep(row.Steps, childKind, step.childName)
 	if parentState == PhaseRefused || parentState == PhaseFailed || childState == PhaseRefused || childState == PhaseFailed {
 		return l.markRefused(ctx, row, i, CodeBlockedDependency)
 	}
@@ -531,9 +543,9 @@ func (l *Ledger) persistBind(ctx context.Context, row Operation, i int) (Operati
 	}
 	if step.Phase != PhaseArmed {
 		step.Phase = PhaseArmed
-		step.Parent = parent.OutputID
-		step.Child = child.OutputID
-		step.Attempt = 0
+		step.parent = parent.OutputID
+		step.child = child.OutputID
+		step.attempt = 0
 		row.Steps[i] = step
 		var err error
 		row, err = l.store.Save(ctx, row)
@@ -550,8 +562,8 @@ func (l *Ledger) markApplied(ctx context.Context, row Operation, i int) (Operati
 	step.Reason = ""
 	row.Steps[i] = step
 	resource := step.OutputID
-	if step.Mode == ModeBind {
-		resource = step.Child
+	if step.mode == ModeBind {
+		resource = step.child
 	}
 	if resource != "" {
 		row.bindings = append(row.bindings, Binding{Kind: step.Kind, ResourceID: resource})
@@ -562,7 +574,7 @@ func (l *Ledger) markApplied(ctx context.Context, row Operation, i int) (Operati
 func (l *Ledger) markRefused(ctx context.Context, row Operation, i int, reason RefuseReason) (Operation, error) {
 	step := row.Steps[i]
 	step.Phase = PhaseRefused
-	step.Mode = ModeRecord
+	step.mode = ModeRecord
 	step.Reason = reason
 	row.Steps[i] = step
 	return l.store.Save(ctx, row)
@@ -571,7 +583,7 @@ func (l *Ledger) markRefused(ctx context.Context, row Operation, i int, reason R
 func (l *Ledger) markFailed(ctx context.Context, row Operation, i int, reason RefuseReason) (Operation, error) {
 	step := row.Steps[i]
 	step.Phase = PhaseFailed
-	step.Mode = ModeRecord
+	step.mode = ModeRecord
 	step.Reason = reason
 	row.Steps[i] = step
 	return l.store.Save(ctx, row)
@@ -586,9 +598,9 @@ func (l *Ledger) observe(ctx context.Context, row Operation, step Step) (Presenc
 	case KindMCP:
 		return l.natives.observeMCP(ctx, row.Actor.WorkspaceID, step.OutputID)
 	case KindBindSkill:
-		return l.natives.observeSkillBind(ctx, step.Parent, step.Child)
+		return l.natives.observeSkillBind(ctx, step.parent, step.child)
 	case KindBindMCP:
-		return l.natives.observeMCPBind(ctx, step.Parent, step.Child)
+		return l.natives.observeMCPBind(ctx, step.parent, step.child)
 	default:
 		return Presence{}, errPhase
 	}
@@ -635,9 +647,9 @@ func (l *Ledger) insert(ctx context.Context, row Operation, step Step) error {
 			URL:       body.URL,
 		})
 	case KindBindSkill:
-		return l.natives.bindSkill(ctx, step.Parent, step.Child)
+		return l.natives.bindSkill(ctx, step.parent, step.child)
 	case KindBindMCP:
-		return l.natives.bindMCP(ctx, step.Parent, step.Child)
+		return l.natives.bindMCP(ctx, step.parent, step.child)
 	default:
 		return errPhase
 	}
@@ -663,7 +675,7 @@ func catalogDigest(payload installPayload, step Step) string {
 			return body.Digest
 		}
 	default:
-		return step.Digest
+		return step.digest
 	}
 	return ""
 }

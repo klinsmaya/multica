@@ -167,11 +167,13 @@ func existingSkills(ctx context.Context, q *db.Queries, workspace pgtype.UUID, c
 		if err != nil {
 			return nil, err
 		}
-		bodies := make([]marketinstall.SkillFile, 0, len(files))
+		resource.Digest = marketinstall.ContentDigest(skill.Content)
 		for _, file := range files {
-			bodies = append(bodies, marketinstall.SkillFile{Path: file.Path, Content: file.Content})
+			resource.Files = append(resource.Files, marketinstall.NamedDigest{
+				Name:   file.Path,
+				Digest: marketinstall.ContentDigest(file.Content),
+			})
 		}
-		resource.Digest = marketinstall.SkillDigest(skill.Content, bodies)
 		out = append(out, resource)
 	}
 	return out, nil

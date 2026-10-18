@@ -205,6 +205,8 @@ func hashObject(plan map[string]any) (PlanHash, error) {
 	return PlanHash("sha256:" + hex.EncodeToString(sum[:])), nil
 }
 
+// ContentDigest is sha256 of the UTF-8 bytes. That is the same digest as
+// encode(sha256(convert_to(content, 'UTF8')), 'hex') on skill text.
 func ContentDigest(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])
