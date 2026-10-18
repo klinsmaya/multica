@@ -10,6 +10,7 @@ export {
   DEFAULT_ROUTE_ICON_NAME,
   resolveRouteIconName,
   pageForSegment,
+  isWorkspacePageEnabled,
 } from "./route-icons";
 export type {
   RouteIconName,

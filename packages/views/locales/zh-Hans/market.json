@@ -1,0 +1,81 @@
+{
+  "page": {
+    "title": "市场"
+  },
+  "source": {
+    "stub": "示例",
+    "unknown": "来源未知"
+  },
+  "browse": {
+    "search_label": "搜索条目",
+    "search_placeholder": "搜索条目",
+    "empty": "暂无条目。",
+    "no_match": "没有符合搜索的条目。",
+    "previous": "上一页",
+    "next": "下一页"
+  },
+  "detail": {
+    "back": "市场",
+    "version": "版本 {{version}}",
+    "check_install": "检查安装",
+    "requirements": "需求",
+    "model": "模型",
+    "any_model": "任意 {{provider}} 模型",
+    "tools": "工具",
+    "connections": "连接",
+    "knowledge": "知识",
+    "unsupported": "不支持",
+    "unreadable": "无法读取此条目。"
+  },
+  "install": {
+    "title": "检查安装",
+    "back": "条目",
+    "missing_version": "请从条目页面打开此检查。",
+    "ready": "此工作区可以接受该条目。暂不支持安装。",
+    "choose": "请选择一个运行时。",
+    "blocked": "尚未就绪。请处理被阻止的项目。",
+    "stub": "示例条目无法安装。",
+    "unreadable": "无法读取此检查结果。",
+    "recheck": "重新检查",
+    "runtime": "运行时",
+    "model": "模型",
+    "default_model": "运行时默认",
+    "load_models": "加载模型",
+    "use_existing": "使用现有",
+    "provision": "将会创建",
+    "connect": "连接",
+    "status": {
+      "satisfied": "就绪",
+      "blocked": "被阻止",
+      "choose": "待选择"
+    }
+  },
+  "errors": {
+    "not_found": "此条目不存在。",
+    "unavailable": "目录不可用。",
+    "retry": "重试"
+  },
+  "reasons": {
+    "no_runtime_for_provider": "此工作区没有运行该 provider 的运行时。",
+    "no_usable_runtime": "你的运行时都无法运行此条目。",
+    "runtime_not_found": "你无法使用此运行时。",
+    "runtime_provider_mismatch": "此运行时运行的是其他 provider。",
+    "runtime_private": "此运行时是其他成员的私有运行时。",
+    "runtime_ownerless": "此私有运行时没有 owner。",
+    "model_catalog_unknown": "此运行时尚未上报其模型。",
+    "model_selection_unsupported": "此运行时无法选择模型。",
+    "model_unavailable": "此运行时没有提供该条目接受的模型。",
+    "model_not_offered": "此运行时不提供该模型。",
+    "mcp_attach_forbidden": "只有智能体 owner 或 admin 可以挂载工具。",
+    "mcp_server_missing": "工作区中没有此工具，且该条目无法添加它。",
+    "mcp_library_admin_only": "只有 owner 或 admin 可以将此工具添加到工作区。",
+    "connection_provider_unsupported": "不支持此连接类型。",
+    "connections_unavailable": "此服务器未配置已连接应用。",
+    "connection_not_connected": "请先连接此应用。",
+    "knowledge_source_unsupported": "不支持此知识来源。",
+    "skill_bind_forbidden": "只有智能体 owner 或 admin 可以添加 skill。",
+    "skill_missing": "工作区中没有此 skill，且该条目未包含它。",
+    "requirement_unsupported": "Multica 暂不支持此项。",
+    "unknown": "因当前应用无法显示的原因被阻止。请更新应用。"
+  }
+}

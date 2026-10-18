@@ -1,0 +1,81 @@
+{
+  "page": {
+    "title": "Marché"
+  },
+  "source": {
+    "stub": "Exemple",
+    "unknown": "Source inconnue"
+  },
+  "browse": {
+    "search_label": "Rechercher des annonces",
+    "search_placeholder": "Rechercher des annonces",
+    "empty": "Aucune annonce pour l'instant.",
+    "no_match": "Aucune annonce ne correspond à votre recherche.",
+    "previous": "Précédent",
+    "next": "Suivant"
+  },
+  "detail": {
+    "back": "Marché",
+    "version": "Version {{version}}",
+    "check_install": "Vérifier l'installation",
+    "requirements": "Prérequis",
+    "model": "Modèle",
+    "any_model": "N'importe quel modèle {{provider}}",
+    "tools": "Outils",
+    "connections": "Connexions",
+    "knowledge": "Connaissances",
+    "unsupported": "Non pris en charge",
+    "unreadable": "Impossible de lire cette annonce."
+  },
+  "install": {
+    "title": "Vérifier l'installation",
+    "back": "Annonce",
+    "missing_version": "Ouvrez cette vérification depuis une annonce.",
+    "ready": "Cet espace de travail peut accepter cette annonce. L'installation n'est pas encore disponible.",
+    "choose": "Choisissez un runtime.",
+    "blocked": "Pas prêt. Résolvez les éléments bloqués.",
+    "stub": "Les annonces d'exemple ne peuvent pas être installées.",
+    "unreadable": "Impossible de lire cette vérification.",
+    "recheck": "Vérifier à nouveau",
+    "runtime": "Runtime",
+    "model": "Modèle",
+    "default_model": "Valeur par défaut du runtime",
+    "load_models": "Charger les modèles",
+    "use_existing": "Utilise l'existant",
+    "provision": "Sera créé",
+    "connect": "Connecter",
+    "status": {
+      "satisfied": "Prêt",
+      "blocked": "Bloqué",
+      "choose": "À choisir"
+    }
+  },
+  "errors": {
+    "not_found": "Cette annonce n'existe pas.",
+    "unavailable": "Le catalogue est indisponible.",
+    "retry": "Réessayer"
+  },
+  "reasons": {
+    "no_runtime_for_provider": "Aucun runtime de cet espace de travail n'exécute ce provider.",
+    "no_usable_runtime": "Aucun de vos runtimes ne peut exécuter cette annonce.",
+    "runtime_not_found": "Ce runtime ne vous est pas accessible.",
+    "runtime_provider_mismatch": "Ce runtime exécute un autre provider.",
+    "runtime_private": "Ce runtime est privé et appartient à un autre membre.",
+    "runtime_ownerless": "Ce runtime privé n'a pas de propriétaire.",
+    "model_catalog_unknown": "Ce runtime n'a pas encore signalé ses modèles.",
+    "model_selection_unsupported": "Ce runtime ne permet pas de choisir un modèle.",
+    "model_unavailable": "Ce runtime ne propose aucun modèle accepté par cette annonce.",
+    "model_not_offered": "Ce runtime ne propose pas ce modèle.",
+    "mcp_attach_forbidden": "Seuls le propriétaire de l'agent et les administrateurs peuvent associer des outils.",
+    "mcp_server_missing": "Cet outil n'existe pas dans l'espace de travail et l'annonce ne peut pas l'ajouter.",
+    "mcp_library_admin_only": "Seuls les propriétaires et administrateurs peuvent ajouter cet outil à l'espace de travail.",
+    "connection_provider_unsupported": "Ce type de connexion n'est pas pris en charge.",
+    "connections_unavailable": "Les applications connectées ne sont pas configurées sur ce serveur.",
+    "connection_not_connected": "Connectez d'abord cette application.",
+    "knowledge_source_unsupported": "Cette source de connaissances n'est pas prise en charge.",
+    "skill_bind_forbidden": "Seuls le propriétaire de l'agent et les administrateurs peuvent ajouter des skills.",
+    "skill_missing": "Ce skill n'existe pas dans l'espace de travail et l'annonce ne l'inclut pas.",
+    "requirement_unsupported": "Multica ne prend pas encore cela en charge.",
+    "unknown": "Bloqué pour une raison que cette application ne peut pas afficher. Mettez l'application à jour."
+  }
+}

@@ -66,6 +66,7 @@ function workspaceScoped(slug: string) {
       `${ws}/runtimes/${encode(machineId)}/runtime/${encode(runtimeId)}`,
     skills: () => `${ws}/skills`,
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
+    market: () => `${ws}/market`,
     marketListing: (id: string) => `${ws}/market/${encode(id)}`,
     // The install page's state is its URL, so a refresh or a shared link
     // re-runs the same preflight.

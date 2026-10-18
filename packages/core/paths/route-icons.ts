@@ -17,6 +17,7 @@
  * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
  * error.
  */
+import { MARKET_V1_FLAG } from "../feature-flags/keys";
 
 /** Every icon name a nav page or a tab type-icon can resolve to. */
 export type RouteIconName =
@@ -32,6 +33,7 @@ export type RouteIconName =
   | "Monitor"
   | "Server"
   | "BookOpenText"
+  | "Store"
   | "Settings"
   | "File"
   | "FileText"
@@ -55,6 +57,7 @@ export type NavLabelKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 /** Stable identifier for each workspace navigation page. */
@@ -70,6 +73,7 @@ export type WorkspacePageKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 export interface WorkspacePage {
@@ -79,6 +83,8 @@ export interface WorkspacePage {
   icon: RouteIconName;
   /** `layout.nav.<navKey>` — the localized page name. */
   navKey: NavLabelKey;
+  /** When set, the page exists only while this flag is on. Sidebar and search both read it. */
+  flag?: string;
 }
 
 /**
@@ -97,8 +103,16 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },
+  market: { segment: "market", icon: "Store", navKey: "market", flag: MARKET_V1_FLAG },
   settings: { segment: "settings", icon: "Settings", navKey: "settings" },
 };
+
+export function isWorkspacePageEnabled(
+  page: WorkspacePage,
+  flags: Readonly<Record<string, boolean>>,
+): boolean {
+  return page.flag === undefined || flags[page.flag] === true;
+}
 
 /** Reverse lookup: route segment → page key. */
 const PAGE_BY_SEGMENT: Record<string, WorkspacePageKey> = Object.fromEntries(

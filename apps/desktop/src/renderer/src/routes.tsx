@@ -5,6 +5,7 @@ import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
 import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
+import { MarketInstallRoute, MarketListingRoute } from "./pages/market-pages";
 import { AgentDetailPage } from "./pages/agent-detail-page";
 import { AiBuilderSessionPage } from "./pages/ai-builder-session-page";
 import { MemberDetailPage } from "./pages/member-detail-page";
@@ -19,6 +20,7 @@ import { DashboardPage } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
 import { SkillsPage } from "@multica/views/skills";
+import { MarketBrowsePage } from "@multica/views/market";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
@@ -182,6 +184,17 @@ export const appRoutes: RouteObject[] = [
             path: "skills/:id",
             element: <SkillDetailPage />,
             handle: { title: "Skill" },
+          },
+          { path: "market", element: <MarketBrowsePage />, handle: { title: "Market" } },
+          {
+            path: "market/:listingId",
+            element: <MarketListingRoute />,
+            handle: { title: "Listing" },
+          },
+          {
+            path: "market/:listingId/install",
+            element: <MarketInstallRoute />,
+            handle: { title: "Check install" },
           },
           { path: "agents", element: <DesktopAgentsPage />, handle: { title: "Agents" } },
           {

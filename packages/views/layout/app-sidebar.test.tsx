@@ -7,7 +7,9 @@ vi.mock("@multica/core/issue-statuses/hooks", () => ({
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@multica/core/api";
 import { renderWithI18n } from "../test/i18n";
-import { AppSidebar } from "./app-sidebar";
+import { configStore } from "@multica/core/config";
+import { WORKSPACE_PAGES, type WorkspacePageKey } from "@multica/core/paths";
+import { AppSidebar, SIDEBAR_NAV_GROUPS } from "./app-sidebar";
 
 const { appForeground, chatSessions, chatStore, detail, deletePin, invitationApi, navigation, pins, sidebarState, summary, workspaces } = vi.hoisted(() => ({
   appForeground: { current: true },
@@ -147,6 +149,7 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     usage: () => "/acme/usage",
     runtimes: () => "/acme/runtimes",
     skills: () => "/acme/skills",
+    market: () => "/acme/market",
     settings: () => "/acme/settings",
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
@@ -288,6 +291,34 @@ describe("PinRow", () => {
       expect(parent()).toHaveAttribute("data-active", "true");
     } finally {
       pins.current = originalPins;
+    }
+  });
+});
+
+// The sidebar's NavKey and NavLabelKey unions are its own copies of the page
+// registry's keys; this keeps them, and the nav lists built from them, in step.
+describe("sidebar nav coverage", () => {
+  it("lists every workspace page once, under the page's own label", () => {
+    const items = SIDEBAR_NAV_GROUPS.flat();
+    const keys = items.map((item) => item.key).sort();
+    expect(keys).toEqual((Object.keys(WORKSPACE_PAGES) as WorkspacePageKey[]).sort());
+    for (const item of items) {
+      expect(item.labelKey, item.key).toBe(WORKSPACE_PAGES[item.key].navKey);
+    }
+  });
+
+  it("shows Market only while market_v1 is on", () => {
+    try {
+      configStore.getState().setFeatureFlags({});
+      const off = render(<AppSidebar />);
+      expect(off.container.querySelector('button[data-href="/acme/market"]')).not.toBeInTheDocument();
+      off.unmount();
+
+      configStore.getState().setFeatureFlags({ market_v1: true });
+      const on = render(<AppSidebar />);
+      expect(on.container.querySelector('button[data-href="/acme/market"]')).toBeInTheDocument();
+    } finally {
+      configStore.getState().setFeatureFlags({});
     }
   });
 });

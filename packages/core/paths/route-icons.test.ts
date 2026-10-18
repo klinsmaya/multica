@@ -5,6 +5,7 @@ import {
   DEFAULT_ROUTE_ICON_NAME,
   resolveRouteIconName,
   pageForSegment,
+  isWorkspacePageEnabled,
   type WorkspacePageKey,
 } from "./route-icons";
 
@@ -78,5 +79,14 @@ describe("resolveRouteIconName", () => {
     expect(resolveRouteIconName("/acme")).toBe(DEFAULT_ROUTE_ICON_NAME);
     expect(resolveRouteIconName("/")).toBe(DEFAULT_ROUTE_ICON_NAME);
     expect(resolveRouteIconName("")).toBe(DEFAULT_ROUTE_ICON_NAME);
+  });
+});
+
+describe("isWorkspacePageEnabled", () => {
+  it("shows a flagged page only while its flag is on", () => {
+    expect(isWorkspacePageEnabled(WORKSPACE_PAGES.market, {})).toBe(false);
+    expect(isWorkspacePageEnabled(WORKSPACE_PAGES.market, { market_v1: false })).toBe(false);
+    expect(isWorkspacePageEnabled(WORKSPACE_PAGES.market, { market_v1: true })).toBe(true);
+    expect(isWorkspacePageEnabled(WORKSPACE_PAGES.issues, {})).toBe(true);
   });
 });
