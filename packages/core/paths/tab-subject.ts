@@ -115,6 +115,10 @@ export function parseTabSubject(url: string): TabSubject {
       return { kind: "machine", machineId: id };
     case "skills":
       return id ? { kind: "skill", id } : { kind: "page", page: "skills" };
+    case "market":
+      // Resource ids contain a slash (publisher/name). The tab stays the
+      // market page so the second segment is not treated as a separate kind.
+      return { kind: "page", page: "market" };
     case "settings":
       return { kind: "page", page: "settings" };
     case "attachments":

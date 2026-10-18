@@ -1,0 +1,12 @@
+{
+  "title": "Market",
+  "loading": "Loading.",
+  "catalog_error": "Could not load the catalog.",
+  "empty": "No resources.",
+  "resource_error": "Could not load this resource.",
+  "unavailable": "This resource is unavailable.",
+  "check_plan": "Check plan",
+  "check_failed": "The check failed.",
+  "ready": "The plan is ready. This check does not start work.",
+  "unreadable": "The check could not be read."
+}

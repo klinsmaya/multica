@@ -5365,6 +5365,10 @@ export class ApiClient {
     });
   }
 
+  async requestJSON(path: string, init?: RequestInit): Promise<unknown> {
+    return this.fetch<unknown>(path, init);
+  }
+
   async redeemTelegramBindingToken(token: string): Promise<RedeemTelegramBindingTokenResponse> {
     const raw = await this.fetch<unknown>(`/api/telegram/binding/redeem`, {
       method: "POST",
