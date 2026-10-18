@@ -94,6 +94,12 @@ import type {
   WebhookDelivery,
   WorkspaceMcpServer,
 } from "../types";
+import type {
+  MarketListing,
+  MarketListingPage,
+  UnreadablePreflight,
+} from "../types/market";
+import { PREFLIGHT_BLOCK_REASONS } from "../types/market-block-reasons";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
 
@@ -3815,3 +3821,134 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+const MarketSourceSchema = z.enum(["live", "stub", "unknown"]).catch("unknown");
+
+const MarketListingSummarySchema = z.object({
+  id: z.string(),
+  name: z.string().default(""),
+  summary: z.string().default(""),
+  publisher: z.string().default(""),
+  icon_url: z.string().nullable().catch(null),
+  latest_version: z.string(),
+}).loose();
+
+export const MarketListingPageSchema = z.object({
+  source: MarketSourceSchema,
+  items: z.array(MarketListingSummarySchema).default([]),
+  page: z.number().int().positive().catch(1),
+  page_size: z.number().int().positive().catch(24),
+  total: z.number().int().nonnegative().catch(0),
+}).loose();
+
+export const EMPTY_MARKET_LISTING_PAGE: MarketListingPage = {
+  source: "unknown",
+  items: [],
+  page: 1,
+  page_size: 24,
+  total: 0,
+};
+
+export const MarketListingSchema = z.object({
+  source: MarketSourceSchema,
+  listing: MarketListingSummarySchema,
+  version: z.string(),
+  description: z.string().default(""),
+  agent: z.object({ name: z.string(), description: z.string().default("") }).loose(),
+  requirements: z.object({
+    model: z.object({ provider: z.string(), models: z.array(z.string()).default([]) }).loose(),
+    tools: z.array(z.object({ name: z.string(), provisionable: z.boolean().catch(false) }).loose()).default([]),
+    connections: z.array(z.object({ provider: z.string(), toolkit: z.string() }).loose()).default([]),
+    knowledge: z.array(
+      z.object({ source: z.string(), name: z.string(), provisionable: z.boolean().catch(false) }).loose(),
+    ).default([]),
+    unsupported: z.array(z.object({ kind: z.string(), name: z.string().default("") }).loose()).default([]),
+  }).loose(),
+}).loose() satisfies z.ZodType<MarketListing>;
+
+const PreflightReasonSchema = z.enum([...PREFLIGHT_BLOCK_REASONS, "unknown"]).catch("unknown");
+
+const PreflightBindingSchema = z.object({
+  action: z.enum(["use_existing", "provision"]),
+  id: z.string().nullable(),
+});
+
+const SatisfiedCheckSchema = z.object({
+  name: z.string(),
+  status: z.literal("satisfied"),
+  binding: PreflightBindingSchema,
+});
+
+const BlockedCheckSchema = z.object({
+  name: z.string(),
+  status: z.literal("blocked"),
+  reason: PreflightReasonSchema,
+});
+
+const PreflightCheckSchema = z.discriminatedUnion("status", [SatisfiedCheckSchema, BlockedCheckSchema]);
+
+const RuntimeOptionSchema = z.object({
+  runtime_id: z.string(),
+  label: z.string().default(""),
+  usable: z.boolean(),
+  reason: PreflightReasonSchema.nullable().default(null),
+  models: z.array(z.string()).default([]),
+});
+
+const ModelCheckBaseSchema = z.object({
+  provider: z.string(),
+  options: z.array(RuntimeOptionSchema).default([]),
+});
+
+const SatisfiedModelCheckSchema = ModelCheckBaseSchema.extend({
+  status: z.literal("satisfied"),
+  runtime_id: z.string(),
+  model: z.string().nullable(),
+});
+
+const ModelCheckSchema = z.discriminatedUnion("status", [
+  SatisfiedModelCheckSchema,
+  ModelCheckBaseSchema.extend({ status: z.literal("blocked"), reason: PreflightReasonSchema }),
+  ModelCheckBaseSchema.extend({ status: z.literal("choose") }),
+]);
+
+const PreflightMetaSchema = z.object({
+  listing_id: z.string(),
+  version: z.string(),
+  source: MarketSourceSchema,
+  target_scope: z.literal("workspace"),
+  evaluated_for: z.object({ user_id: z.string(), role: z.string() }),
+});
+
+// Ready has no defaults on its check lists. A ready report missing a list, or
+// carrying a stub source, matches no variant, so a default can never complete
+// a ready report.
+const ReadyPreflightSchema = PreflightMetaSchema.extend({
+  status: z.literal("ready"),
+  source: z.literal("live"),
+  model: SatisfiedModelCheckSchema,
+  tools: z.array(SatisfiedCheckSchema),
+  connections: z.array(SatisfiedCheckSchema),
+  knowledge: z.array(SatisfiedCheckSchema),
+  unsupported: z.tuple([]),
+});
+
+const BlockedPreflightSchema = PreflightMetaSchema.extend({
+  status: z.literal("blocked"),
+  model: ModelCheckSchema,
+  tools: z.array(PreflightCheckSchema).default([]),
+  connections: z.array(PreflightCheckSchema).default([]),
+  knowledge: z.array(PreflightCheckSchema).default([]),
+  unsupported: z.array(BlockedCheckSchema).default([]),
+});
+
+const ChoosePreflightSchema = BlockedPreflightSchema.extend({ status: z.literal("choose") });
+
+/** A "ready" with any non-satisfied check matches no variant and falls back to unreadable. */
+export const MarketPreflightSchema = z.discriminatedUnion("status", [
+  ReadyPreflightSchema,
+  BlockedPreflightSchema,
+  ChoosePreflightSchema,
+]);
+
+export const UNREADABLE_PREFLIGHT: UnreadablePreflight = { status: "unreadable" };

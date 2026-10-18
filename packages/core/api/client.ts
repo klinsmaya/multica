@@ -2,6 +2,8 @@ import type { ZodType } from "zod";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
+import type { MarketBrowseQuery, MarketListing, MarketListingPage, MarketPreflight, MarketPreflightInput } from "../types/market";
+import { EMPTY_MARKET_LISTING_PAGE, MarketListingPageSchema, MarketListingSchema, MarketPreflightSchema, UNREADABLE_PREFLIGHT } from "./schemas";
 import type { InboxFilters } from "../inbox/filter-store";
 import type { ArchivedInboxPage, ArchivedInboxFacets } from "../types/inbox";
 import { configStore } from "../config";
@@ -1305,6 +1307,40 @@ export class ApiClient {
       signal: params.signal,
     });
     return parseSearchIndexResponse<SearchIndexChanges>(raw, SearchIndexChangesSchema, "POST /api/search-index/changes");
+  }
+
+  async listMarketListings(query: MarketBrowseQuery): Promise<MarketListingPage> {
+    const search = new URLSearchParams();
+    if (query.q) search.set("q", query.q);
+    if (query.page !== undefined) search.set("page", String(query.page));
+    const qs = search.toString();
+    const raw = await this.fetch<unknown>(`/api/market/listings${qs ? `?${qs}` : ""}`);
+    return parseWithFallback(raw, MarketListingPageSchema, EMPTY_MARKET_LISTING_PAGE, {
+      endpoint: "GET /api/market/listings",
+    });
+  }
+
+  /** null means the response did not parse. HTTP errors throw ApiError as usual. */
+  async getMarketListing(listingId: string, version?: string): Promise<MarketListing | null> {
+    const qs = version ? `?${new URLSearchParams({ version })}` : "";
+    const raw = await this.fetch<unknown>(`/api/market/listings/${encodeURIComponent(listingId)}${qs}`);
+    return parseWithFallback<MarketListing | null>(raw, MarketListingSchema, null, {
+      endpoint: "GET /api/market/listings/{id}",
+    });
+  }
+
+  async preflightMarketInstall(input: MarketPreflightInput): Promise<MarketPreflight> {
+    // Built field by field: spreading input would let an extra property reach the server.
+    const body: { version: string; runtime_id?: string; model?: string } = { version: input.version };
+    if (input.runtimeId) body.runtime_id = input.runtimeId;
+    if (input.model) body.model = input.model;
+    const raw = await this.fetch<unknown>(
+      `/api/market/listings/${encodeURIComponent(input.listingId)}/preflight`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback<MarketPreflight>(raw, MarketPreflightSchema, UNREADABLE_PREFLIGHT, {
+      endpoint: "POST /api/market/listings/{id}/preflight",
+    });
   }
 
   /**
