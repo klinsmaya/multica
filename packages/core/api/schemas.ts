@@ -3947,4 +3947,34 @@ export const MarketPreflightSchema = z.discriminatedUnion("status", [
   ChoosePreflightSchema,
 ]);
 
+const MarketInstallStepSchema = z.object({
+  key: z.string(),
+  kind: z.string(),
+  phase: z.string(),
+  output_id: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+const MarketOperationValueSchema = z.object({
+  id: z.string().min(1),
+  instance_id: z.string().optional(),
+  status: z.enum(["planned", "running", "reconciling", "succeeded", "partially_succeeded", "failed"]),
+  readiness: z.enum(["ready", "not_ready"]),
+  idempotency_key: z.string(),
+  plan_hash: z.string(),
+  steps: z.array(MarketInstallStepSchema),
+});
+
+export const MarketOperationSchema = z.union([
+  MarketOperationValueSchema,
+  z.object({ id: z.literal(""), status: z.literal("unreadable"), readiness: z.literal("not_ready"), steps: z.tuple([]) }),
+]);
+
+export const UNREADABLE_MARKET_OPERATION = {
+  id: "",
+  status: "unreadable",
+  readiness: "not_ready",
+  steps: [],
+} as const;
+
 export const UNREADABLE_PREFLIGHT: UnreadablePreflight = { status: "unreadable" };

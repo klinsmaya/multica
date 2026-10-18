@@ -148,11 +148,19 @@ func (c *Client) Listing(ctx context.Context, id ListingID, v Version) (Listing,
 	if got != v {
 		return Listing{}, fmt.Errorf("%w: asked for version %s, got %s", ErrInvalidListing, v, got)
 	}
+	facts, err := decodeReleaseFacts(body)
+	if err != nil {
+		return Listing{}, err
+	}
 	return Listing{
-		Source:      c.source,
-		Summary:     summary,
-		Version:     v,
-		Description: description,
-		Manifest:    manifest,
+		Source:         c.source,
+		Summary:        summary,
+		Version:        v,
+		Description:    description,
+		Manifest:       manifest,
+		PolicyVersion:  facts.PolicyVersion,
+		TargetRevision: facts.TargetRevision,
+		ReleaseDigest:  facts.ReleaseDigest,
+		ReleaseState:   facts.ReleaseState,
 	}, nil
 }

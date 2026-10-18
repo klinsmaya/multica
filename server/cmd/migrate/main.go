@@ -357,6 +357,11 @@ var concurrentIndexCleanups = map[string]string{
 	"482_agent_task_queue_telemetry_started_index":              "idx_agent_task_queue_telemetry_started",
 	"484_issue_triage_state_index":                              "idx_issue_triage_state",
 	"537_issue_duplicate_of_index":                              "idx_issue_duplicate_of",
+	"584_market_install_operation_id_index":                     "market_install_operation_pkey_uidx",
+	"586_market_install_instance_id_index":                      "market_install_instance_pkey_uidx",
+	"588_market_install_binding_uidx":                           "market_install_binding_pkey_uidx",
+	"590_market_install_operation_idempotency_index":            "market_install_operation_idempotency_uidx",
+	"591_market_install_operation_due_index":                    "idx_market_install_operation_due",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction

@@ -156,6 +156,10 @@ export type {
   OpenPreflight,
   UnreadablePreflight,
   MarketPreflight,
+  MarketInstallStep,
+  MarketOperation,
+  UnreadableMarketOperation,
+  MarketOperationResult,
 } from "./market";
 export { PREFLIGHT_BLOCK_REASONS } from "./market";
 export type { InboxItem, InboxSeverity, InboxItemType, InboxWorkspaceUnread, ArchivedInboxPage, ArchivedInboxFacets } from "./inbox";

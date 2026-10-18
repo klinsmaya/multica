@@ -1,0 +1,1 @@
+ALTER TABLE market_install_instance DROP CONSTRAINT IF EXISTS market_install_instance_pkey;

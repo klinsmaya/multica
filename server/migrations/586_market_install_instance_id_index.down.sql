@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS market_install_instance_pkey_uidx;

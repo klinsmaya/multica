@@ -73,9 +73,13 @@ type wireListing struct {
 }
 
 type wireVersion struct {
-	Version     string       `json:"version"`
-	Description string       `json:"description"`
-	Manifest    wireManifest `json:"manifest"`
+	Version        string       `json:"version"`
+	Description    string       `json:"description"`
+	Manifest       wireManifest `json:"manifest"`
+	PolicyVersion  string       `json:"policyVersion"`
+	TargetRevision int64        `json:"targetRevision"`
+	ReleaseDigest  string       `json:"releaseDigest"`
+	ReleaseState   string       `json:"releaseState"`
 }
 
 type wireManifest struct {
@@ -194,6 +198,22 @@ func decodeVersion(body []byte) (Version, string, Manifest, error) {
 		return "", "", Manifest{}, err
 	}
 	return v, env.Data.Description, m, nil
+}
+
+func decodeReleaseFacts(body []byte) (ReleaseFacts, error) {
+	var env wireEnvelope[*wireVersion]
+	if err := json.Unmarshal(body, &env); err != nil {
+		return ReleaseFacts{}, invalid("version envelope: %v", err)
+	}
+	if env.Data == nil {
+		return ReleaseFacts{}, nil
+	}
+	return ReleaseFacts{
+		PolicyVersion:  env.Data.PolicyVersion,
+		TargetRevision: env.Data.TargetRevision,
+		ReleaseDigest:  env.Data.ReleaseDigest,
+		ReleaseState:   env.Data.ReleaseState,
+	}, nil
 }
 
 func parseSummary(w wireListing) (ListingSummary, error) {

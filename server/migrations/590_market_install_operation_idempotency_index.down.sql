@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS market_install_operation_idempotency_uidx;
