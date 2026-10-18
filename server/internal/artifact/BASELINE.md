@@ -54,3 +54,5 @@ A12 local candidates are not attachment rows and not artifact revisions until `S
 A13 publish snapshots are not attachment rows. A share token reads a pinned artifact revision. It does not call `POST /api/upload-file` or `multica attachment`. `artifact_external_share` stays off.
 
 A14 trash, restore, GC, and quota health write artifact rows and artifact objects only. They do not insert or delete attachment rows. `POST /api/upload-file` and `multica attachment` are unchanged.
+
+The acceptance table is in `DECISIONS.md`. `artifacts_v1` and the local bridge stay off. External and public share stay off. Playwright and a browser session were not run in that pass. `make check` did not start because this checkout has no `.env`.

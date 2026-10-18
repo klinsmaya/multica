@@ -90,8 +90,63 @@ Baseline SHA: `18fa9f728a9e25f2465df2789631edb2a75442ad`. Behavior of today's at
 
 ## Conflict with the plan
 
-The plan's upload chapter separates presigned staging, an external scan, and a later seal. This slice keeps that order inside `artifact.Service`: bytes hit a private staging key, verify and the scanner run, then finalize copies into the immutable blob key. There is no second storage stack and no HTTP upload route. The copy holds the artifact row lock instead of a worker. `conflict_draft` retains the verified candidate for seven days on the row; the periodic delete is `ExpireUploads`, which A14 still has to schedule. A stale base is not rewritten onto the new head.
+The plan's upload chapter separates presigned staging, an external scan, and a later seal. This slice keeps that order inside `artifact.Service`: bytes hit a private staging key, verify and the scanner run, then finalize copies into the immutable blob key. There is no second storage stack and no HTTP upload route. The copy holds the artifact row lock instead of a worker. `conflict_draft` retains the verified candidate for seven days on the row. `SweepRetention` calls `ExpireUploads`. Nothing schedules that sweep. A stale base is not rewritten onto the new head.
 
 A03 had inserted the upload already `committed` and stored `scan_status = unchecked`. That shortcut is gone. Revision uniqueness, CAS, and the commit idempotency hash are unchanged.
 
 The plan's office adapter is `open`, `exportDraft`, and `dispose`, and the client must not treat a blob as saved. This slice does that for DOCX only. The plan's callback rules apply when an independent document server posts a save. This slice has no such server. XLSX and PPTX editing remain out.
+
+## Acceptance
+
+Status is from the tests named below. `verified` means that test covers the pass condition and it passed in this checkout. `partial` means a named test covers only part of the row. `not-run` means this checkout has no test for that scenario.
+
+| Row | Status | Test |
+| --- | --- | --- |
+| ART-01 | partial | `TestArtifactSubmitCreateUpdateGetStatus`, `TestArtifactCommandsPrintStableJSON`. No message card. |
+| ART-02 | verified | `TestSameFilenameDoesNotMergeArtifacts` |
+| ART-03 | not-run | No rename API and no rename test. |
+| ART-04 | partial | `TestCommitIdempotentRetryDoesNotCreateSecondRevision`, `TestFinalizeIdempotent`. Not ten retries and not a cache-expiry drill. |
+| ART-05 | verified | `TestCommitSameKeyDifferentRequestConflicts` |
+| ART-06 | partial | `TestArtifactSubmitCreateUpdateGetStatus`, `TestFinalizeIdempotent`. No dropped-connection replay beyond operation status. |
+| ART-07 | partial | `TestVerifyDigestMismatchRejects`, `TestScanRejectedDoesNotCommit`, `TestCancelAndExpireDropStaging`, `TestQuotaSettlementBalances` |
+| ART-08 | partial | `TestScanPendingStaysPending`, `TestDisguisedMediaTypeRejected`. No malware sample. |
+| ART-09 | verified | `TestArtifactReadHidesForeignWorkspaceEvenWhenLinked` |
+| ART-10 | partial | `TestArtifactReadHidesForeignWorkspaceEvenWhenLinked`. A link does not grant bytes. There is no message card. |
+| ART-11 | partial | `TestArtifactReadRequiresMembershipAndReturnsCommittedBytes`, `TestArtifactConcurrencyRestoreAndEvents`. Comment and chat rows still have no artifact pointer. |
+| ART-12 | verified | `TestArtifactConcurrencyRestoreAndEvents`, `TestMergeRecognizedText` |
+| ART-13 | verified | `TestArtifactEditSessionLeaseDraftAndCommit` |
+| ART-14 | verified | `TestMergeRecognizedText`, `TestFinalizeWrongBaseKeepsConflictDraft`, `TestRetentionSweepLeavesConflictDraft` |
+| ART-15 | not-run | No test revokes membership during an open lease. |
+| ART-16 | verified | `TestSanitizeStaticDocumentStripsActiveHTML`, `TestArtifactStaticPreviewAndResources`, `TestArtifactHTMLPreviewDoesNotServeActiveContent`, `TestArtifactShareIgnoresSessionCookie` |
+| ART-17 | verified | `TestPackageManifestRejectsEscapeAndDuplicates`, `TestArtifactStaticPreviewAndResources`, `TestPublishManifestOmitsUnlistedResource`, `TestLocalBridgeRejectsDotDotAndSymlinkEscape` |
+| ART-18 | partial | `TestOfficeGoldenSamples`, `TestDocxEditBlockAndDroppedParts`, `artifact-docx-roundtrip.test.ts`. XLSX and PPTX stay read only. |
+| ART-19 | verified | `TestOfficeTimeoutAndMemoryLimit`, `TestOfficeConversionFailureKeepsOriginalDownload` |
+| ART-20 | verified | `TestArtifactConcurrencyRestoreAndEvents` |
+| ART-21 | partial | `TestArtifactCommandIsRegisteredBesideAttachment`. Handler attachment tests ran inside `go test ./internal/handler/`. `multica attachment` was not executed against a server. |
+| ART-22 | verified | `TestPublishExpiryDeniesBeforeRead`, `TestPublishRevokeWritesAuditAndOutbox`, `TestPublishManifestOmitsUnlistedResource`, `TestArtifactShareIgnoresSessionCookie`. No signed URL is issued. |
+| ART-23 | verified | `TestTrashBlocksUseAndRestoreDoesNotReviveShare`, `TestArtifactTrashHidesContentUntilRestore`, `TestGCKeepsBlobReferencedElsewhere` |
+| ART-24 | partial | `TestCommitIdempotentRetryDoesNotCreateSecondRevision`, `TestArtifactConcurrencyRestoreAndEvents` (`ApplyEvent`). No crash between commit and object delete. |
+| ART-25 | partial | `TestPublishRevokeWritesAuditAndOutbox`, `TestQuotaSettlementBalances`. Share audit and quota drift are covered. Ordinary content download is not an audit row. |
+
+Commands run for this pass:
+
+- `go test ./internal/artifact/ -count=1` passed.
+- `go test ./internal/handler/ -count=1` passed after artifact tables were added to `workspaceDeletionManifest`. The first run failed only `TestWorkspaceDeletionManifestCoversPublicSchema`.
+- `go test ./cmd/multica/ -count=1 -run TestArtifact` passed.
+- `pnpm exec vitest run` in `packages/views` passed, 6088 tests. The artifact files were included.
+- `make check` stopped immediately. The checkout has no `.env`.
+- Playwright was not run. No browser session was opened.
+
+`pg_dump --data-only` wrote the artifact tables. Restoring that file into an empty database from a table-only schema failed because the immutability trigger functions are outside those tables. `TestBackupRestoreRoundTrip` copied the rows on one connection and read the bytes back.
+
+## Still open
+
+- `artifacts_v1` stays off.
+- `MULTICA_ARTIFACT_BRIDGE` stays off.
+- `artifact_external_share` stays off. External and public links are an open product decision.
+- Permanent purge stays refused. There is no legal-hold record.
+- `CollectGarbage` and `SweepRetention` are not on a timer.
+- XLSX and PPTX editing stay out.
+- Comment and chat messages still have no artifact pointer.
+- No process publishes `artifact_events`.
+- Presigned upload URLs and a real malware scanner stay out.
