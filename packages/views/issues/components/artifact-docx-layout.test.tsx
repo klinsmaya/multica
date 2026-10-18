@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderAsync } from "docx-preview";
 import { describe, expect, it } from "vitest";
+import { DOCX_PAGE_FALLBACK_CSS } from "./artifacts-section";
 
 // Two-page package. The bytes are a stored zip, not an extracted-text preview.
 const sampleDocx = Uint8Array.from(atob(
@@ -18,5 +22,37 @@ describe("docx-preview layout", () => {
     expect(text).toContain("Second page");
     expect(text.trim().startsWith("2")).toBe(false);
     host.remove();
+  });
+
+  it("gives a docx with no sectPr a Letter page", async () => {
+    const bytes = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures/demo-word.docx"));
+    const style = document.createElement("style");
+    style.textContent = DOCX_PAGE_FALLBACK_CSS;
+    document.head.appendChild(style);
+    const host = document.createElement("div");
+    host.className = "artifact-docx";
+    document.body.appendChild(host);
+    await renderAsync(bytes, host);
+    const pages = [...host.querySelectorAll("section.docx")];
+    const text = pages.map((page) => page.textContent ?? "").join("\n");
+    expect(pages).toHaveLength(2);
+    expect(text).toContain("Multica Artifact Word demo");
+    expect(text).toContain("Second page: Hello from local Multica.");
+    for (const page of pages) {
+      expect(page.getAttribute("style")).toBeNull();
+      const computed = getComputedStyle(page);
+      const width = Number.parseFloat(computed.width);
+      const height = Number.parseFloat(computed.minHeight);
+      expect(computed.width).toBe("8.5in");
+      expect(computed.minHeight).toBe("11in");
+      expect(computed.paddingTop).toBe("1in");
+      expect(width).toBeGreaterThanOrEqual(8);
+      expect(height).toBeGreaterThanOrEqual(10);
+    }
+    const wrapper = host.querySelector(".docx-wrapper");
+    expect(wrapper).toBeTruthy();
+    expect(getComputedStyle(wrapper as Element).maxHeight).not.toBe("90px");
+    host.remove();
+    style.remove();
   });
 });

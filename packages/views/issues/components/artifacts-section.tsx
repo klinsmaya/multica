@@ -9,7 +9,8 @@ import { ARTIFACTS_V1_FLAG } from "@multica/core/feature-flags";
 import { useFeatureEnabled } from "@multica/core/config";
 import { useActorName } from "@multica/core/workspace/hooks";
 import type { ArtifactEditSession, ArtifactPreview, ArtifactSummary } from "@multica/core/types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
+import { Button } from "@multica/ui/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { formatBytes } from "../../common/format-bytes";
 import { ReadonlyContent } from "../../editor/readonly-content";
@@ -100,8 +101,8 @@ export function ArtifactsSection({
               if (!next) setSelectedId(null);
             }}
           >
-            <DialogContent className="sm:max-w-4xl">
-              <DialogHeader>
+            <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-w-5xl">
+              <DialogHeader className="shrink-0">
                 <DialogTitle>{selected?.title}</DialogTitle>
               </DialogHeader>
               {selected?.head_revision_id && (
@@ -246,8 +247,14 @@ function ArtifactRevisionPanel({
     URL.revokeObjectURL(url);
   }
 
+  const canEdit = !editing && preview.data && picked === revisionId && (
+    artifactTextEditable(preview.data.entry.filename, preview.data.entry.media_type) ||
+    artifactDocxEditable(preview.data.entry.filename, preview.data.entry.media_type)
+  );
+
   return (
-    <div data-testid="artifact-preview">
+    <>
+    <div className="min-h-0 flex-1 overflow-auto" data-testid="artifact-preview">
       {revisions.data && revisions.data.revisions.length > 1 && (
         <div className="mb-2 flex flex-wrap gap-1">
           {revisions.data.revisions.map((revision) => (
@@ -306,25 +313,19 @@ function ArtifactRevisionPanel({
       ) : preview.isError ? (
         <p className="text-caption text-muted-foreground">{t(($) => $.artifacts.preview_failed)}</p>
       ) : null}
-      {!editing && preview.data && picked === revisionId && (artifactTextEditable(preview.data.entry.filename, preview.data.entry.media_type) || artifactDocxEditable(preview.data.entry.filename, preview.data.entry.media_type)) && (
-        <button
-          type="button"
-          data-testid="artifact-edit"
-          className="mt-2 text-caption text-muted-foreground hover:text-foreground"
-          onClick={() => setEditing(true)}
-        >
-          {t(($) => $.artifacts.edit)}
-        </button>
-      )}
-      <button
-        type="button"
-        className="mt-2 inline-flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground"
-        onClick={() => void download()}
-      >
+    </div>
+    <DialogFooter className="shrink-0">
+      <Button type="button" variant="outline" onClick={() => void download()}>
         <Download className="size-3.5" />
         {t(($) => $.artifacts.download)}
-      </button>
-    </div>
+      </Button>
+      {canEdit ? (
+        <Button type="button" data-testid="artifact-edit" onClick={() => setEditing(true)}>
+          {t(($) => $.artifacts.edit)}
+        </Button>
+      ) : null}
+    </DialogFooter>
+    </>
   );
 }
 
@@ -369,6 +370,12 @@ export function artifactTextEditable(filename: string, mediaType: string): boole
 
 const ARTIFACT_STATIC_PREVIEW_CSP =
   "sandbox; default-src 'none'; connect-src 'none'; img-src 'none'; font-src 'none'; style-src 'none'; script-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+
+// OOXML omits pgSz as Letter (8.5in by 11in) and pgMar as 1in. Inline sizes from a real sectPr still win.
+export const DOCX_PAGE_FALLBACK_CSS = `
+.artifact-docx .docx-wrapper { width: 100%; }
+.artifact-docx section.docx { width: 8.5in; min-height: 11in; padding: 1in; box-sizing: border-box; }
+`;
 
 function DocxDocument({
   blob,
@@ -438,11 +445,14 @@ function DocxDocument({
     );
   }
   return (
-    <div
-      ref={host}
-      data-testid="artifact-docx-preview"
-      className="min-h-96 overflow-auto bg-white text-neutral-900"
-    />
+    <>
+      <style>{DOCX_PAGE_FALLBACK_CSS}</style>
+      <div
+        ref={host}
+        data-testid="artifact-docx-preview"
+        className="artifact-docx text-neutral-900"
+      />
+    </>
   );
 }
 
