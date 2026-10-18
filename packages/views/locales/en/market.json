@@ -1,0 +1,81 @@
+{
+  "page": {
+    "title": "Market"
+  },
+  "source": {
+    "stub": "Sample",
+    "unknown": "Unknown source"
+  },
+  "browse": {
+    "search_label": "Search listings",
+    "search_placeholder": "Search listings",
+    "empty": "No listings yet.",
+    "no_match": "No listings match your search.",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "detail": {
+    "back": "Market",
+    "version": "Version {{version}}",
+    "check_install": "Check install",
+    "requirements": "Requirements",
+    "model": "Model",
+    "any_model": "Any {{provider}} model",
+    "tools": "Tools",
+    "connections": "Connections",
+    "knowledge": "Knowledge",
+    "unsupported": "Not supported",
+    "unreadable": "This listing can't be read."
+  },
+  "install": {
+    "title": "Check install",
+    "back": "Listing",
+    "missing_version": "Open this check from a listing.",
+    "ready": "This workspace can accept this listing. Installing isn't available yet.",
+    "choose": "Choose a runtime.",
+    "blocked": "Not ready. Resolve the blocked items.",
+    "stub": "Sample listings can't be installed.",
+    "unreadable": "This check couldn't be read.",
+    "recheck": "Check again",
+    "runtime": "Runtime",
+    "model": "Model",
+    "default_model": "Runtime default",
+    "load_models": "Load models",
+    "use_existing": "Uses existing",
+    "provision": "Will be created",
+    "connect": "Connect",
+    "status": {
+      "satisfied": "Ready",
+      "blocked": "Blocked",
+      "choose": "Choose"
+    }
+  },
+  "errors": {
+    "not_found": "This listing doesn't exist.",
+    "unavailable": "The catalog is unavailable.",
+    "retry": "Try again"
+  },
+  "reasons": {
+    "no_runtime_for_provider": "No runtime in this workspace runs this provider.",
+    "no_usable_runtime": "None of your runtimes can run this listing.",
+    "runtime_not_found": "This runtime isn't available to you.",
+    "runtime_provider_mismatch": "This runtime runs a different provider.",
+    "runtime_private": "This runtime is private to another member.",
+    "runtime_ownerless": "This private runtime has no owner.",
+    "model_catalog_unknown": "This runtime hasn't reported its models yet.",
+    "model_selection_unsupported": "This runtime can't choose a model.",
+    "model_unavailable": "This runtime doesn't offer a model this listing accepts.",
+    "model_not_offered": "This runtime doesn't offer that model.",
+    "mcp_attach_forbidden": "Only the agent owner or an admin can attach tools.",
+    "mcp_server_missing": "This tool isn't in the workspace and the listing can't add it.",
+    "mcp_library_admin_only": "Only an owner or admin can add this tool to the workspace.",
+    "connection_provider_unsupported": "This connection type isn't supported.",
+    "connections_unavailable": "Connected apps aren't set up on this server.",
+    "connection_not_connected": "Connect this app first.",
+    "knowledge_source_unsupported": "This knowledge source isn't supported.",
+    "skill_bind_forbidden": "Only the agent owner or an admin can add skills.",
+    "skill_missing": "This skill isn't in the workspace and the listing doesn't include it.",
+    "requirement_unsupported": "Multica doesn't support this yet.",
+    "unknown": "Blocked for a reason this app can't show. Update the app."
+  }
+}

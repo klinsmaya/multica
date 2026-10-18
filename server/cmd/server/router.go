@@ -436,6 +436,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
 		CloudURL:                 strings.TrimSpace(os.Getenv("MULTICA_CLOUD_URL")),
 		CloudTimeout:             35 * time.Second,
+		MarketCatalogURL:         strings.TrimSpace(os.Getenv("MULTICA_MARKET_CATALOG_URL")),
+		MarketCatalogToken:       strings.TrimSpace(os.Getenv("MULTICA_MARKET_CATALOG_TOKEN")),
 		AttachmentDownloadMode:   os.Getenv("ATTACHMENT_DOWNLOAD_MODE"),
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 		AttachmentFrameAncestors: origins,
@@ -1996,6 +1998,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/manifest", h.GetSearchIndexManifest)
 				r.Get("/snapshot", h.GetSearchIndexSnapshot)
 				r.Post("/changes", h.ListSearchIndexChanges)
+			})
+
+			r.Route("/api/market", func(r chi.Router) {
+				r.Use(h.RequireMarketV1)
+				r.Use(handler.RequireHumanActor)
+				r.Get("/listings", h.BrowseMarketListings)
+				r.Get("/listings/{listingId}", h.GetMarketListing)
+				r.Post("/listings/{listingId}/preflight", h.PreflightMarketInstall)
 			})
 
 			// Issues

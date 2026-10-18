@@ -1,0 +1,81 @@
+{
+  "page": {
+    "title": "マーケット"
+  },
+  "source": {
+    "stub": "サンプル",
+    "unknown": "出所不明"
+  },
+  "browse": {
+    "search_label": "リスティングを検索",
+    "search_placeholder": "リスティングを検索",
+    "empty": "リスティングはまだありません。",
+    "no_match": "検索に一致するリスティングはありません。",
+    "previous": "前へ",
+    "next": "次へ"
+  },
+  "detail": {
+    "back": "マーケット",
+    "version": "バージョン {{version}}",
+    "check_install": "インストールを確認",
+    "requirements": "要件",
+    "model": "モデル",
+    "any_model": "任意の {{provider}} モデル",
+    "tools": "ツール",
+    "connections": "接続",
+    "knowledge": "ナレッジ",
+    "unsupported": "未対応",
+    "unreadable": "このリスティングを読み込めません。"
+  },
+  "install": {
+    "title": "インストールを確認",
+    "back": "リスティング",
+    "missing_version": "リスティングからこの確認を開いてください。",
+    "ready": "このワークスペースはこのリスティングを受け入れられます。インストールはまだ利用できません。",
+    "choose": "ランタイムを選択してください。",
+    "blocked": "準備ができていません。ブロックされた項目を解決してください。",
+    "stub": "サンプルのリスティングはインストールできません。",
+    "unreadable": "この確認結果を読み込めません。",
+    "recheck": "再確認",
+    "runtime": "ランタイム",
+    "model": "モデル",
+    "default_model": "ランタイムのデフォルト",
+    "load_models": "モデルを読み込む",
+    "use_existing": "既存のものを使用",
+    "provision": "新しく作成",
+    "connect": "接続",
+    "status": {
+      "satisfied": "準備完了",
+      "blocked": "ブロック中",
+      "choose": "要選択"
+    }
+  },
+  "errors": {
+    "not_found": "このリスティングは存在しません。",
+    "unavailable": "カタログを利用できません。",
+    "retry": "再試行"
+  },
+  "reasons": {
+    "no_runtime_for_provider": "このワークスペースにはこの provider を実行するランタイムがありません。",
+    "no_usable_runtime": "このリスティングを実行できるランタイムがありません。",
+    "runtime_not_found": "このランタイムは利用できません。",
+    "runtime_provider_mismatch": "このランタイムは別の provider を実行します。",
+    "runtime_private": "このランタイムは別のメンバーのプライベートランタイムです。",
+    "runtime_ownerless": "このプライベートランタイムにはオーナーがいません。",
+    "model_catalog_unknown": "このランタイムはまだモデルを報告していません。",
+    "model_selection_unsupported": "このランタイムではモデルを選択できません。",
+    "model_unavailable": "このランタイムはこのリスティングが受け付けるモデルを提供していません。",
+    "model_not_offered": "このランタイムはそのモデルを提供していません。",
+    "mcp_attach_forbidden": "ツールを接続できるのはエージェントのオーナーと管理者だけです。",
+    "mcp_server_missing": "このツールはワークスペースになく、このリスティングでは追加できません。",
+    "mcp_library_admin_only": "このツールをワークスペースに追加できるのはオーナーと管理者だけです。",
+    "connection_provider_unsupported": "この接続タイプには対応していません。",
+    "connections_unavailable": "このサーバーでは接続済みアプリが設定されていません。",
+    "connection_not_connected": "先にこのアプリを接続してください。",
+    "knowledge_source_unsupported": "このナレッジソースには対応していません。",
+    "skill_bind_forbidden": "スキルを追加できるのはエージェントのオーナーと管理者だけです。",
+    "skill_missing": "このスキルはワークスペースになく、このリスティングにも含まれていません。",
+    "requirement_unsupported": "Multica はまだこれに対応していません。",
+    "unknown": "このアプリでは表示できない理由でブロックされています。アプリを更新してください。"
+  }
+}

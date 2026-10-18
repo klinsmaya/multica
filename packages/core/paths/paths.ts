@@ -66,6 +66,14 @@ function workspaceScoped(slug: string) {
       `${ws}/runtimes/${encode(machineId)}/runtime/${encode(runtimeId)}`,
     skills: () => `${ws}/skills`,
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
+    market: () => `${ws}/market`,
+    marketListing: (id: string) => `${ws}/market/${encode(id)}`,
+    marketInstall: (id: string, version: string, runtime?: string, model?: string) => {
+      const search = new URLSearchParams({ version });
+      if (runtime) search.set("runtime", runtime);
+      if (model) search.set("model", model);
+      return `${ws}/market/${encode(id)}/install?${search}`;
+    },
     settings: () => `${ws}/settings`,
     attachmentPreview: (id: string) => `${ws}/attachments/${encode(id)}/preview`,
   };

@@ -40,6 +40,16 @@ describe("paths.workspace(slug)", () => {
   it("URL-encodes special characters in ids", () => {
     expect(ws.issueDetail("id with space")).toBe("/acme/issues/id%20with%20space");
   });
+
+  it("builds market paths with the install choice in the query", () => {
+    expect(ws.marketListing("acme:pr-reviewer")).toBe("/acme/market/acme%3Apr-reviewer");
+    expect(ws.marketInstall("sample.notes", "1.2.0")).toBe(
+      "/acme/market/sample.notes/install?version=1.2.0",
+    );
+    expect(ws.marketInstall("sample.notes", "1.2.0+b", "rt-1", "claude-sonnet-4-5")).toBe(
+      "/acme/market/sample.notes/install?version=1.2.0%2Bb&runtime=rt-1&model=claude-sonnet-4-5",
+    );
+  });
 });
 
 describe("paths (global)", () => {

@@ -106,11 +106,6 @@ func (h *Handler) authorizeAgentEnv(w http.ResponseWriter, r *http.Request) (db.
 	return agent, member, true
 }
 
-// canManageAgentEnv is the pure half of the env authorization rule:
-// a workspace owner/admin, or the human who owns the agent. Mirrors
-// canManageAgent (update/archive) so a member who can manage an agent
-// can also rotate its secrets.
-//
 // The owner comparison deliberately runs against member.UserID rather
 // than requestUserID(r). agent.owner_id is nullable (migration 001) and
 // uuidToString renders a NULL UUID as "", so comparing against a raw

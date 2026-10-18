@@ -64,7 +64,13 @@ import {
   issueViewContainerKey,
   useActiveIssueViewStore,
 } from "@multica/core/issue-views/active-view-store";
-import { useCurrentWorkspace, useWorkspacePaths, paths } from "@multica/core/paths";
+import {
+  isWorkspacePageEnabled,
+  useCurrentWorkspace,
+  useWorkspacePaths,
+  paths,
+  WORKSPACE_PAGES,
+} from "@multica/core/paths";
 import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@multica/core/workspace/queries";
 import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -123,6 +129,7 @@ type NavKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 // Static schema (key only) — labels resolved at render via useT("layout"),
@@ -139,6 +146,7 @@ type NavLabelKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "market"
   | "settings";
 
 // Nav icons are NOT declared here: they are derived from each item's
@@ -160,6 +168,7 @@ const aiTeamNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "agents", labelKey: "agents" },
   { key: "squads", labelKey: "squads" },
   { key: "skills", labelKey: "skills" },
+  { key: "market", labelKey: "market" },
   { key: "runtimes", labelKey: "runtimes" },
 ];
 
@@ -167,6 +176,12 @@ const utilityNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "usage", labelKey: "usage" },
   { key: "settings", labelKey: "settings" },
 ];
+
+export const SIDEBAR_NAV_GROUPS = [personalNav, workNav, aiTeamNav, utilityNav] as const;
+
+function enabledNav<T extends { key: NavKey }>(items: T[], flags: Readonly<Record<string, boolean>>): T[] {
+  return items.filter((item) => isWorkspacePageEnabled(WORKSPACE_PAGES[item.key], flags));
+}
 
 const NAV_ITEM_CLASS_NAME =
   "text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground";
@@ -443,6 +458,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const featureFlags = useConfigStore((s) => s.featureFlags);
 
   // On a phone the sidebar is a Sheet covering the page, so navigating out of
   // it has to dismiss it — otherwise the destination renders underneath and the
@@ -773,7 +789,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {personalNav.map((item) => {
+                {enabledNav(personalNav, featureFlags).map((item) => {
                   const href = p[item.key]();
                   const Icon = routeIconForPath(href);
                   const isActive = isNavActive(pathname, href);
@@ -861,7 +877,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             <SidebarGroupLabel>{t(($) => $.sidebar.work_group)}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {workNav.map((item) => {
+                {enabledNav(workNav, featureFlags).map((item) => {
                   const href = p[item.key]();
                   const Icon = routeIconForPath(href);
                   const isActive = !isActivePinnedRoute && isNavActive(pathname, href);
@@ -886,7 +902,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             <SidebarGroupLabel>{t(($) => $.sidebar.ai_team_group)}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
-                {aiTeamNav.map((item) => {
+                {enabledNav(aiTeamNav, featureFlags).map((item) => {
                   const href = p[item.key]();
                   const Icon = routeIconForPath(href);
                   const isActive = isNavActive(pathname, href);
@@ -910,7 +926,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
 
         <SidebarFooter className="p-2">
           <SidebarMenu className="gap-0.5">
-            {utilityNav.map((item) => {
+            {enabledNav(utilityNav, featureFlags).map((item) => {
               const href = p[item.key]();
               const Icon = routeIconForPath(href);
               return (

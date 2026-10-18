@@ -51,6 +51,32 @@ func TestCanManageAgentEnv_Pure(t *testing.T) {
 	}
 }
 
+func TestCanManageAgent_NullOwnerMatchesNobody(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	agentID := createHandlerTestAgent(t, "null-owner-manage-agent", nil)
+	dbfx.Exec(t, `UPDATE agent SET owner_id = NULL WHERE id = $1`, agentID)
+
+	memberID := createPermissionTestMember(t, "null-owner-manage-member@multica.test")
+	adminID := createPermissionTestMember(t, "null-owner-manage-admin@multica.test")
+	dbfx.Exec(t, `UPDATE member SET role = 'admin' WHERE workspace_id = $1 AND user_id = $2`, testWorkspaceID, adminID)
+
+	update := func(userID string) int {
+		body := map[string]any{"description": "changed by " + userID}
+		req := withURLParam(newRequestAs(userID, http.MethodPut, "/api/agents/"+agentID, body), "id", agentID)
+		w := httptest.NewRecorder()
+		testHandler.UpdateAgent(w, req)
+		return w.Code
+	}
+	if code := update(memberID); code != http.StatusForbidden {
+		t.Fatalf("plain member on a NULL-owner agent: got %d, want 403", code)
+	}
+	if code := update(adminID); code != http.StatusOK {
+		t.Fatalf("workspace admin on a NULL-owner agent: got %d, want 200", code)
+	}
+}
+
 // agentEnvOwnerFixture creates a plain (role=member) workspace member and
 // an agent owned by that member, seeded with a known custom_env map. This
 // is the shape a member creating their own agent produces: POST

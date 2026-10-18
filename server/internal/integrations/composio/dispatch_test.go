@@ -543,3 +543,18 @@ func assertConnectedApps(t *testing.T, apps []runtimeapps.ConnectedApp, want ...
 		t.Fatalf("non-allowlisted slack leaked into connected apps: %+v", apps)
 	}
 }
+
+func TestMountableToolkits_NewestConnectionPerAllowedSlug(t *testing.T) {
+	rows := []db.UserComposioConnection{
+		{ToolkitSlug: " GitHub ", ConnectedAccountID: "ca_newest"},
+		{ToolkitSlug: "github", ConnectedAccountID: "ca_older"},
+		{ToolkitSlug: "slack", ConnectedAccountID: "ca_slack"},
+	}
+	got := MountableToolkits(rows, []string{"github", " "})
+	if len(got) != 1 || got["github"].ConnectedAccountID != "ca_newest" {
+		t.Fatalf("mounted = %+v, want only github pinned to the newest row", got)
+	}
+	if got := MountableToolkits(rows, nil); len(got) != 0 {
+		t.Fatalf("empty allowlist mounted %+v", got)
+	}
+}

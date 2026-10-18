@@ -92,8 +92,7 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 	ownerUserID := agent.OwnerID
 	// Gate 2: agent owner has not allowlisted any toolkit. NULL and empty
 	// `{}` are treated identically — both mean "no overlay".
-	allowSet := normaliseAllowlistToSet(agent.ComposioToolkitAllowlist)
-	if len(allowSet) == 0 {
+	if len(normaliseAllowlistToSet(agent.ComposioToolkitAllowlist)) == 0 {
 		return runtimeapps.MCPOverlayResult{}, nil
 	}
 
@@ -104,8 +103,8 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 	if err != nil {
 		return runtimeapps.MCPOverlayResult{}, fmt.Errorf("composio: build task overlay: list connections: %w", err)
 	}
-	pinned := pinConnectedAccounts(rows, allowSet)
-	if len(pinned) == 0 {
+	mounted := MountableToolkits(rows, agent.ComposioToolkitAllowlist)
+	if len(mounted) == 0 {
 		// Gate 3: owner allowlisted toolkits they have not connected — or have
 		// revoked since.
 		return runtimeapps.MCPOverlayResult{}, nil
@@ -113,9 +112,11 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.
 	// `toolkits.enable` narrows what the tool-router exposes; pair it with
 	// the connected-account pin so the session can never surface an
 	// account outside the (allowlist ∩ active connections) set.
-	slugs := make([]string, 0, len(pinned))
-	for slug := range pinned {
+	slugs := make([]string, 0, len(mounted))
+	pinned := make(map[string]any, len(mounted))
+	for slug, row := range mounted {
 		slugs = append(slugs, slug)
+		pinned[slug] = []string{row.ConnectedAccountID}
 	}
 	sort.Strings(slugs)
 
@@ -180,11 +181,11 @@ func normaliseAllowlistToSet(allow []string) map[string]struct{} {
 	return out
 }
 
-// pinConnectedAccounts intersects active connection rows with allowed toolkits.
-// Rows must be ordered newest first; the first account per toolkit wins.
-func pinConnectedAccounts(rows []db.UserComposioConnection, allowSet map[string]struct{}) map[string]any {
-	pinned := make(map[string]any, len(rows))
-	for _, row := range rows {
+// Rows must be ordered newest first.
+func MountableToolkits(ownerConnections []db.UserComposioConnection, allowlist []string) map[string]db.UserComposioConnection {
+	allowSet := normaliseAllowlistToSet(allowlist)
+	mounted := make(map[string]db.UserComposioConnection, len(allowSet))
+	for _, row := range ownerConnections {
 		slug := lowerTrim(row.ToolkitSlug)
 		if slug == "" {
 			continue
@@ -192,12 +193,12 @@ func pinConnectedAccounts(rows []db.UserComposioConnection, allowSet map[string]
 		if _, allowed := allowSet[slug]; !allowed {
 			continue
 		}
-		if _, dup := pinned[slug]; dup {
+		if _, dup := mounted[slug]; dup {
 			continue
 		}
-		pinned[slug] = []string{row.ConnectedAccountID}
+		mounted[slug] = row
 	}
-	return pinned
+	return mounted
 }
 
 // lowerTrim is the tiny inlined helper that keeps allowlist and connection

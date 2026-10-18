@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { WORKSPACE_PAGES } from "@multica/core/paths";
+import { configStore } from "@multica/core/config";
 import { SearchCommand } from "./search-command";
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 import { useSearchStore } from "./search-store";
@@ -236,6 +237,7 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     usage: () => "/ws-test/usage",
     runtimes: () => "/ws-test/runtimes",
     skills: () => "/ws-test/skills",
+    market: () => "/ws-test/market",
     settings: () => "/ws-test/settings",
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
     memberDetail: (id: string) => `/ws-test/members/${id}`,
@@ -337,6 +339,7 @@ vi.mock("sonner", () => ({
 
 describe("SearchCommand", () => {
   beforeEach(() => {
+    configStore.getState().setFeatureFlags({});
     mockPush.mockReset();
     mockSearchIssues.mockReset().mockResolvedValue({ issues: [] });
     mockSearchProjects.mockReset().mockResolvedValue({ projects: [] });
@@ -417,6 +420,7 @@ describe("SearchCommand", () => {
   });
 
   it("offers every workspace nav page, not a hand-maintained subset", async () => {
+    configStore.getState().setFeatureFlags({ market_v1: true });
     const user = userEvent.setup();
     renderSearch();
     const input = screen.getByPlaceholderText("Type a command or search...");
@@ -435,6 +439,15 @@ describe("SearchCommand", () => {
         ),
       ).toBeInTheDocument();
     }
+  });
+
+  it("omits a flagged page while its flag is off", async () => {
+    const user = userEvent.setup();
+    renderSearch();
+    await user.type(screen.getByPlaceholderText("Type a command or search..."), enLayout.nav.market);
+    expect(
+      screen.queryByText((_, el) => el?.textContent === enLayout.nav.market && el?.tagName === "SPAN"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not surface a page on an incidental substring of a hidden keyword", async () => {

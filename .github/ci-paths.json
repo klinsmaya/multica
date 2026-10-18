@@ -75,6 +75,7 @@
   ],
   "scripts": [
     "scripts/generate-reserved-slugs.mjs",
+    "scripts/generate-market-block-reasons.mjs",
     "scripts/selfhost-config.test.sh",
     "scripts/drop-database.sh",
     "scripts/remove-worktree.sh",
@@ -102,6 +103,8 @@
     "Makefile",
     "server/internal/handler/reserved_slugs.json",
     "packages/core/paths/reserved-slugs.ts",
+    "server/internal/handler/market_block_reasons.json",
+    "packages/core/types/market-block-reasons.ts",
     "server/cmd/server/router.go",
     ".github/workflows/ci.yml",
     ".github/ci-paths.json",

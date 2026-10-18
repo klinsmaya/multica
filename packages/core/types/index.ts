@@ -134,6 +134,30 @@ export type {
   PluginMCPTool,
   PluginTokenIssue,
 } from "./plugin";
+export type {
+  MarketSource,
+  MarketListingSummary,
+  MarketListingPage,
+  MarketRequirements,
+  MarketListing,
+  MarketBrowseQuery,
+  MarketPreflightInput,
+  PreflightBlockReason,
+  PreflightBinding,
+  SatisfiedCheck,
+  BlockedCheck,
+  PreflightCheck,
+  RuntimeOption,
+  SatisfiedModelCheck,
+  BlockedModelCheck,
+  ChooseModelCheck,
+  ModelCheck,
+  ReadyPreflight,
+  OpenPreflight,
+  UnreadablePreflight,
+  MarketPreflight,
+} from "./market";
+export { PREFLIGHT_BLOCK_REASONS } from "./market";
 export type { InboxItem, InboxSeverity, InboxItemType, InboxWorkspaceUnread, ArchivedInboxPage, ArchivedInboxFacets } from "./inbox";
 export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentSupplementReceipt, CommentSupplementStatus, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, CommentTriggerOutcome, CommentTriggerStatus, Reaction } from "./comment";
