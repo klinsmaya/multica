@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/handler"
@@ -352,6 +353,52 @@ func TestMarketRoutesAre404WhenFlagOff(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("%s %s with market_v1 off: status %d, want 404", tc.method, tc.path, resp.StatusCode)
+		}
+	}
+}
+
+// TestMarketRoutesRejectTaskTokens: the same member passes with a session and is
+// refused with a task token bound to them, so the refusal is RequireHumanActor's
+// and not a membership miss.
+func TestMarketRoutesRejectTaskTokens(t *testing.T) {
+	fx := newMarketTestServer(t, liveListing("acme.notes", marketcatalog.Manifest{Model: marketcatalog.ModelNeed{Provider: "claude"}}))
+	member := fx.memberWithJWT(t, "member")
+	runtimeID := fx.runtime(t, member, "claude", "public")
+	agentID := fx.Agent(t, "task token holder", runtimeID)
+	taskID := fx.Task(t, agentID, testutil.Cols{"runtime_id": runtimeID})
+	token := "mat_test_market_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	fx.Insert(t, "task_token", testutil.Cols{
+		"token_hash":   auth.HashToken(token),
+		"task_id":      taskID,
+		"agent_id":     agentID,
+		"workspace_id": fx.WorkspaceID,
+		"user_id":      member.userID,
+		"expires_at":   testutil.Raw(`now() + interval '1 hour'`),
+	})
+	asTask := func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) }
+
+	cases := []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodGet, "/api/market/listings", nil},
+		{http.MethodGet, "/api/market/listings/acme.notes", nil},
+		{http.MethodPost, "/api/market/listings/acme.notes/preflight", map[string]any{"version": "1.0.0"}},
+	}
+	for _, tc := range cases {
+		session := fx.do(t, member, tc.method, tc.path, tc.body, nil)
+		session.Body.Close()
+		if session.StatusCode != http.StatusOK {
+			t.Fatalf("%s %s with a session: status %d, want 200", tc.method, tc.path, session.StatusCode)
+		}
+
+		resp := fx.do(t, member, tc.method, tc.path, tc.body, asTask)
+		var body struct {
+			Error string `json:"error"`
+		}
+		readJSON(t, resp, &body)
+		if resp.StatusCode != http.StatusForbidden || body.Error != "this endpoint is only available to human actors" {
+			t.Fatalf("%s %s with a task token: status %d error %q, want 403 from RequireHumanActor", tc.method, tc.path, resp.StatusCode, body.Error)
 		}
 	}
 }
