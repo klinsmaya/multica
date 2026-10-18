@@ -1496,6 +1496,8 @@
     "lease_expired": "Le verrou d'édition a expiré. Ce fichier est en lecture seule.",
     "docx_blocked": "Ce fichier reste en lecture seule. Les macros, commentaires et modifications suivies ne sont pas édités.",
     "docx_dropped": "Enregistrement bloqué. Le nouveau fichier omettrait une partie de l'original.",
+    "local_candidate": "Fichier candidat local",
+    "local_candidate_hint": "Ce chemin ne peut pas être lu.",
     "cancel": "Annuler"
   },
   "workflows": {

@@ -48,3 +48,5 @@ A09 static preview reads a sealed artifact blob and returns a sanitized fragment
 A10 writes an `artifact_derivatives` row and a derivative object for a DOCX, XLSX, or PPTX revision. That row is not an attachment and not a new revision. The original blob stays in place. `POST /api/upload-file` and `multica attachment` are unchanged.
 
 A11 DOCX edit posts a new artifact revision through the existing lease. It does not write an attachment row. XLSX and PPTX stay on the A10 preview. `POST /api/upload-file` and `multica attachment` are unchanged.
+
+A12 local candidates are not attachment rows and not artifact revisions until `Service.Commit` seals them. The bridge defaults off. `POST /api/upload-file` and `multica attachment` are unchanged.

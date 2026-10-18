@@ -1447,6 +1447,8 @@
     "lease_expired": "編集ロックの期限が切れました。今は閲覧のみです。",
     "docx_blocked": "このファイルは読み取り専用のままです。マクロ、コメント、変更履歴は編集しません。",
     "docx_dropped": "保存を止めました。新しいファイルは元の一部を欠きます。",
+    "local_candidate": "ローカル候補ファイル",
+    "local_candidate_hint": "このパスは読み取れません。",
     "cancel": "キャンセル"
   },
   "workflows": {

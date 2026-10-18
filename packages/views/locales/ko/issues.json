@@ -1447,6 +1447,8 @@
     "lease_expired": "편집 잠금이 만료되었습니다. 지금은 읽기만 됩니다.",
     "docx_blocked": "이 파일은 읽기 전용입니다. 매크로, 메모, 변경 내용은 편집하지 않습니다.",
     "docx_dropped": "저장을 막았습니다. 새 파일에 원본의 일부가 없습니다.",
+    "local_candidate": "로컬 후보 파일",
+    "local_candidate_hint": "이 경로는 읽을 수 없습니다.",
     "cancel": "취소"
   },
   "workflows": {

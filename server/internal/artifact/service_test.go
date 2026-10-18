@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -833,4 +834,80 @@ func openPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+func TestLocalBridgeOfflineMovedHeadKeepsConflictDraft(t *testing.T) {
+	pool, h, ws, actor := setup(t)
+	root := t.TempDir()
+	path := filepath.Join(root, "draft.md")
+	if err := os.WriteFile(path, []byte("# v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bridge := artifact.LocalBridge{
+		Enabled: true,
+		Bindings: []artifact.RootBinding{{
+			WorkspaceID: ws.String(),
+			UserID:      actor.String(),
+			Roots:       []string{root},
+		}},
+	}
+	first, err := bridge.Submit(context.Background(), h.svc, artifact.LocalSubmit{
+		WorkspaceID: ws,
+		UserID:      actor.String(),
+		ActorID:     actor,
+		OwnerScope:  "workspace",
+		OwnerID:     ws,
+		Title:       "Draft",
+		Path:        path,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := first.RevisionID
+	v2 := commitBytes(t, h.svc, ws, actor, first.ArtifactID, &base, "cloud-v2", "draft.md", []byte("# v2\n"))
+	if err := os.WriteFile(path, []byte("# local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = bridge.Submit(context.Background(), h.svc, artifact.LocalSubmit{
+		WorkspaceID:    ws,
+		UserID:         actor.String(),
+		ActorID:        actor,
+		Path:           path,
+		ArtifactID:     &first.ArtifactID,
+		BaseRevisionID: &base,
+	})
+	if !errors.Is(err, artifact.ErrRevisionConflict) {
+		t.Fatalf("error = %v, want revision conflict", err)
+	}
+	assertHead(t, pool, first.ArtifactID, v2.RevisionID, 2)
+	assertRevisionCount(t, pool, first.ArtifactID, 2)
+	var state string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT state FROM artifact_uploads WHERE artifact_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		first.ArtifactID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "conflict_draft" {
+		t.Fatalf("state = %s, want conflict_draft", state)
+	}
+}
+
+func TestLocalBridgeDeleteDoesNotRemoveCloudArtifact(t *testing.T) {
+	pool, h, ws, actor := setup(t)
+	created := createArtifact(t, h.svc, ws, actor, "keep.md")
+	v1 := commitBytes(t, h.svc, ws, actor, created.ID, nil, "keep-v1", "keep.md", []byte("# keep\n"))
+	bridge := artifact.LocalBridge{Enabled: true}
+	_, err := bridge.Submit(context.Background(), h.svc, artifact.LocalSubmit{
+		WorkspaceID:  ws,
+		UserID:       actor.String(),
+		ActorID:      actor,
+		ArtifactID:   &created.ID,
+		LocalDeleted: true,
+		Path:         "/etc/passwd",
+	})
+	if !errors.Is(err, artifact.ErrLocalDeleteKept) {
+		t.Fatalf("error = %v", err)
+	}
+	assertHead(t, pool, created.ID, v1.RevisionID, 1)
+	assertRevisionCount(t, pool, created.ID, 1)
 }

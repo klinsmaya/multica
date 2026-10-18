@@ -1447,6 +1447,8 @@
     "lease_expired": "编辑锁已过期。现在只能查看。",
     "docx_blocked": "此文件保持只读。宏、批注和修订不在这里编辑。",
     "docx_dropped": "已阻止保存。新文件会丢掉原文件的一部分。",
+    "local_candidate": "本地候选文件",
+    "local_candidate_hint": "这个路径不能读取。",
     "cancel": "取消"
   },
   "workflows": {

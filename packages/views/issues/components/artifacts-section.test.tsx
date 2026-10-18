@@ -39,7 +39,7 @@ vi.mock("@multica/core/workspace/hooks", () => ({
   }),
 }));
 
-import { ArtifactPreviewBody, ArtifactsSection } from "./artifacts-section";
+import { ArtifactPreviewBody, ArtifactsSection, type LocalArtifactCandidate } from "./artifacts-section";
 
 const editSession = {
   edit_session_id: "sess-1",
@@ -79,12 +79,13 @@ const htmlPreview: ArtifactPreview = {
   active_content: false,
 };
 
-function renderSection() {
+function renderSection(candidates?: LocalArtifactCandidate[], locale?: "en" | "zh-Hans") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderWithI18n(
     <QueryClientProvider client={client}>
-      <ArtifactsSection issueId="issue-1" />
+      <ArtifactsSection issueId="issue-1" candidates={candidates} />
     </QueryClientProvider>,
+    locale ? { locale } : undefined,
   );
 }
 
@@ -139,9 +140,32 @@ describe("ArtifactsSection", () => {
   });
 
   it("stays hidden and does not fetch while artifacts_v1 is off", () => {
-    renderSection();
+    renderSection([
+      { kind: "artifact_candidate", source: "file_link", name: "note.md", submittable: true, saved: false },
+    ]);
     expect(screen.queryByTestId("issue-artifacts")).toBeNull();
+    expect(screen.queryByText("本地候选文件")).toBeNull();
     expect(apiMock.listArtifacts).not.toHaveBeenCalled();
+  });
+
+  it("shows a local candidate and does not treat it as a saved artifact", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.listArtifacts.mockResolvedValue({ artifacts: [] });
+    renderSection(
+      [
+        { kind: "artifact_candidate", source: "write_file", name: "note.md", submittable: true, saved: false },
+        { kind: "artifact_candidate", source: "file_link", hint: "escape", submittable: false, saved: false },
+      ],
+      "zh-Hans",
+    );
+    expect(await screen.findByTestId("local-artifact-candidates")).toBeTruthy();
+    expect(screen.getAllByText("本地候选文件")).toHaveLength(1);
+    expect(screen.getByText("note.md")).toBeTruthy();
+    expect(screen.getByText("这个路径不能读取。")).toBeTruthy();
+    expect(screen.queryByText("Weekly report")).toBeNull();
+    expect(screen.queryByText(/v1/)).toBeNull();
+    expect(screen.queryByText("/tmp/secret/note.md")).toBeNull();
+    expect(screen.queryByTestId("artifact-edit")).toBeNull();
   });
 
   it("lists a committed artifact when the flag is on", async () => {

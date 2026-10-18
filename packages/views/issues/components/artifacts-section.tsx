@@ -12,11 +12,27 @@ import { useT } from "../../i18n";
 import { formatBytes } from "../../common/format-bytes";
 import { ReadonlyContent } from "../../editor/readonly-content";
 
+export type LocalArtifactCandidate = {
+  kind: "artifact_candidate";
+  source: string;
+  name?: string;
+  hint?: string;
+  submittable: boolean;
+  saved: false;
+};
+
 /**
  * Artifacts owned by this issue. Hidden unless artifacts_v1 is on. Comment
  * attachments stay in Deliverables; this list does not import them.
+ * Local candidates are not rows in that list.
  */
-export function ArtifactsSection({ issueId }: { issueId: string }) {
+export function ArtifactsSection({
+  issueId,
+  candidates = [],
+}: {
+  issueId: string;
+  candidates?: LocalArtifactCandidate[];
+}) {
   const enabled = useFeatureEnabled(ARTIFACTS_V1_FLAG, false);
   const { t } = useT("issues");
   const [open, setOpen] = useState(true);
@@ -28,40 +44,61 @@ export function ArtifactsSection({ issueId }: { issueId: string }) {
   });
   if (!enabled) return null;
   const artifacts = query.data?.artifacts ?? [];
-  if (artifacts.length === 0) return null;
+  const localCandidates = candidates.filter((item) => item.kind === "artifact_candidate" && item.saved === false);
+  if (artifacts.length === 0 && localCandidates.length === 0) return null;
   const selected = artifacts.find((item) => item.id === selectedId) ?? null;
 
   return (
     <div data-testid="issue-artifacts">
-      <button
-        type="button"
-        className={`mb-2 flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        {t(($) => $.artifacts.section_title)}{" "}
-        <span className="rounded-xs bg-muted px-1 text-micro font-medium tabular-nums text-muted-foreground">
-          {artifacts.length}
-        </span>
-        <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
-      </button>
-      {open && (
-        <div className="pl-2">
-          {artifacts.map((artifact) => (
-            <ArtifactRow
-              key={artifact.id}
-              artifact={artifact}
-              selected={artifact.id === selectedId}
-              onOpen={() => setSelectedId(artifact.id === selectedId ? null : artifact.id)}
-            />
+      {localCandidates.length > 0 && (
+        <ul data-testid="local-artifact-candidates" className="mb-2 pl-2">
+          {localCandidates.map((candidate, index) => (
+            <li key={`${candidate.source}-${candidate.name ?? "hint"}-${index}`} className="px-2 py-1 text-caption">
+              {candidate.submittable ? (
+                <>
+                  <span>{t(($) => $.artifacts.local_candidate)}</span>
+                  {candidate.name ? <span className="text-muted-foreground"> {candidate.name}</span> : null}
+                </>
+              ) : (
+                <span>{t(($) => $.artifacts.local_candidate_hint)}</span>
+              )}
+            </li>
           ))}
-          {selected?.head_revision_id && (
-            <ArtifactRevisionPanel
-              artifactId={selected.id}
-              revisionId={selected.head_revision_id}
-            />
+        </ul>
+      )}
+      {artifacts.length > 0 && (
+        <>
+          <button
+            type="button"
+            className={`mb-2 flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+          >
+            {t(($) => $.artifacts.section_title)}{" "}
+            <span className="rounded-xs bg-muted px-1 text-micro font-medium tabular-nums text-muted-foreground">
+              {artifacts.length}
+            </span>
+            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+          </button>
+          {open && (
+            <div className="pl-2">
+              {artifacts.map((artifact) => (
+                <ArtifactRow
+                  key={artifact.id}
+                  artifact={artifact}
+                  selected={artifact.id === selectedId}
+                  onOpen={() => setSelectedId(artifact.id === selectedId ? null : artifact.id)}
+                />
+              ))}
+              {selected?.head_revision_id && (
+                <ArtifactRevisionPanel
+                  artifactId={selected.id}
+                  revisionId={selected.head_revision_id}
+                />
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

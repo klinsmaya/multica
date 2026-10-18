@@ -1496,6 +1496,8 @@
     "lease_expired": "The edit lock expired. This file is read only.",
     "docx_blocked": "This file stays read only. Macros, comments, or tracked changes are not edited.",
     "docx_dropped": "Save blocked. The new file would drop part of the original.",
+    "local_candidate": "Local candidate file",
+    "local_candidate_hint": "This path cannot be read.",
     "cancel": "Cancel"
   },
   "workflows": {
