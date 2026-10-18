@@ -124,6 +124,34 @@ func (h *Handler) UpdateArtifact(w http.ResponseWriter, r *http.Request) {
 		if err == nil && rev.Filename != "" {
 			file.name = rev.Filename
 		}
+		if err == nil && artifactDocxEditable(rev.MediaType, rev.Filename) {
+			baseRev, baseErr := h.Queries.GetArtifactRevision(r.Context(), db.GetArtifactRevisionParams{
+				ID:         baseID,
+				ArtifactID: art.ID,
+			})
+			if errors.Is(baseErr, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "artifact not found")
+				return
+			}
+			if baseErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load revision")
+				return
+			}
+			baseBytes, readErr := h.artifactBlobBytes(r.Context(), baseRev.BlobID)
+			if readErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to load revision")
+				return
+			}
+			missing, dropErr := artifact.DocxDroppedParts(baseBytes, file.data)
+			if dropErr != nil {
+				writeError(w, http.StatusBadRequest, "docx save is not a readable package")
+				return
+			}
+			if len(missing) > 0 {
+				writeErrorCode(w, http.StatusConflict, artifact.CodeOfficeFeatureDropped, "docx save dropped a package part")
+				return
+			}
+		}
 	}
 	base := uuid.UUID(baseID.Bytes)
 	source := "agent"

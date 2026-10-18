@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -247,6 +248,110 @@ func TestArtifactEditSessionLeaseDraftAndCommit(t *testing.T) {
 	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM artifact_edit_sessions WHERE artifact_id = $1`, htmlArt.ID).Scan(&sessions); err != nil || sessions != 0 {
 		t.Fatalf("html sessions = %d, err %v", sessions, err)
 	}
+}
+
+func TestArtifactDocxEditKeepsPartsAndBlocksTheRest(t *testing.T) {
+	if testPool == nil || dbfx == nil {
+		t.Skip("test database not available")
+	}
+	store := &mockStorage{}
+	orig := testHandler.Storage
+	testHandler.Storage = store
+	t.Cleanup(func() { testHandler.Storage = orig })
+	ws := mustUUID(t, testWorkspaceID)
+	actor := mustUUID(t, testUserID)
+	t.Cleanup(func() {
+		_ = db.New(testPool).DeleteWorkspaceArtifacts(context.Background(), artifactPG(ws))
+	})
+	svc := &artifact.Service{DB: testPool, Store: store, Scanner: artifact.NopScanner{}}
+	router := newArtifactEditRouter()
+	member := map[string]string{"X-User-ID": testUserID, "X-Workspace-ID": testWorkspaceID}
+	plain := docxEditPackage(t, map[string]string{
+		"word/document.xml":   `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello artifact</w:t></w:r></w:p></w:body></w:document>`,
+		"customXml/item1.xml": `<root>KEEP-PART</root>`,
+	})
+
+	created := createHTTPArtifact(t, svc, ws, actor, uuid.New(), "issue", "Notes")
+	v1 := commitHTTPArtifact(t, svc, ws, actor, created.ID, nil, "edit-docx", "notes.docx", artifact.MediaTypeDocx, plain)
+	opened := mustOpenEdit(t, router, created.ID.String(), member)
+	if opened.BaseRevisionID != v1.RevisionID.String() {
+		t.Fatalf("docx session = %+v", opened)
+	}
+	draft := editJSON(t, router, http.MethodPut, "/api/artifact-edit-sessions/"+opened.EditSessionID+"/draft", member, map[string]any{
+		"lease_token":   opened.LeaseToken,
+		"fencing_token": opened.FencingToken,
+		"content":       "not a docx",
+	})
+	if draft.Code != http.StatusBadRequest {
+		t.Fatalf("docx draft = %d %s", draft.Code, draft.Body.String())
+	}
+	dropped := docxEditPackage(t, map[string]string{
+		"word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello artifact</w:t></w:r></w:p></w:body></w:document>`,
+	})
+	rejected := postArtifact(t, router, "/api/artifacts/"+created.ID.String()+"/revisions", member, map[string]string{
+		"base_revision_id": opened.BaseRevisionID,
+		"edit_session_id":  opened.EditSessionID,
+		"fencing_token":    itoa(opened.FencingToken),
+		"lease_token":      opened.LeaseToken,
+	}, "notes.docx", dropped)
+	if code := errorCodeOf(t, rejected); rejected.Code != http.StatusConflict || code != artifact.CodeOfficeFeatureDropped {
+		t.Fatalf("dropped part = %d %s", rejected.Code, rejected.Body.String())
+	}
+	var revisions int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM artifact_revisions WHERE artifact_id = $1`, created.ID).Scan(&revisions); err != nil || revisions != 1 {
+		t.Fatalf("revisions after drop = %d, err %v", revisions, err)
+	}
+	saved := postArtifact(t, router, "/api/artifacts/"+created.ID.String()+"/revisions", member, map[string]string{
+		"base_revision_id": opened.BaseRevisionID,
+		"edit_session_id":  opened.EditSessionID,
+		"fencing_token":    itoa(opened.FencingToken),
+		"lease_token":      opened.LeaseToken,
+	}, "notes.docx", plain)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("kept parts = %d %s", saved.Code, saved.Body.String())
+	}
+
+	sheet := createHTTPArtifact(t, svc, ws, actor, uuid.New(), "issue", "Budget")
+	commitHTTPArtifact(t, svc, ws, actor, sheet.ID, nil, "edit-xlsx", "budget.xlsx", artifact.MediaTypeXlsx, docxEditPackage(t, map[string]string{
+		"xl/workbook.xml": `<workbook/>`,
+	}))
+	xlsxSession := editJSON(t, router, http.MethodPost, "/api/artifacts/"+sheet.ID.String()+"/edit-sessions", member, nil)
+	if code := errorCodeOf(t, xlsxSession); xlsxSession.Code != http.StatusUnsupportedMediaType || code != artifact.CodeNotEditable {
+		t.Fatalf("xlsx session = %d %s", xlsxSession.Code, xlsxSession.Body.String())
+	}
+
+	macro := createHTTPArtifact(t, svc, ws, actor, uuid.New(), "issue", "Macro")
+	commitHTTPArtifact(t, svc, ws, actor, macro.ID, nil, "edit-macro", "macro.docx", artifact.MediaTypeDocx, docxEditPackage(t, map[string]string{
+		"word/document.xml":   `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>`,
+		"word/vbaProject.bin": "not-executed",
+	}))
+	macroSession := editJSON(t, router, http.MethodPost, "/api/artifacts/"+macro.ID.String()+"/edit-sessions", member, nil)
+	if code := errorCodeOf(t, macroSession); macroSession.Code != http.StatusUnsupportedMediaType || code != artifact.CodeOfficeFeatureBlocked {
+		t.Fatalf("macro session = %d %s", macroSession.Code, macroSession.Body.String())
+	}
+	var sessions int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM artifact_edit_sessions WHERE artifact_id = $1`, macro.ID).Scan(&sessions); err != nil || sessions != 0 {
+		t.Fatalf("macro sessions = %d, err %v", sessions, err)
+	}
+}
+
+func docxEditPackage(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func newArtifactEditRouter() http.Handler {

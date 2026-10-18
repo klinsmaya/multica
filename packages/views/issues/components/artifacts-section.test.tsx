@@ -29,6 +29,10 @@ function errorCode(err: unknown): string | undefined {
 
 vi.mock("@multica/core/api", () => ({ api: apiMock, errorCode }));
 
+vi.mock("./artifact-docx-editor", () => ({
+  ArtifactDocxEditor: () => <div data-testid="artifact-docx-editor" />,
+}));
+
 vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) => `Member ${id}`,
@@ -255,8 +259,46 @@ describe("ArtifactsSection", () => {
     expect(frame.getAttribute("sandbox")).toBe("");
     expect(frame.getAttribute("srcdoc")).toContain("Hello artifact");
     expect(screen.getByText("Download")).toBeTruthy();
-    expect(screen.queryByTestId("artifact-edit")).toBeNull();
+    expect(screen.getByTestId("artifact-edit")).toBeTruthy();
     expect(apiMock.getArtifactRevisionText).not.toHaveBeenCalled();
+  });
+
+  it("opens the docx editor and leaves spreadsheets read only", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-1",
+          revision_no: 1,
+          media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          filename: "notes.docx",
+          size_bytes: 32,
+          updated_at: "2026-10-17T00:00:00Z",
+          created_at: "2026-10-17T00:00:00Z",
+          row_version: 1,
+        },
+      ],
+    });
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      filename: "notes.docx",
+      media_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      preview_kind: "docx",
+      office_status: "ready",
+      office_preview_path: "/api/artifacts/art-1/revisions/rev-1/office-preview",
+    });
+    apiMock.getArtifactOfficePreview.mockResolvedValue("<pre>Hello artifact</pre>");
+    renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    fireEvent.click(await screen.findByTestId("artifact-edit"));
+    expect(await screen.findByTestId("artifact-docx-editor")).toBeTruthy();
   });
 
   it("shows a failed office preview without hiding download", async () => {

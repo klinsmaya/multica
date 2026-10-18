@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -34,8 +35,8 @@ type editSessionResponse struct {
 
 // CreateArtifactEditSession — POST /api/artifacts/{artifactID}/edit-sessions
 //
-// Opens a lease for a markdown, text, JSON, or CSV head. The caller must
-// already be allowed to read the artifact.
+// Opens a lease for a markdown, text, JSON, CSV, or DOCX head. The caller must
+// already be allowed to read the artifact. XLSX and PPTX stay read only.
 func (h *Handler) CreateArtifactEditSession(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUserID(w, r); !ok {
 		return
@@ -64,9 +65,27 @@ func (h *Handler) CreateArtifactEditSession(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to load revision")
 		return
 	}
-	if !artifactTextEditable(rev.MediaType, rev.Filename) {
+	textOK := artifactTextEditable(rev.MediaType, rev.Filename)
+	docxOK := artifactDocxEditable(rev.MediaType, rev.Filename)
+	if !textOK && !docxOK {
 		writeErrorCode(w, http.StatusUnsupportedMediaType, artifact.CodeNotEditable, "artifact is not editable")
 		return
+	}
+	if docxOK {
+		if rev.SizeBytes > artifact.MaxOfficeInputBytes {
+			writeErrorCode(w, http.StatusUnsupportedMediaType, artifact.CodeOfficeFeatureBlocked, "docx feature is not edited")
+			return
+		}
+		body, err := h.artifactBlobBytes(r.Context(), rev.BlobID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load revision")
+			return
+		}
+		reason, err := artifact.DocxEditBlock(body)
+		if err != nil || reason != "" {
+			writeErrorCode(w, http.StatusUnsupportedMediaType, artifact.CodeOfficeFeatureBlocked, "docx feature is not edited")
+			return
+		}
 	}
 	session, err := h.artifactService().OpenEditSession(r.Context(), artifact.OpenEditSessionInput{
 		WorkspaceID: uuid.UUID(art.WorkspaceID.Bytes),
@@ -99,6 +118,13 @@ func (h *Handler) HeartbeatArtifactEditSession(w http.ResponseWriter, r *http.Re
 func (h *Handler) SaveArtifactEditDraft(w http.ResponseWriter, r *http.Request) {
 	lease, art, ok := h.readEditProof(w, r, true)
 	if !ok {
+		return
+	}
+	if docx, err := h.artifactHeadIsDocx(r, art); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load revision")
+		return
+	} else if docx {
+		writeError(w, http.StatusBadRequest, "a docx draft is not stored")
 		return
 	}
 	content, ok := editDraftContent(w, r)
@@ -261,6 +287,41 @@ func ifMatchAgrees(r *http.Request, base string) bool {
 	match = strings.TrimPrefix(match, "W/")
 	match = strings.Trim(strings.TrimSpace(match), `"`)
 	return strings.EqualFold(match, strings.TrimSpace(base))
+}
+
+func artifactDocxEditable(mediaType, filename string) bool {
+	format, ok := artifact.OfficeFormat(mediaType, filename)
+	return ok && format == artifact.FormatDocx
+}
+
+func (h *Handler) artifactHeadIsDocx(r *http.Request, art db.Artifact) (bool, error) {
+	if !art.HeadRevisionID.Valid {
+		return false, nil
+	}
+	rev, err := h.Queries.GetArtifactRevision(r.Context(), db.GetArtifactRevisionParams{
+		ID:         art.HeadRevisionID,
+		ArtifactID: art.ID,
+	})
+	if err != nil {
+		return false, err
+	}
+	return artifactDocxEditable(rev.MediaType, rev.Filename), nil
+}
+
+func (h *Handler) artifactBlobBytes(ctx context.Context, blobID pgtype.UUID) ([]byte, error) {
+	if h.Storage == nil {
+		return nil, errors.New("storage not configured")
+	}
+	blob, err := h.Queries.GetArtifactBlob(ctx, blobID)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := h.Storage.GetReader(ctx, blob.StorageKey)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(io.LimitReader(reader, artifact.MaxOfficeInputBytes+1))
 }
 
 func artifactTextEditable(mediaType, filename string) bool {

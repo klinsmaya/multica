@@ -4182,7 +4182,7 @@ export class ApiClient {
     artifactId: string;
     baseRevisionId: string;
     filename: string;
-    content: string;
+    content: BlobPart;
     editSessionId: string;
     leaseToken: string;
     fencingToken: number;

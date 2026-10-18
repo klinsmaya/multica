@@ -1445,6 +1445,8 @@
     "conflict": "文件已有新版本。草稿还在。",
     "read_only": "只读",
     "lease_expired": "编辑锁已过期。现在只能查看。",
+    "docx_blocked": "此文件保持只读。宏、批注和修订不在这里编辑。",
+    "docx_dropped": "已阻止保存。新文件会丢掉原文件的一部分。",
     "cancel": "取消"
   },
   "workflows": {

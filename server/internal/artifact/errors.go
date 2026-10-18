@@ -9,7 +9,7 @@ const (
 	CodeLeaseHeld = "LEASE_HELD"
 	// CodeLeaseExpired means the fencing token is no longer allowed to submit.
 	CodeLeaseExpired = "LEASE_EXPIRED"
-	// CodeNotEditable means this revision is not a text format the editor opens.
+	// CodeNotEditable means this revision is not a text format or a DOCX the editor opens.
 	CodeNotEditable = "NOT_EDITABLE"
 	// CodeIdempotencyReused is the stable error_code for a key reused with a
 	// different request. It is returned to the caller and is not stored on the
@@ -52,6 +52,6 @@ var (
 	ErrLeaseHeld = errors.New("edit lease held")
 	// ErrLeaseExpired means the fencing token can no longer submit.
 	ErrLeaseExpired = errors.New("edit lease expired")
-	// ErrNotEditable means the head revision is not markdown, text, JSON, or CSV.
+	// ErrNotEditable means the head revision is not markdown, text, JSON, CSV, or DOCX.
 	ErrNotEditable = errors.New("artifact is not editable")
 )

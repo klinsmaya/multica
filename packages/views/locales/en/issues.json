@@ -1494,6 +1494,8 @@
     "conflict": "This file changed. Your draft is still here.",
     "read_only": "Read only",
     "lease_expired": "The edit lock expired. This file is read only.",
+    "docx_blocked": "This file stays read only. Macros, comments, or tracked changes are not edited.",
+    "docx_dropped": "Save blocked. The new file would drop part of the original.",
     "cancel": "Cancel"
   },
   "workflows": {

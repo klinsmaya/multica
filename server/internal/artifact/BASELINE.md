@@ -46,3 +46,5 @@ A08 restore and `artifact_events` write artifact rows only. Restore reuses an ex
 A09 static preview reads a sealed artifact blob and returns a sanitized fragment. It does not write an attachment row, and it does not change `POST /api/upload-file` or `multica attachment`.
 
 A10 writes an `artifact_derivatives` row and a derivative object for a DOCX, XLSX, or PPTX revision. That row is not an attachment and not a new revision. The original blob stays in place. `POST /api/upload-file` and `multica attachment` are unchanged.
+
+A11 DOCX edit posts a new artifact revision through the existing lease. It does not write an attachment row. XLSX and PPTX stay on the A10 preview. `POST /api/upload-file` and `multica attachment` are unchanged.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Download } from "lucide-react";
 import { api, errorCode } from "@multica/core/api";
@@ -205,7 +205,22 @@ function ArtifactRevisionPanel({
           ))}
         </div>
       )}
-      {editing && preview.data ? (
+      {editing && preview.data && artifactDocxEditable(preview.data.entry.filename, preview.data.entry.media_type) ? (
+        <Suspense fallback={null}>
+          <ArtifactDocxEditor
+            artifactId={artifactId}
+            filename={preview.data.entry.filename}
+            onClose={() => setEditing(false)}
+            onCommitted={(nextRevisionId) => {
+              setEditing(false);
+              if (nextRevisionId) setPicked(nextRevisionId);
+              void queryClient.invalidateQueries({ queryKey: ["issue-artifacts"] });
+              void queryClient.invalidateQueries({ queryKey: ["artifact-revisions", artifactId] });
+              void queryClient.invalidateQueries({ queryKey: ["artifact-preview", artifactId] });
+            }}
+          />
+        </Suspense>
+      ) : editing && preview.data ? (
         <ArtifactTextEditor
           artifactId={artifactId}
           filename={preview.data.entry.filename}
@@ -229,7 +244,7 @@ function ArtifactRevisionPanel({
       ) : preview.isError ? (
         <p className="text-caption text-muted-foreground">{t(($) => $.artifacts.preview_failed)}</p>
       ) : null}
-      {!editing && preview.data && picked === revisionId && artifactTextEditable(preview.data.entry.filename, preview.data.entry.media_type) && (
+      {!editing && preview.data && picked === revisionId && (artifactTextEditable(preview.data.entry.filename, preview.data.entry.media_type) || artifactDocxEditable(preview.data.entry.filename, preview.data.entry.media_type)) && (
         <button
           type="button"
           data-testid="artifact-edit"
@@ -251,6 +266,10 @@ function ArtifactRevisionPanel({
   );
 }
 
+const ArtifactDocxEditor = lazy(() =>
+  import("./artifact-docx-editor").then((mod) => ({ default: mod.ArtifactDocxEditor })),
+);
+
 const TEXT_EDIT_EXTENSIONS = new Set(["md", "markdown", "txt", "json", "csv"]);
 const TEXT_EDIT_MEDIA = new Set([
   "text/markdown",
@@ -260,6 +279,12 @@ const TEXT_EDIT_MEDIA = new Set([
   "text/csv",
 ]);
 const EDIT_HEARTBEAT_MS = 30_000;
+
+export function artifactDocxEditable(filename: string, mediaType: string): boolean {
+  const name = filename.toLowerCase();
+  const media = mediaType.toLowerCase().split(";")[0]?.trim() ?? "";
+  return name.endsWith(".docx") || media === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+}
 
 export function artifactTextEditable(filename: string, mediaType: string): boolean {
   const name = filename.toLowerCase();
