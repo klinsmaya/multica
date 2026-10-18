@@ -1875,16 +1875,14 @@ func redactAgentResponseForActor(resp *AgentResponse, actorType string) {
 
 // canManageAgent checks whether the current user can update or archive an agent.
 // Only the agent owner or workspace owner/admin can manage any agent,
-// regardless of whether it is public or private.
+// regardless of whether it is public or private. A NULL owner matches nobody.
 func (h *Handler) canManageAgent(w http.ResponseWriter, r *http.Request, agent db.Agent) bool {
 	wsID := uuidToString(agent.WorkspaceID)
 	member, ok := h.requireWorkspaceRole(w, r, wsID, "agent not found", "owner", "admin", "member")
 	if !ok {
 		return false
 	}
-	isAdmin := roleAllowed(member.Role, "owner", "admin")
-	isAgentOwner := uuidToString(agent.OwnerID) == requestUserID(r)
-	if !isAdmin && !isAgentOwner {
+	if !canManageAgentEnv(agent, member) {
 		writeError(w, http.StatusForbidden, "only the agent owner can manage this agent")
 		return false
 	}

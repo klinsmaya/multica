@@ -1,0 +1,25 @@
+{
+  "$comment": "Source of truth for market preflight block reasons. Edit this file only. TestBlockReasonsMatchJSON pins the blockReason consts in market_preflight.go to this list. packages/core/types/market-block-reasons.ts is regenerated from it by `pnpm generate:market-block-reasons`, and CI fails on any diff. Every reason needs an en copy key under market.reasons.",
+  "reasons": [
+    "no_runtime_for_provider",
+    "no_usable_runtime",
+    "runtime_not_found",
+    "runtime_provider_mismatch",
+    "runtime_private",
+    "runtime_ownerless",
+    "model_catalog_unknown",
+    "model_selection_unsupported",
+    "model_unavailable",
+    "model_not_offered",
+    "mcp_attach_forbidden",
+    "mcp_server_missing",
+    "mcp_library_admin_only",
+    "connection_provider_unsupported",
+    "connections_unavailable",
+    "connection_not_connected",
+    "knowledge_source_unsupported",
+    "skill_bind_forbidden",
+    "skill_missing",
+    "requirement_unsupported"
+  ]
+}
