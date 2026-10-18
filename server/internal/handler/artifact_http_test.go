@@ -198,8 +198,11 @@ func TestArtifactHTMLPreviewDoesNotServeActiveContent(t *testing.T) {
 	if err := json.Unmarshal(preview.Body.Bytes(), &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.PreviewKind != "download" || entry.ContentDisposition != "attachment" || entry.ActiveContent {
+	if entry.PreviewKind != "html" || entry.ContentDisposition != "attachment" || entry.ActiveContent {
 		t.Fatalf("preview = %+v", entry)
+	}
+	if entry.StaticPreviewPath == "" || strings.Contains(entry.StaticPreviewPath, "workspaces/") {
+		t.Fatalf("static preview path = %s", entry.StaticPreviewPath)
 	}
 	if strings.Contains(entry.ContentPath, "workspaces/") || strings.Contains(entry.ContentPath, committed.StorageKey) {
 		t.Fatalf("content path = %s", entry.ContentPath)
@@ -255,6 +258,8 @@ func newArtifactReadRouter() http.Handler {
 	r.Get("/api/artifacts/{artifactID}", testHandler.GetArtifact)
 	r.Get("/api/artifacts/{artifactID}/revisions", testHandler.ListArtifactRevisions)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/preview", testHandler.GetArtifactRevisionPreview)
+	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/static-preview", testHandler.GetArtifactStaticPreview)
+	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/resources/*", testHandler.GetArtifactPreviewResource)
 	r.Get("/api/artifacts/{artifactID}/revisions/{revisionID}/content", testHandler.GetArtifactRevisionContent)
 	return r
 }

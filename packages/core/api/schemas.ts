@@ -3882,6 +3882,7 @@ export const ArtifactPreviewSchema = z
     preview_kind: z.string().catch("download"),
     content_path: z.string().catch(""),
     content_disposition: z.string().catch("attachment"),
+    static_preview_path: z.string().optional().catch(""),
     active_content: z.boolean().catch(false),
   })
   .loose();

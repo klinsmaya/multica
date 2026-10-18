@@ -42,6 +42,8 @@ func TestArtifactsV1ReadRoutesMountWhenEnabled(t *testing.T) {
 		"/api/artifacts/{artifactID}",
 		"/api/artifacts/{artifactID}/revisions",
 		"/api/artifacts/{artifactID}/revisions/{revisionID}/preview",
+		"/api/artifacts/{artifactID}/revisions/{revisionID}/static-preview",
+		"/api/artifacts/{artifactID}/revisions/{revisionID}/resources/*",
 		"/api/artifacts/{artifactID}/revisions/{revisionID}/content",
 		"/api/artifacts/{artifactID}/edit-sessions",
 		"/api/artifacts/{artifactID}/restore",

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/multica-ai/multica/server/internal/artifact"
 	"github.com/multica-ai/multica/server/internal/storage"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -62,8 +63,9 @@ type artifactPreviewResponse struct {
 	PreviewKind        string `json:"preview_kind"`
 	ContentPath        string `json:"content_path"`
 	ContentDisposition string `json:"content_disposition"`
-	// ActiveContent is always false. HTML and SVG are not served as a
-	// document the browser will execute.
+	StaticPreviewPath  string `json:"static_preview_path,omitempty"`
+	// ActiveContent stays false. Static preview is a separate sanitized
+	// document. This flag does not enable scripts.
 	ActiveContent bool `json:"active_content"`
 }
 
@@ -178,7 +180,7 @@ func (h *Handler) GetArtifactRevisionPreview(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	kind, disposition := classifyArtifactPreview(rev.MediaType, rev.Filename)
-	writeJSON(w, http.StatusOK, artifactPreviewResponse{
+	resp := artifactPreviewResponse{
 		ArtifactID:         uuidToString(rev.ArtifactID),
 		RevisionID:         uuidToString(rev.ID),
 		Filename:           rev.Filename,
@@ -189,7 +191,11 @@ func (h *Handler) GetArtifactRevisionPreview(w http.ResponseWriter, r *http.Requ
 		ContentPath:        artifactContentPath(uuidToString(rev.ArtifactID), uuidToString(rev.ID)),
 		ContentDisposition: disposition,
 		ActiveContent:      false,
-	})
+	}
+	if (kind == "html" || kind == "svg") && rev.SizeBytes <= artifact.MaxStaticPreviewBytes {
+		resp.StaticPreviewPath = artifactStaticPreviewPath(uuidToString(rev.ArtifactID), uuidToString(rev.ID))
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // GetArtifactRevisionContent — GET /api/artifacts/{artifactID}/revisions/{revisionID}/content
@@ -423,9 +429,13 @@ func artifactContentPath(artifactID, revisionID string) string {
 	return "/api/artifacts/" + artifactID + "/revisions/" + revisionID + "/content"
 }
 
+func artifactStaticPreviewPath(artifactID, revisionID string) string {
+	return "/api/artifacts/" + artifactID + "/revisions/" + revisionID + "/static-preview"
+}
+
 func classifyArtifactPreview(mediaType, filename string) (kind, disposition string) {
-	if artifactMediaIsActive(mediaType, filename) {
-		return "download", "attachment"
+	if kind, ok := artifact.StaticPreviewKind(mediaType, filename); ok {
+		return kind, "attachment"
 	}
 	mt := canonicalMediaType(mediaType)
 	ext := fileExt(filename)

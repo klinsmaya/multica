@@ -24,6 +24,11 @@ func resolveMediaType(data []byte, declared string) (string, bool) {
 			return declared, true
 		}
 		return sniffed, false
+	case "text/xml":
+		if declared == "image/svg+xml" || declared == "application/xhtml+xml" || declared == "application/xml" || declared == "text/xml" {
+			return declared, true
+		}
+		return sniffed, false
 	case "application/octet-stream":
 		return declared, true
 	}
@@ -46,7 +51,7 @@ func isTextLike(mt string) bool {
 	case "text/plain", "text/markdown", "text/x-markdown", "text/csv",
 		"text/html", "text/xml", "text/json", "text/yaml", "text/x-yaml",
 		"application/json", "application/xml", "application/yaml", "application/x-yaml",
-		"application/xhtml+xml":
+		"application/xhtml+xml", "image/svg+xml":
 		return true
 	default:
 		return strings.HasPrefix(mt, "text/")

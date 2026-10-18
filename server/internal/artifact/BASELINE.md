@@ -42,3 +42,5 @@ Workspace teardown deletes attachment rows in `DeleteWorkspaceLeafData` (`server
 A07 opens an `artifact_edit_sessions` row for Markdown, TXT, JSON, and CSV. A draft object lives at `workspaces/{workspace_id}/artifact-drafts/{session_id}`. Saving that draft does not insert an attachment and does not move `head_revision_id`. A formal save is still `POST /api/artifacts/{id}/revisions`. `POST /api/upload-file` and `multica attachment` are unchanged. An expired lease or a failed edit leaves the draft in place.
 
 A08 restore and `artifact_events` write artifact rows only. Restore reuses an existing blob and inserts a new revision. Events store ids and an event type. Neither path inserts an attachment, changes attachment upload or download, or changes `multica attachment`.
+
+A09 static preview reads a sealed artifact blob and returns a sanitized fragment. It does not write an attachment row, and it does not change `POST /api/upload-file` or `multica attachment`.

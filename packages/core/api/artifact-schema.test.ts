@@ -57,6 +57,22 @@ describe("artifact read schemas", () => {
     expect(parsed.content_disposition).toBe("attachment");
   });
 
+  it("keeps a static preview path and does not turn it into active content", () => {
+    const parsed = parseWithFallback<ArtifactPreview>(
+      {
+        preview_kind: "html",
+        static_preview_path: "/api/artifacts/art-1/revisions/rev-1/static-preview",
+        active_content: false,
+      },
+      ArtifactPreviewSchema,
+      EMPTY_ARTIFACT_PREVIEW,
+      { endpoint: "GET /api/artifacts/{id}/revisions/{rid}/preview" },
+    );
+    expect(parsed.preview_kind).toBe("html");
+    expect(parsed.static_preview_path).toBe("/api/artifacts/art-1/revisions/rev-1/static-preview");
+    expect(parsed.active_content).toBe(false);
+  });
+
   it("keeps a lease and drops a malformed edit session", () => {
     const parsed = parseWithFallback<ArtifactEditSession>(
       {

@@ -124,13 +124,25 @@ function ArtifactRevisionPanel({
     queryFn: async () => {
       const entry = await api.getArtifactPreview(artifactId, picked);
       if (
+        (entry.preview_kind === "html" || entry.preview_kind === "svg") &&
+        entry.static_preview_path
+      ) {
+        try {
+          const safeDocument = await api.getArtifactStaticPreview(entry.static_preview_path);
+          return { entry, text: "", safeDocument, objectUrl: "" };
+        } catch {
+          const text = await api.getArtifactRevisionText(artifactId, picked);
+          return { entry, text, safeDocument: "", objectUrl: "" };
+        }
+      }
+      if (
         artifactPreviewIsSourceOnly(entry) ||
         entry.preview_kind === "markdown" ||
         entry.preview_kind === "text" ||
         entry.preview_kind === "table"
       ) {
         const text = await api.getArtifactRevisionText(artifactId, picked);
-        return { entry, text, objectUrl: "" };
+        return { entry, text, safeDocument: "", objectUrl: "" };
       }
       if (
         entry.preview_kind === "image" ||
@@ -139,9 +151,9 @@ function ArtifactRevisionPanel({
         entry.preview_kind === "audio"
       ) {
         const blob = await api.getArtifactRevisionBlob(artifactId, picked);
-        return { entry, text: "", objectUrl: URL.createObjectURL(blob) };
+        return { entry, text: "", safeDocument: "", objectUrl: URL.createObjectURL(blob) };
       }
-      return { entry, text: "", objectUrl: "" };
+      return { entry, text: "", safeDocument: "", objectUrl: "" };
     },
   });
   useEffect(() => {
@@ -199,6 +211,7 @@ function ArtifactRevisionPanel({
         <ArtifactPreviewBody
           preview={preview.data.entry}
           text={preview.data.text}
+          safeDocument={preview.data.safeDocument}
           objectUrl={preview.data.objectUrl}
         />
       ) : preview.isError ? (
@@ -255,7 +268,13 @@ export function artifactTextEditable(filename: string, mediaType: string): boole
   return TEXT_EDIT_EXTENSIONS.has(ext) || TEXT_EDIT_MEDIA.has(media);
 }
 
+const ARTIFACT_STATIC_PREVIEW_CSP =
+  "sandbox; default-src 'none'; connect-src 'none'; img-src 'none'; font-src 'none'; style-src 'none'; script-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+
 export function artifactPreviewIsSourceOnly(preview: ArtifactPreview): boolean {
+  if (preview.static_preview_path && (preview.preview_kind === "html" || preview.preview_kind === "svg")) {
+    return false;
+  }
   const media = preview.media_type.toLowerCase();
   const name = preview.filename.toLowerCase();
   return (
@@ -274,13 +293,29 @@ export function artifactPreviewIsSourceOnly(preview: ArtifactPreview): boolean {
 export function ArtifactPreviewBody({
   preview,
   text,
+  safeDocument,
   objectUrl,
 }: {
   preview: ArtifactPreview;
   text: string;
+  safeDocument?: string;
   objectUrl?: string;
 }) {
-  if (artifactPreviewIsSourceOnly(preview)) {
+  if ((preview.preview_kind === "html" || preview.preview_kind === "svg") && safeDocument) {
+    return (
+      <iframe
+        data-testid="artifact-static-preview"
+        title={preview.filename}
+        sandbox=""
+        referrerPolicy="no-referrer"
+        srcDoc={safeDocument}
+        ref={(node) => {
+          node?.setAttribute("csp", ARTIFACT_STATIC_PREVIEW_CSP);
+        }}
+      />
+    );
+  }
+  if (artifactPreviewIsSourceOnly(preview) || preview.preview_kind === "html" || preview.preview_kind === "svg") {
     return <pre data-testid="artifact-source">{text}</pre>;
   }
   if (preview.preview_kind === "image" && objectUrl) {

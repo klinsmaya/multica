@@ -10,6 +10,7 @@ const apiMock = vi.hoisted(() => ({
   listArtifacts: vi.fn(),
   listArtifactRevisions: vi.fn(),
   getArtifactPreview: vi.fn(),
+  getArtifactStaticPreview: vi.fn(),
   getArtifactRevisionText: vi.fn(),
   getArtifactRevisionBlob: vi.fn(),
   createArtifactEditSession: vi.fn(),
@@ -88,6 +89,7 @@ describe("ArtifactsSection", () => {
     apiMock.listArtifacts.mockReset();
     apiMock.listArtifactRevisions.mockReset();
     apiMock.getArtifactPreview.mockReset();
+    apiMock.getArtifactStaticPreview.mockReset();
     apiMock.getArtifactRevisionText.mockReset();
     apiMock.getArtifactRevisionBlob.mockReset();
     apiMock.createArtifactEditSession.mockReset();
@@ -155,6 +157,61 @@ describe("ArtifactsSection", () => {
     expect(view.container.querySelector("script")).toBeNull();
     expect(screen.queryByTestId("artifact-edit")).toBeNull();
     await waitFor(() => expect(apiMock.getArtifactPreview).toHaveBeenCalledWith("art-1", "rev-1"));
+  });
+
+  it("opens a sandboxed static preview and falls back to source", async () => {
+    configStore.getState().setFeatureFlags({ [ARTIFACTS_V1_FLAG]: true });
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      preview_kind: "html",
+      static_preview_path: "/api/artifacts/art-1/revisions/rev-1/static-preview",
+    });
+    apiMock.getArtifactStaticPreview.mockResolvedValue("<p>Hello</p>");
+    const view = renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    const frame = await screen.findByTestId("artifact-static-preview");
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("srcdoc")).toBe("<p>Hello</p>");
+    expect(frame.getAttribute("csp")).toContain("script-src 'none'");
+    expect(frame.getAttribute("csp")).not.toContain("allow-scripts");
+    expect(view.container.querySelector("script")).toBeNull();
+    expect(apiMock.getArtifactRevisionText).not.toHaveBeenCalled();
+
+    apiMock.getArtifactStaticPreview.mockRejectedValue(new Error("preview failed"));
+    apiMock.getArtifactPreview.mockResolvedValue({
+      ...htmlPreview,
+      preview_kind: "html",
+      revision_id: "rev-2",
+      static_preview_path: "/api/artifacts/art-1/revisions/rev-2/static-preview",
+    });
+    apiMock.listArtifacts.mockResolvedValue({
+      artifacts: [
+        {
+          id: "art-1",
+          workspace_id: "ws-1",
+          owner_scope: "issue",
+          owner_id: "issue-1",
+          title: "Weekly report",
+          kind: "file",
+          status: "active",
+          head_revision_id: "rev-2",
+          revision_no: 2,
+          media_type: "text/html",
+          filename: "page.html",
+          size_bytes: 32,
+          updated_by: "user-1",
+          created_at: "2026-10-17T00:00:00Z",
+          updated_at: "2026-10-17T00:00:00Z",
+          row_version: 2,
+        },
+      ],
+    });
+    view.unmount();
+    const fallback = renderSection();
+    fireEvent.click(await screen.findByText("Weekly report"));
+    const source = await screen.findByTestId("artifact-source");
+    expect(source.textContent).toContain("<script>alert(1)</script>");
+    expect(fallback.container.querySelector("iframe")).toBeNull();
   });
 
   it("saves a markdown draft and commits a revision", async () => {
@@ -295,7 +352,7 @@ describe("ArtifactsSection", () => {
 });
 
 describe("ArtifactPreviewBody", () => {
-  it("does not render HTML in a frame even when the kind says html", () => {
+  it("keeps unsanitized HTML in the source view", () => {
     const view = renderWithI18n(
       <ArtifactPreviewBody
         preview={{ ...htmlPreview, preview_kind: "html" }}
@@ -305,5 +362,25 @@ describe("ArtifactPreviewBody", () => {
     expect(view.container.querySelector("iframe")).toBeNull();
     expect(view.container.querySelector("script")).toBeNull();
     expect(screen.getByTestId("artifact-source").textContent).toContain("<script>alert(1)</script>");
+  });
+
+  it("renders a sanitized document in a sandboxed frame", () => {
+    const view = renderWithI18n(
+      <ArtifactPreviewBody
+        preview={{
+          ...htmlPreview,
+          preview_kind: "html",
+          static_preview_path: "/api/artifacts/art-1/revisions/rev-1/static-preview",
+        }}
+        text=""
+        safeDocument="<p>Hello</p>"
+      />,
+    );
+    const frame = screen.getByTestId("artifact-static-preview");
+    expect(frame.getAttribute("sandbox")).toBe("");
+    expect(frame.getAttribute("srcdoc")).toBe("<p>Hello</p>");
+    expect(frame.getAttribute("csp")).toContain("connect-src 'none'");
+    expect(frame.getAttribute("csp")).not.toContain("allow-scripts");
+    expect(view.container.querySelector("script")).toBeNull();
   });
 });

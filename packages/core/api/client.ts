@@ -4086,6 +4086,17 @@ export class ApiClient {
     });
   }
 
+  async getArtifactStaticPreview(path: string): Promise<string> {
+    if (!path.startsWith("/api/artifacts/") || !path.endsWith("/static-preview") || path.includes("..")) {
+      throw new Error("invalid static preview path");
+    }
+    const res = await this.fetchRaw(path);
+    if (!res.ok) {
+      throw new Error("static preview failed");
+    }
+    return res.text();
+  }
+
   async getArtifactRevisionText(artifactId: string, revisionId: string): Promise<string> {
     const res = await this.fetchRaw(artifactRevisionPath(artifactId, revisionId, "content"));
     return res.text();

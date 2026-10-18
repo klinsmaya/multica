@@ -73,5 +73,6 @@ export interface ArtifactPreview {
   preview_kind: string;
   content_path: string;
   content_disposition: string;
+  static_preview_path?: string;
   active_content: boolean;
 }
