@@ -1285,7 +1285,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 						// Composio field for exactly this kind of late wiring,
 						// so no Handler-level mutation is needed.
 						if h.TaskService != nil {
-							h.TaskService.Composio = svc
+							h.TaskService.ConnectorProviders = append(h.TaskService.ConnectorProviders, svc)
 						}
 						slog.Info("composio integration enabled")
 					}

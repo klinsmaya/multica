@@ -35,7 +35,11 @@ type stubOverlayBuilder struct {
 	respIsNil bool
 }
 
-func (s *stubOverlayBuilder) BuildTaskOverlay(_ context.Context, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
+func (s *stubOverlayBuilder) Name() string { return "composio" }
+
+func (s *stubOverlayBuilder) ReleaseTaskResources(context.Context, pgtype.UUID) error { return nil }
+
+func (s *stubOverlayBuilder) BuildTaskOverlay(_ context.Context, _ pgtype.UUID, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
 	s.calls++
 	s.lastUser = originatorUserID
 	s.lastAgent = agent
@@ -65,8 +69,8 @@ func TestBuildRuntimeMCPOverlaySkipsBuilderWhenComposioFlagDisabled(t *testing.T
 		}},
 	}
 	svc := &TaskService{
-		Composio:     builder,
-		FeatureFlags: composioMCPAppsTestFlags(false),
+		ConnectorProviders: []runtimeapps.ConnectorProvider{builder},
+		FeatureFlags:       composioMCPAppsTestFlags(false),
 	}
 	var userBytes [16]byte
 	userBytes[15] = 1
@@ -461,7 +465,7 @@ func TestEnqueueTaskForIssueStoresRuntimeMCPOverlayInQueuedRow(t *testing.T) {
 			ToolkitName: "Notion",
 		}},
 	}
-	svc := &TaskService{Queries: q, TxStarter: pool, Bus: events.New(), Composio: builder, FeatureFlags: composioMCPAppsTestFlags(true)}
+	svc := &TaskService{Queries: q, TxStarter: pool, Bus: events.New(), ConnectorProviders: []runtimeapps.ConnectorProvider{builder}, FeatureFlags: composioMCPAppsTestFlags(true)}
 	userID := util.MustParseUUID(userIDStr)
 	task, err := svc.EnqueueTaskForIssue(ctx, db.Issue{
 		ID:           util.MustParseUUID(issueIDStr),

@@ -66,14 +66,12 @@ type TaskService struct {
 	// stale dispatched task. It removes the unconditional reclaim UPDATE from
 	// idle claim polls while missing/error states preserve the DB fallback.
 	ReclaimCheck *ReclaimCheckCache
-	// Composio computes the per-task MCP overlay (Stage 3 of the Composio
-	// epic, MUL-3721) — the integration's "current user's connected apps
-	// → MCP session URL" hook called from each Enqueue* path. Optional: a
-	// nil ComposioOverlayBuilder turns the overlay step into a no-op so
-	// every Multica deployment that hasn't enabled Composio behaves
-	// exactly as before. Wired in router.go after composiointeg.NewService
-	// succeeds; the concrete type is *composio.Service.
-	Composio ComposioOverlayBuilder
+	// ConnectorProviders compute the per-task MCP overlay (Composio, and later
+	// open-connector) — the "current user's connected apps → MCP server" hook
+	// called from each Enqueue* path. Empty turns the overlay step into a
+	// no-op so deployments without a connector behave exactly as before.
+	// Wired in router.go; a provider that fails or returns nothing is skipped.
+	ConnectorProviders []runtimeapps.ConnectorProvider
 	// QuickActions generates chat follow-up suggestions through the
 	// server-internal LLM layer. Optional: nil (or a disabled client) turns the
 	// whole feature off — no pending marker, no pills — which is the expected
@@ -96,27 +94,6 @@ type TaskService struct {
 type SourceContextObjectStore interface {
 	DeleteObject(ctx context.Context, key string) error
 	KeyFromURL(rawURL string) string
-}
-
-// ComposioOverlayBuilder is the seam TaskService uses to build the per-task
-// MCP overlay at enqueue time. Implemented by
-// internal/integrations/composio.Service.BuildTaskOverlay; tests provide an
-// inline fake so they don't have to spin a fake Composio SDK.
-//
-// Contract: a zero MCPOverlayResult means "no overlay for this run" — covers
-// all gates the implementation enforces (no owner / empty allowlist / empty
-// intersection with active connections / empty session URL). Any non-empty
-// MCPOverlay is the exact value to store in agent_task_queue.runtime_mcp_overlay;
-// ConnectedApps is non-secret metadata to store alongside it for daemon brief
-// injection. A non-nil error is surfaced to the caller but treated as
-// best-effort — failed overlay computation must not fail the enqueue.
-//
-// agent is passed by value so the builder can inspect OwnerID and
-// ComposioToolkitAllowlist without re-querying the DB; every enqueue path
-// already loaded the agent for runtime/archive checks, so passing it is
-// free and avoids a second GetAgent round-trip in the hot path.
-type ComposioOverlayBuilder interface {
-	BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error)
 }
 
 type TaskWakeupNotifier interface {
@@ -366,35 +343,75 @@ type runtimeMCPOverlayData struct {
 	ConnectedApps json.RawMessage
 }
 
-// buildRuntimeMCPOverlay computes the optional per-task Composio MCP overlay.
-// Enqueue paths call this BEFORE inserting the queued row so the daemon cannot
-// claim a task during the network round-trip to Composio and miss the overlay.
+// buildRuntimeMCPOverlay computes the optional per-task connector MCP overlay
+// by asking every ConnectorProvider and merging the results. Enqueue paths
+// call this BEFORE inserting the queued row so the daemon cannot claim a task
+// during the network round-trip to a provider and miss the overlay.
+//
+// Contract per provider: a zero MCPOverlayResult means "no overlay"; a non-nil
+// error is logged and the provider skipped (overlay failure never blocks the
+// task). Feature-flag gating: ComposioMCPAppsEnabled applies only to the
+// provider named "composio" (kept here, keyed on Name(), so the composio
+// package stays unchanged); other providers are not gated by it.
+//
+// Merge: each overlay is {"mcpServers":{...}}; servers are merged by key,
+// later providers overriding earlier ones (with a warning), ConnectedApps are
+// concatenated. A single non-empty overlay is stored byte-for-byte as returned.
+// taskID is not known before the row is inserted, so it is passed as invalid.
 func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) runtimeMCPOverlayData {
-	if s == nil || s.Composio == nil {
+	if s == nil || len(s.ConnectorProviders) == 0 {
 		return runtimeMCPOverlayData{}
 	}
-	if !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+	var (
+		overlays []json.RawMessage
+		apps     []runtimeapps.ConnectedApp
+	)
+	for _, p := range s.ConnectorProviders {
+		if p == nil {
+			continue
+		}
+		if p.Name() == "composio" && !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+			continue
+		}
+		result, err := p.BuildTaskOverlay(ctx, pgtype.UUID{}, originatorUserID, agent)
+		if err != nil {
+			slog.Warn("runtime mcp overlay: BuildTaskOverlay failed; task will run without this provider's overlay",
+				"provider", p.Name(),
+				"originator_user_id", util.UUIDToString(originatorUserID),
+				"agent_id", util.UUIDToString(agent.ID),
+				"error", err,
+			)
+			continue
+		}
+		if len(result.MCPOverlay) == 0 {
+			slog.Debug("runtime mcp overlay: no overlay for task",
+				"provider", p.Name(),
+				"originator_user_id", util.UUIDToString(originatorUserID),
+				"agent_id", util.UUIDToString(agent.ID),
+			)
+			continue
+		}
+		overlays = append(overlays, result.MCPOverlay)
+		apps = append(apps, result.ConnectedApps...)
+	}
+	if len(overlays) == 0 {
 		return runtimeMCPOverlayData{}
 	}
-	result, err := s.Composio.BuildTaskOverlay(ctx, originatorUserID, agent)
-	if err != nil {
-		slog.Warn("runtime mcp overlay: BuildTaskOverlay failed; task will run without composio overlay",
-			"originator_user_id", util.UUIDToString(originatorUserID),
-			"agent_id", util.UUIDToString(agent.ID),
-			"error", err,
-		)
-		return runtimeMCPOverlayData{}
+	merged := overlays[0]
+	if len(overlays) > 1 {
+		var err error
+		merged, err = mergeProviderOverlays(overlays)
+		if err != nil {
+			slog.Warn("runtime mcp overlay: merge provider overlays failed; task will run without connector overlay",
+				"agent_id", util.UUIDToString(agent.ID),
+				"error", err,
+			)
+			return runtimeMCPOverlayData{}
+		}
 	}
-	if len(result.MCPOverlay) == 0 {
-		slog.Debug("runtime mcp overlay: no composio overlay for task",
-			"originator_user_id", util.UUIDToString(originatorUserID),
-			"agent_id", util.UUIDToString(agent.ID),
-		)
-		return runtimeMCPOverlayData{}
-	}
-	data := runtimeMCPOverlayData{Overlay: result.MCPOverlay}
-	if len(result.ConnectedApps) > 0 {
-		raw, err := json.Marshal(result.ConnectedApps)
+	data := runtimeMCPOverlayData{Overlay: merged}
+	if len(apps) > 0 {
+		raw, err := json.Marshal(apps)
 		if err != nil {
 			slog.Warn("runtime mcp overlay: marshal connected app metadata failed",
 				"originator_user_id", util.UUIDToString(originatorUserID),
@@ -406,6 +423,26 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 		data.ConnectedApps = raw
 	}
 	return data
+}
+
+// mergeProviderOverlays merges {"mcpServers":{...}} documents by server key.
+func mergeProviderOverlays(overlays []json.RawMessage) (json.RawMessage, error) {
+	servers := map[string]json.RawMessage{}
+	for _, o := range overlays {
+		var doc struct {
+			MCPServers map[string]json.RawMessage `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(o, &doc); err != nil {
+			return nil, fmt.Errorf("parse provider overlay: %w", err)
+		}
+		for k, v := range doc.MCPServers {
+			if _, dup := servers[k]; dup {
+				slog.Warn("runtime mcp overlay: server key collision between providers; later wins", "server", k)
+			}
+			servers[k] = v
+		}
+	}
+	return json.Marshal(map[string]any{"mcpServers": servers})
 }
 
 // resolveOriginatorFromTriggerComment returns the top-of-chain HUMAN user
@@ -1159,12 +1196,12 @@ func (s *TaskService) createDeferredChannelIssueTaskWithQueries(ctx context.Cont
 	return txService.enqueueIssueTask(ctx, issue, pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{}, pgtype.Timestamptz{Time: fireAt, Valid: true}, OriginDerived)
 }
 
-// hydrateDeferredChannelIssueTaskOverlay fills the optional Composio overlay
+// hydrateDeferredChannelIssueTaskOverlay fills the optional connector overlay
 // after the issue+task transaction commits. The conditional update refuses to
 // overwrite a comment merge that won the post-commit race and already
 // re-attributed the task (with its own matching overlay).
 func (s *TaskService) hydrateDeferredChannelIssueTaskOverlay(ctx context.Context, task db.AgentTaskQueue) error {
-	if s == nil || s.Queries == nil || s.Composio == nil || !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+	if s == nil || s.Queries == nil || len(s.ConnectorProviders) == 0 {
 		return nil
 	}
 	agent, err := s.Queries.GetAgent(ctx, task.AgentID)

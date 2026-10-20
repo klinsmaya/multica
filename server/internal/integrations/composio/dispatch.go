@@ -83,7 +83,16 @@ type mcpOverlayPayload struct {
 // CreateSession is called with the owner as the session user, and with BOTH
 // the `toolkits.enable` allowlist filter and `connected_accounts` pinning so
 // the session is narrowed to (owner allowlist ∩ owner active connections).
-func (s *Service) BuildTaskOverlay(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
+// Name implements runtimeapps.ConnectorProvider.
+func (s *Service) Name() string { return "composio" }
+
+// ReleaseTaskResources implements runtimeapps.ConnectorProvider. Composio
+// sessions are not per-task resources, so there is nothing to release.
+func (s *Service) ReleaseTaskResources(context.Context, pgtype.UUID) error { return nil }
+
+var _ runtimeapps.ConnectorProvider = (*Service)(nil)
+
+func (s *Service) BuildTaskOverlay(ctx context.Context, _ pgtype.UUID, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
 	// Gate 1: the overlay is the agent OWNER's connected-apps view. Without an
 	// owner there is nothing to project.
 	if !agent.OwnerID.Valid {
