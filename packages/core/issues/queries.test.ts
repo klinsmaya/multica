@@ -7,6 +7,7 @@ import { ApiError, type ApiClient } from "../api/client";
 import type {
   Issue,
   IssueTableRowsRequest,
+  IssueThreadSummary,
   IssueTableRowsResponse,
   ListIssuesCache,
   ListIssuesParams,
@@ -18,6 +19,7 @@ import {
   ISSUE_PAGE_SIZE,
   PROJECT_GANTT_MAX_ISSUES,
   PROJECT_GANTT_PAGE_LIMIT,
+  THREAD_SUMMARIES_CHUNK_SIZE,
   childrenByParentsOptions,
   childIssuesOptions,
   findIssueInListCache,
@@ -28,6 +30,7 @@ import {
   issueTableRowPageOptions,
   projectGanttIssuesOptions,
   sourceContextPreviewOptions,
+  threadSummariesOptions,
 } from "./queries";
 import { onIssueUpdated } from "./ws-updaters";
 
@@ -728,5 +731,80 @@ describe("findIssueInListCache", () => {
     expect(findIssueInListCache(new QueryClient(), WS_ID, todoIssue.id)).toBeUndefined();
     expect(listIssues).not.toHaveBeenCalled();
     qc.clear();
+  });
+});
+
+describe("threadSummariesOptions", () => {
+  let qc: QueryClient;
+
+  function installFakeThreadApi(
+    listThreadSummaries: (ids: string[]) => Promise<{ summaries: IssueThreadSummary[] }>,
+  ) {
+    setApiInstance({ listThreadSummaries } as unknown as ApiClient);
+  }
+
+  function summary(issueId: string, replyCount = 2): IssueThreadSummary {
+    return {
+      issue_id: issueId,
+      reply_count: replyCount,
+      last_reply_at: null,
+      open_thread_count: 0,
+      participants: [],
+    };
+  }
+
+  beforeEach(() => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  afterEach(() => {
+    qc.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("chunks ids at the server cap and fetches the chunks in parallel", async () => {
+    const ids = Array.from(
+      { length: THREAD_SUMMARIES_CHUNK_SIZE * 2 + 5 },
+      (_, i) => `i-${String(i).padStart(4, "0")}`,
+    );
+    const calls: string[][] = [];
+    installFakeThreadApi(async (chunk) => {
+      calls.push(chunk);
+      return { summaries: [] };
+    });
+
+    await qc.fetchQuery(threadSummariesOptions(WS_ID, ids));
+
+    expect(calls.map((c) => c.length)).toEqual([100, 100, 5]);
+    expect(calls.flat()).toEqual(ids);
+  });
+
+  it("sorts and dedupes ids so the cache key is stable", async () => {
+    const listThreadSummaries = vi
+      .fn<(ids: string[]) => Promise<{ summaries: IssueThreadSummary[] }>>()
+      .mockResolvedValue({ summaries: [] });
+    installFakeThreadApi(listThreadSummaries);
+
+    await qc.fetchQuery(threadSummariesOptions(WS_ID, ["b", "a", "b"]));
+
+    expect(listThreadSummaries).toHaveBeenCalledWith(["a", "b"]);
+    expect(threadSummariesOptions(WS_ID, ["b", "a"]).queryKey).toEqual(
+      threadSummariesOptions(WS_ID, ["a", "b", "a"]).queryKey,
+    );
+  });
+
+  it("selects a map keyed by issue id and leaves rows-less ids absent", async () => {
+    installFakeThreadApi(async () => ({ summaries: [summary("a", 3)] }));
+
+    const observer = new QueryObserver(qc, threadSummariesOptions(WS_ID, ["a", "b"]));
+    const result = await observer.refetch();
+    const map = result.data!;
+
+    expect(map.get("a")?.reply_count).toBe(3);
+    expect(map.has("b")).toBe(false);
+  });
+
+  it("is disabled when there are no ids", () => {
+    expect(threadSummariesOptions(WS_ID, []).enabled).toBe(false);
   });
 });

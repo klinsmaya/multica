@@ -246,12 +246,14 @@
     "tooltip_table": "Table view",
     "tooltip_gantt": "Gantt view",
     "tooltip_swimlane": "Swimlane view",
+    "tooltip_feed": "Feed view",
     "section": "View",
     "board": "Board",
     "list": "List",
     "table": "Table",
     "gantt": "Gantt",
-    "swimlane": "Swimlane"
+    "swimlane": "Swimlane",
+    "feed": "Feed"
   },
   "table": {
     "select_all": "Select all visible issues",
@@ -698,6 +700,15 @@
     "issues_count_one": "{{count}} issue",
     "issues_count_other": "{{count}} issues",
     "chip_agents_working_unknown": "Agents working: —"
+  },
+  "feed": {
+    "reply_count_one": "{{count}} reply",
+    "reply_count_other": "{{count}} replies",
+    "last_reply": "Last reply {{time}}",
+    "open_threads_one": "{{count}} open thread",
+    "open_threads_other": "{{count}} open threads",
+    "open_thread": "Open thread",
+    "empty": "No issues in this feed"
   },
   "filtered_empty": {
     "title": "No issues match these filters",

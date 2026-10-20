@@ -981,6 +981,31 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
+  describe("listThreadSummaries", () => {
+    it("falls back to no summaries when the body is malformed", async () => {
+      stubFetchJson({ summaries: "invalid" });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
+    });
+
+    it("defaults missing counters, participants and last reply", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1" }] });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toEqual([
+        {
+          issue_id: "issue-1",
+          reply_count: 0,
+          last_reply_at: null,
+          open_thread_count: 0,
+          participants: [],
+        },
+      ]);
+    });
+  });
+
   describe("getChildIssueProgress", () => {
     it("validates the response before query selectors iterate it", async () => {
       stubFetchJson({ progress: "invalid" });

@@ -1749,6 +1749,19 @@ export const ChildIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
 }).loose();
 
+export const ThreadSummariesResponseSchema = z.object({
+  summaries: z.array(z.object({
+    issue_id: z.string(),
+    reply_count: z.number().default(0),
+    last_reply_at: z.string().nullable().default(null),
+    open_thread_count: z.number().default(0),
+    participants: z.array(z.object({
+      type: z.string(),
+      id: z.string(),
+    }).loose()).default([]),
+  }).loose()).default([]),
+}).loose();
+
 export const IssueDuplicatesResponseSchema = z.object({
   duplicate_of: IssueSchema.nullable().default(null),
   duplicates: z.array(IssueSchema).default([]),

@@ -7,6 +7,7 @@ import {
 import { api, ApiError } from "../api";
 import type {
   Issue,
+  IssueThreadSummary,
   IssueAssigneeType,
   IssueStatusCategory,
   IssueTableFacetsRequest,
@@ -147,6 +148,11 @@ export const issueKeys = {
   /** Full key — includes sorted parent ids for cache stability. */
   childrenByParents: (wsId: string, parentIds: readonly string[]) =>
     [...issueKeys.childrenByParentsAll(wsId), parentIds] as const,
+  threadSummariesAll: (wsId: string) =>
+    [...issueKeys.all(wsId), "thread-summaries"] as const,
+  /** idsKey is the sorted, deduplicated id list joined by commas. */
+  threadSummaries: (wsId: string, idsKey: string) =>
+    [...issueKeys.threadSummariesAll(wsId), idsKey] as const,
   childProgress: (wsId: string) =>
     [...issueKeys.all(wsId), "child-progress"] as const,
   /** Prefix-match keys for invalidating the per-issue caches below across
@@ -611,6 +617,35 @@ export function childrenByParentsOptions(
     queryKey: issueKeys.childrenByParents(wsId, parentIds),
     queryFn: () => fetchAndHydrateChildrenByParents(qc, wsId, parentIds),
     enabled: parentIds.length > 0,
+  });
+}
+
+/** Server cap on ids per `GET /api/issues/thread-summaries` request. */
+export const THREAD_SUMMARIES_CHUNK_SIZE = 100;
+
+/**
+ * Comment-thread rollups for a set of issues, keyed by issue id. Ids without
+ * a server row (no counted comments, or an older server) are absent from the
+ * map; callers treat a missing entry as zeros.
+ */
+export function threadSummariesOptions(wsId: string, ids: readonly string[]) {
+  const sortedIds = [...new Set(ids)].sort();
+  return queryOptions({
+    queryKey: issueKeys.threadSummaries(wsId, sortedIds.join(",")),
+    queryFn: async () => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < sortedIds.length; i += THREAD_SUMMARIES_CHUNK_SIZE) {
+        chunks.push(sortedIds.slice(i, i + THREAD_SUMMARIES_CHUNK_SIZE));
+      }
+      const responses = await Promise.all(
+        chunks.map((chunk) => api.listThreadSummaries(chunk)),
+      );
+      return responses.flatMap((response) => response.summaries);
+    },
+    select: (summaries): Map<string, IssueThreadSummary> =>
+      new Map(summaries.map((summary) => [summary.issue_id, summary])),
+    staleTime: 30_000,
+    enabled: sortedIds.length > 0,
   });
 }
 

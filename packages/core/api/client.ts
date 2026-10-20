@@ -8,6 +8,7 @@ import { configStore } from "../config";
 import type {
   Issue,
   IssuePriority,
+  IssueThreadSummary,
   CreateIssueRequest,
   MoveIssueRequest,
   UpdateIssueRequest,
@@ -272,6 +273,7 @@ import {
   SendChatMessageResponseSchema,
   StartMikaOnboardingResponseSchema,
   ChildIssuesResponseSchema,
+  ThreadSummariesResponseSchema,
   IssueDuplicatesResponseSchema,
   ChildIssueProgressResponseSchema,
   CommentsListSchema,
@@ -1604,6 +1606,17 @@ export class ApiClient {
     );
     return parseWithFallback(raw, ChildIssuesResponseSchema, { issues: [] }, {
       endpoint: "GET /api/issues/children",
+    });
+  }
+
+  /** Comment-thread rollups for the given issues (server cap: 100 ids). Issues
+   *  without counted comments have no row; callers treat a missing row as zeros. */
+  async listThreadSummaries(ids: string[]): Promise<{ summaries: IssueThreadSummary[] }> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/thread-summaries?ids=${ids.join(",")}`,
+    );
+    return parseWithFallback(raw, ThreadSummariesResponseSchema, { summaries: [] }, {
+      endpoint: "GET /api/issues/thread-summaries",
     });
   }
 

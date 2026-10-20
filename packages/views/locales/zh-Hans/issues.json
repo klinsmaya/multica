@@ -242,12 +242,14 @@
     "tooltip_table": "表格视图",
     "tooltip_gantt": "甘特图",
     "tooltip_swimlane": "泳道视图",
+    "tooltip_feed": "信息流视图",
     "section": "视图",
     "board": "看板",
     "list": "列表",
     "table": "表格",
     "gantt": "甘特图",
-    "swimlane": "泳道"
+    "swimlane": "泳道",
+    "feed": "信息流"
   },
   "table": {
     "select_all": "选择所有可见任务",
@@ -672,6 +674,13 @@
     "chip_agents_working_other": "{{count}} 个智能体工作中",
     "issues_count_other": "{{count}} 个任务",
     "chip_agents_working_unknown": "工作中的智能体：—"
+  },
+  "feed": {
+    "reply_count_other": "{{count}} 条回复",
+    "last_reply": "最后回复 {{time}}",
+    "open_threads_other": "{{count}} 个未解决讨论",
+    "open_thread": "打开讨论",
+    "empty": "信息流中没有任务"
   },
   "filtered_empty": {
     "title": "没有符合筛选条件的任务",

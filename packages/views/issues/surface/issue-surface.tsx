@@ -32,6 +32,7 @@ import {
 import type { Issue } from "@multica/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
+import { FeedView } from "../components/feed-view";
 import { GanttView } from "../components/gantt-view";
 import { IssuesHeader } from "../components/issues-header";
 import { ListView } from "../components/list-view";
@@ -268,6 +269,7 @@ function IssueSurfaceContent({
             scopedIssues={controller.surfaceIssues}
             workingAgents={controller.workingAgents}
             allowGantt={controller.allowGantt}
+            allowFeed={controller.allowFeed}
             isRefreshing={controller.isRefreshing}
             facetCountsExact={
               controller.facetCountsExact
@@ -372,6 +374,7 @@ function IssueSurfaceContent({
             {controller.viewMode === "gantt" && (
               <GanttView issues={controller.filteredGanttIssues} />
             )}
+            {controller.viewMode === "feed" && <FeedView issues={issues} />}
             {controller.viewMode === "swimlane" && (
               <SwimLaneView
                 issues={issues}
@@ -463,7 +466,7 @@ function FilteredEmptyState() {
 // any data is — a surface-level stand-in would replace all of that with bars
 // of a different shape and then jump when the rows arrived.
 function IssueSurfaceSkeleton({ mode }: { mode: string }) {
-  if (mode === "list") {
+  if (mode === "list" || mode === "feed") {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {Array.from({ length: 4 }).map((_, i) => (

@@ -242,12 +242,14 @@
     "tooltip_table": "테이블 보기",
     "tooltip_gantt": "간트 보기",
     "tooltip_swimlane": "스윔레인 보기",
+    "tooltip_feed": "피드 보기",
     "section": "보기",
     "board": "보드",
     "list": "리스트",
     "table": "테이블",
     "gantt": "간트",
-    "swimlane": "스윔레인"
+    "swimlane": "스윔레인",
+    "feed": "피드"
   },
   "table": {
     "select_all": "표시된 모든 태스크 선택",
@@ -672,6 +674,13 @@
     "chip_agents_working_other": "작업 중인 에이전트 {{count}}개",
     "issues_count_other": "태스크 {{count}}개",
     "chip_agents_working_unknown": "작업 중인 에이전트: —"
+  },
+  "feed": {
+    "reply_count_other": "답글 {{count}}개",
+    "last_reply": "마지막 답글 {{time}}",
+    "open_threads_other": "미해결 스레드 {{count}}개",
+    "open_thread": "스레드 열기",
+    "empty": "피드에 표시할 태스크가 없습니다"
   },
   "filtered_empty": {
     "title": "필터 조건에 맞는 태스크가 없습니다",

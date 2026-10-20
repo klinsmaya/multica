@@ -167,6 +167,21 @@ export interface IssueDuplicateOf {
   status: IssueStatus;
 }
 
+/** One person or agent that wrote a counted comment on an issue. */
+export interface IssueThreadParticipant {
+  type: "member" | "agent" | (string & {});
+  id: string;
+}
+
+/** Comment-thread rollup for one issue. Issues without counted comments have no row. */
+export interface IssueThreadSummary {
+  issue_id: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  open_thread_count: number;
+  participants: IssueThreadParticipant[];
+}
+
 export interface Issue {
   id: string;
   workspace_id: string;
