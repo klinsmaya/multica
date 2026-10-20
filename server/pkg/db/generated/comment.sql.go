@@ -1200,6 +1200,109 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 	return items, nil
 }
 
+const listIssueThreadParticipants = `-- name: ListIssueThreadParticipants :many
+SELECT issue_id, author_type, author_id, MAX(created_at)::timestamptz AS last_at
+FROM comment
+WHERE workspace_id = $1
+  AND issue_id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+  AND author_type <> 'system'
+GROUP BY issue_id, author_type, author_id
+ORDER BY issue_id, last_at DESC
+`
+
+type ListIssueThreadParticipantsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueThreadParticipantsRow struct {
+	IssueID    pgtype.UUID        `json:"issue_id"`
+	AuthorType string             `json:"author_type"`
+	AuthorID   pgtype.UUID        `json:"author_id"`
+	LastAt     pgtype.Timestamptz `json:"last_at"`
+}
+
+// Distinct commenters per issue, most recently active first; the caller keeps
+// the first few per issue.
+func (q *Queries) ListIssueThreadParticipants(ctx context.Context, arg ListIssueThreadParticipantsParams) ([]ListIssueThreadParticipantsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadParticipants, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadParticipantsRow{}
+	for rows.Next() {
+		var i ListIssueThreadParticipantsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.LastAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadSummaries = `-- name: ListIssueThreadSummaries :many
+SELECT issue_id,
+       COUNT(*)::bigint AS reply_count,
+       MAX(created_at)::timestamptz AS last_reply_at,
+       COUNT(*) FILTER (WHERE parent_id IS NULL AND resolved_at IS NULL)::bigint AS open_thread_count
+FROM comment
+WHERE workspace_id = $1
+  AND issue_id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+  AND author_type <> 'system'
+GROUP BY issue_id
+`
+
+type ListIssueThreadSummariesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueThreadSummariesRow struct {
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	ReplyCount      int64              `json:"reply_count"`
+	LastReplyAt     pgtype.Timestamptz `json:"last_reply_at"`
+	OpenThreadCount int64              `json:"open_thread_count"`
+}
+
+// Per-issue comment rollup for the project feed. System rows (platform
+// notices) and soft-deleted comments are not conversation, so they are not
+// counted. A thread is open when its root comment is unresolved.
+func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThreadSummariesParams) ([]ListIssueThreadSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadSummaries, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadSummariesRow{}
+	for rows.Next() {
+		var i ListIssueThreadSummariesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ReplyCount,
+			&i.LastReplyAt,
+			&i.OpenThreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentThreadCommentsForIssue = `-- name: ListRecentThreadCommentsForIssue :many
 WITH RECURSIVE membership(id, root_id, comment_created_at) AS (
     -- Each root maps to itself.
