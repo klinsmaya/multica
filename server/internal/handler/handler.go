@@ -112,8 +112,12 @@ type Config struct {
 	// CloudURL enables the SaaS-only multica-cloud connection when set. Empty
 	// keeps self-hosted deployments explicit: Cloud endpoints return 403 instead
 	// of attempting to dial a hard-coded private service.
-	CloudURL                 string
-	CloudTimeout             time.Duration
+	CloudURL     string
+	CloudTimeout time.Duration
+	// PlatformAdminEmails bootstrap the platform admin console: a signed-in
+	// user with one of these emails is granted super_admin on first use of
+	// /api/admin. Read from PLATFORM_ADMIN_EMAILS; see handler/admin.go.
+	PlatformAdminEmails      []string
 	AttachmentDownloadMode   string
 	AttachmentDownloadURLTTL time.Duration
 	// AttachmentFrameAncestors are trusted browser origins allowed to embed

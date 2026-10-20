@@ -93,8 +93,8 @@ func (h *Handler) RefreshSession(w http.ResponseWriter, r *http.Request) {
 
 	newToken, newExpiresAt, err := auth.RenewSessionToken(claims)
 	if err != nil {
-		if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
-			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+		if errors.Is(err, auth.ErrDisabledUser) {
+			writeError(w, http.StatusForbidden, auth.DisabledUserError)
 			return
 		}
 		slog.Warn("session refresh: failed to re-sign token",

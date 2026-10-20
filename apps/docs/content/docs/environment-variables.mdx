@@ -117,6 +117,14 @@ SMTP takes priority over Resend whenever `SMTP_HOST` is non-empty.
 
 For the exact allowlist evaluation order, see [Sign-in and signup](/auth-setup#signup-restrictions).
 
+### Platform admin console
+
+| Variable | Default | Description |
+|---|---|---|
+| `PLATFORM_ADMIN_EMAILS` | empty | Comma-separated emails bootstrapped as `super_admin` for the `/admin` console on their first admin request. Further admins are granted from the console itself and recorded in `platform_admin`. |
+
+Every write from the console requires a reason and lands in `admin_audit_log`. Disabled accounts are rejected on every request within 30 seconds across all backend instances.
+
 ## Attachment storage
 
 When `S3_BUCKET` is unset, Multica uses local disk.
