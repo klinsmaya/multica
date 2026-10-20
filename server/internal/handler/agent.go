@@ -130,15 +130,21 @@ type AgentResponse struct {
 	// members infer another member's integration footprint. Redacted to
 	// `nil` + `composio_toolkit_allowlist_redacted=true` for non-owners,
 	// mirroring the existing mcp_config redaction contract.
-	ComposioToolkitAllowlist         []string               `json:"composio_toolkit_allowlist,omitempty"`
-	ComposioToolkitAllowlistRedacted bool                   `json:"composio_toolkit_allowlist_redacted,omitempty"`
-	OwnerID                          *string                `json:"owner_id"`
-	Skills                           []AgentSkillSummary    `json:"skills"`
-	DisabledRuntimeSkills            []DisabledRuntimeSkill `json:"disabled_runtime_skills"`
-	CreatedAt                        string                 `json:"created_at"`
-	UpdatedAt                        string                 `json:"updated_at"`
-	ArchivedAt                       *string                `json:"archived_at"`
-	ArchivedBy                       *string                `json:"archived_by"`
+	ComposioToolkitAllowlist         []string `json:"composio_toolkit_allowlist,omitempty"`
+	ComposioToolkitAllowlistRedacted bool     `json:"composio_toolkit_allowlist_redacted,omitempty"`
+	// ConnectorServiceAllowlist is the open-connector counterpart of
+	// ComposioToolkitAllowlist: the services the agent may use through the
+	// owner's open-connector connections. Same owner-only visibility and
+	// redaction contract, gated by the open_connector_apps flag.
+	ConnectorServiceAllowlist         []string               `json:"connector_service_allowlist,omitempty"`
+	ConnectorServiceAllowlistRedacted bool                   `json:"connector_service_allowlist_redacted,omitempty"`
+	OwnerID                           *string                `json:"owner_id"`
+	Skills                            []AgentSkillSummary    `json:"skills"`
+	DisabledRuntimeSkills             []DisabledRuntimeSkill `json:"disabled_runtime_skills"`
+	CreatedAt                         string                 `json:"created_at"`
+	UpdatedAt                         string                 `json:"updated_at"`
+	ArchivedAt                        *string                `json:"archived_at"`
+	ArchivedBy                        *string                `json:"archived_by"`
 }
 
 // runtimeConfigGatewayTokenMask is the placeholder the API substitutes for
@@ -207,39 +213,40 @@ func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
 	composioAllowlist := a.ComposioToolkitAllowlist
 
 	return AgentResponse{
-		ID:                       uuidToString(a.ID),
-		WorkspaceID:              uuidToString(a.WorkspaceID),
-		RuntimeID:                uuidToString(a.RuntimeID),
-		RuntimeBound:             a.RuntimeID.Valid,
-		Name:                     a.Name,
-		Description:              a.Description,
-		Instructions:             a.Instructions,
-		ConversationStarters:     conversationStarters,
-		SystemKey:                a.SystemKey.String,
-		SystemInstructions:       systemInstructionsFor(a),
-		AvatarURL:                h.resolveAvatarURLPtr(textToPtr(a.AvatarUrl)),
-		RuntimeMode:              a.RuntimeMode,
-		RuntimeConfig:            rc,
-		CustomArgs:               customArgs,
-		McpConfig:                mcpConfig,
-		HasCustomEnv:             envKeyCount > 0,
-		CustomEnvKeyCount:        envKeyCount,
-		Visibility:               a.Visibility,
-		PermissionMode:           a.PermissionMode,
-		InvocationTargets:        []AgentInvocationTargetDTO{},
-		Status:                   a.Status,
-		MaxConcurrentTasks:       a.MaxConcurrentTasks,
-		Model:                    a.Model.String,
-		ThinkingLevel:            a.ThinkingLevel.String,
-		ServiceTier:              a.ServiceTier.String,
-		ComposioToolkitAllowlist: composioAllowlist,
-		OwnerID:                  uuidToPtr(a.OwnerID),
-		Skills:                   []AgentSkillSummary{},
-		DisabledRuntimeSkills:    decodeDisabledRuntimeSkills(a.DisabledRuntimeSkills),
-		CreatedAt:                timestampToString(a.CreatedAt),
-		UpdatedAt:                timestampToString(a.UpdatedAt),
-		ArchivedAt:               timestampToPtr(a.ArchivedAt),
-		ArchivedBy:               uuidToPtr(a.ArchivedBy),
+		ID:                        uuidToString(a.ID),
+		WorkspaceID:               uuidToString(a.WorkspaceID),
+		RuntimeID:                 uuidToString(a.RuntimeID),
+		RuntimeBound:              a.RuntimeID.Valid,
+		Name:                      a.Name,
+		Description:               a.Description,
+		Instructions:              a.Instructions,
+		ConversationStarters:      conversationStarters,
+		SystemKey:                 a.SystemKey.String,
+		SystemInstructions:        systemInstructionsFor(a),
+		AvatarURL:                 h.resolveAvatarURLPtr(textToPtr(a.AvatarUrl)),
+		RuntimeMode:               a.RuntimeMode,
+		RuntimeConfig:             rc,
+		CustomArgs:                customArgs,
+		McpConfig:                 mcpConfig,
+		HasCustomEnv:              envKeyCount > 0,
+		CustomEnvKeyCount:         envKeyCount,
+		Visibility:                a.Visibility,
+		PermissionMode:            a.PermissionMode,
+		InvocationTargets:         []AgentInvocationTargetDTO{},
+		Status:                    a.Status,
+		MaxConcurrentTasks:        a.MaxConcurrentTasks,
+		Model:                     a.Model.String,
+		ThinkingLevel:             a.ThinkingLevel.String,
+		ServiceTier:               a.ServiceTier.String,
+		ComposioToolkitAllowlist:  composioAllowlist,
+		ConnectorServiceAllowlist: a.ConnectorServiceAllowlist,
+		OwnerID:                   uuidToPtr(a.OwnerID),
+		Skills:                    []AgentSkillSummary{},
+		DisabledRuntimeSkills:     decodeDisabledRuntimeSkills(a.DisabledRuntimeSkills),
+		CreatedAt:                 timestampToString(a.CreatedAt),
+		UpdatedAt:                 timestampToString(a.UpdatedAt),
+		ArchivedAt:                timestampToPtr(a.ArchivedAt),
+		ArchivedBy:                uuidToPtr(a.ArchivedBy),
 	}
 }
 
@@ -1230,6 +1237,11 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		} else if actorType == "agent" || uuidToString(a.OwnerID) != userID {
 			redactComposioToolkitAllowlist(&resp)
 		}
+		if !h.openConnectorAppsEnabled(r.Context()) {
+			suppressConnectorServiceAllowlist(&resp)
+		} else if actorType == "agent" || uuidToString(a.OwnerID) != userID {
+			redactConnectorServiceAllowlist(&resp)
+		}
 		visible = append(visible, resp)
 	}
 
@@ -1302,6 +1314,11 @@ func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	} else if actorType == "agent" || uuidToString(agent.OwnerID) != userID {
 		redactComposioToolkitAllowlist(&resp)
 	}
+	if !h.openConnectorAppsEnabled(r.Context()) {
+		suppressConnectorServiceAllowlist(&resp)
+	} else if actorType == "agent" || uuidToString(agent.OwnerID) != userID {
+		redactConnectorServiceAllowlist(&resp)
+	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1336,6 +1353,9 @@ type CreateAgentRequest struct {
 	// overlay either, but the column reads as "configured" — distinct from
 	// "owner has never opened the integration").
 	ComposioToolkitAllowlist []string `json:"composio_toolkit_allowlist"`
+	// ConnectorServiceAllowlist is the open-connector service allowlist;
+	// same nil/empty/non-empty semantics as ComposioToolkitAllowlist.
+	ConnectorServiceAllowlist []string `json:"connector_service_allowlist"`
 	// Template records the creation-source attribution used by the
 	// `agent_created` analytics event (for example, "agent_builder"). Empty
 	// identifies a manually authored agent.
@@ -1552,6 +1572,10 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	if !h.composioMCPAppsEnabled(r.Context()) {
 		allowlist = nil
 	}
+	connectorAllowlist := normaliseServiceAllowlist(req.ConnectorServiceAllowlist)
+	if !h.openConnectorAppsEnabled(r.Context()) {
+		connectorAllowlist = nil
+	}
 
 	skillUUIDs, ok := parseUUIDSliceOrBadRequest(w, req.SkillIDs, "skill_ids")
 	if !ok {
@@ -1581,26 +1605,27 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	qtx := h.Queries.WithTx(tx)
 
 	created, err := qtx.CreateAgent(r.Context(), db.CreateAgentParams{
-		WorkspaceID:              wsUUID,
-		Name:                     req.Name,
-		Description:              req.Description,
-		Instructions:             req.Instructions,
-		AvatarUrl:                avatarURL,
-		RuntimeMode:              runtime.RuntimeMode,
-		RuntimeConfig:            rc,
-		RuntimeID:                runtime.ID,
-		Visibility:               perm.legacyVisibility(),
-		PermissionMode:           perm.mode,
-		MaxConcurrentTasks:       req.MaxConcurrentTasks,
-		OwnerID:                  parseUUID(ownerID),
-		CustomEnv:                ce,
-		CustomArgs:               ca,
-		McpConfig:                mc,
-		Model:                    pgtype.Text{String: req.Model, Valid: req.Model != ""},
-		ThinkingLevel:            pgtype.Text{String: req.ThinkingLevel, Valid: req.ThinkingLevel != ""},
-		ServiceTier:              pgtype.Text{String: req.ServiceTier, Valid: req.ServiceTier != ""},
-		ConversationStarters:     sp,
-		ComposioToolkitAllowlist: allowlist,
+		WorkspaceID:               wsUUID,
+		Name:                      req.Name,
+		Description:               req.Description,
+		Instructions:              req.Instructions,
+		AvatarUrl:                 avatarURL,
+		RuntimeMode:               runtime.RuntimeMode,
+		RuntimeConfig:             rc,
+		RuntimeID:                 runtime.ID,
+		Visibility:                perm.legacyVisibility(),
+		PermissionMode:            perm.mode,
+		MaxConcurrentTasks:        req.MaxConcurrentTasks,
+		OwnerID:                   parseUUID(ownerID),
+		CustomEnv:                 ce,
+		CustomArgs:                ca,
+		McpConfig:                 mc,
+		Model:                     pgtype.Text{String: req.Model, Valid: req.Model != ""},
+		ThinkingLevel:             pgtype.Text{String: req.ThinkingLevel, Valid: req.ThinkingLevel != ""},
+		ServiceTier:               pgtype.Text{String: req.ServiceTier, Valid: req.ServiceTier != ""},
+		ConversationStarters:      sp,
+		ComposioToolkitAllowlist:  allowlist,
+		ConnectorServiceAllowlist: connectorAllowlist,
 	})
 	if err != nil {
 		// Unique constraint on (workspace_id, name) — return a clear conflict error
@@ -1662,6 +1687,9 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	if !h.composioMCPAppsEnabled(r.Context()) {
 		suppressComposioToolkitAllowlist(&resp)
 	}
+	if !h.openConnectorAppsEnabled(r.Context()) {
+		suppressConnectorServiceAllowlist(&resp)
+	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -1717,6 +1745,9 @@ type UpdateAgentRequest struct {
 	// null" (a *[]string can't, because a nil pointer is the same wire
 	// representation as both). MUL-3869.
 	ComposioToolkitAllowlist *[]string `json:"composio_toolkit_allowlist"`
+	// ConnectorServiceAllowlist is the open-connector service allowlist with
+	// the same tri-state contract as ComposioToolkitAllowlist.
+	ConnectorServiceAllowlist *[]string `json:"connector_service_allowlist"`
 }
 
 // workspaceAlwaysRedactSecrets reports whether the workspace has opted
@@ -1775,6 +1806,7 @@ func broadcastAgentResponse(resp AgentResponse) AgentResponse {
 	out := resp
 	redactMcpConfig(&out)
 	redactComposioToolkitAllowlist(&out)
+	redactConnectorServiceAllowlist(&out)
 	// Belt-and-suspenders: agentToResponse already masks gateway.token on
 	// every read, so by the time a response reaches this broadcast helper
 	// the field is already "***". Re-mask anyway so a future refactor that
@@ -1814,6 +1846,27 @@ func redactComposioToolkitAllowlist(resp *AgentResponse) {
 func suppressComposioToolkitAllowlist(resp *AgentResponse) {
 	resp.ComposioToolkitAllowlist = nil
 	resp.ComposioToolkitAllowlistRedacted = false
+}
+
+// redactConnectorServiceAllowlist is the open-connector counterpart of
+// redactComposioToolkitAllowlist.
+func redactConnectorServiceAllowlist(resp *AgentResponse) {
+	if resp.ConnectorServiceAllowlist != nil {
+		resp.ConnectorServiceAllowlist = nil
+		resp.ConnectorServiceAllowlistRedacted = true
+	}
+}
+
+func suppressConnectorServiceAllowlist(resp *AgentResponse) {
+	resp.ConnectorServiceAllowlist = nil
+	resp.ConnectorServiceAllowlistRedacted = false
+}
+
+// normaliseServiceAllowlist canonicalises a connector service allowlist
+// (trim, lowercase, dedupe, drop blanks) with the same nil/empty contract as
+// normaliseComposioToolkitAllowlist.
+func normaliseServiceAllowlist(in []string) []string {
+	return normaliseComposioToolkitAllowlist(in)
 }
 
 // normaliseComposioToolkitAllowlist canonicalises an incoming allowlist
@@ -1870,6 +1923,7 @@ func redactAgentResponseForActor(resp *AgentResponse, actorType string) {
 	if actorType == "agent" {
 		redactMcpConfig(resp)
 		redactComposioToolkitAllowlist(resp)
+		redactConnectorServiceAllowlist(resp)
 	}
 }
 
@@ -2244,6 +2298,24 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// connector_service_allowlist follows the composio_toolkit_allowlist
+	// rules above: owner-only write, flag-gated, tri-state.
+	shouldClearConnectorAllowlist := false
+	if _, hasAllowlist := rawFields["connector_service_allowlist"]; hasAllowlist {
+		isAgentOwner := uuidToString(existing.OwnerID) == requestUserID(r)
+		if !h.openConnectorAppsEnabled(r.Context()) {
+			slog.Debug("update agent: connector_service_allowlist write dropped because feature flag is disabled",
+				append(logger.RequestAttrs(r), "agent_id", id)...)
+		} else if !isAgentOwner {
+			slog.Debug("update agent: connector_service_allowlist write by non-owner silently dropped",
+				append(logger.RequestAttrs(r), "agent_id", id)...)
+		} else if req.ConnectorServiceAllowlist == nil {
+			shouldClearConnectorAllowlist = true
+		} else {
+			params.ConnectorServiceAllowlist = normaliseServiceAllowlist(*req.ConnectorServiceAllowlist)
+		}
+	}
+
 	updated, err := h.Queries.UpdateAgent(r.Context(), params)
 	if err != nil {
 		// Unique constraint on (workspace_id, name) — mirror CreateAgent and
@@ -2302,6 +2374,15 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if shouldClearConnectorAllowlist {
+		updated, err = h.Queries.ClearAgentConnectorServiceAllowlist(r.Context(), updated.ID)
+		if err != nil {
+			slog.Warn("clear agent connector_service_allowlist failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
+			writeError(w, http.StatusInternalServerError, "failed to clear connector_service_allowlist")
+			return
+		}
+	}
+
 	// Invocation targets (MUL-3963): replace wholesale when the owner touched
 	// permission. Done after the row update so a permission_mode flip and its
 	// targets land together.
@@ -2342,6 +2423,11 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		suppressComposioToolkitAllowlist(&resp)
 	} else if uuidToString(updated.OwnerID) != userID {
 		redactComposioToolkitAllowlist(&resp)
+	}
+	if !h.openConnectorAppsEnabled(r.Context()) {
+		suppressConnectorServiceAllowlist(&resp)
+	} else if uuidToString(updated.OwnerID) != userID {
+		redactConnectorServiceAllowlist(&resp)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

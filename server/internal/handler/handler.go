@@ -30,6 +30,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
 	"github.com/multica-ai/multica/server/internal/integrations/ghsnapshot"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	openconnector "github.com/multica-ai/multica/server/internal/integrations/openconnector"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
@@ -293,6 +294,9 @@ type Handler struct {
 	// the composio HTTP handlers return 403 in that case. Wired in
 	// cmd/server/router.go after handler.New.
 	Composio *composio.Service
+	// OpenConnector is the open-connector integration. Nil when
+	// OPEN_CONNECTOR_BASE_URL / OPEN_CONNECTOR_ADMIN_TOKEN are unset.
+	OpenConnector *openconnector.Service
 	// ChannelSupervisor owns the per-installation supervisor goroutines
 	// that hold the §4.4 WS lease and drive each channel.Channel
 	// (MUL-3620 generalized the Feishu-only Hub into this channel-agnostic
