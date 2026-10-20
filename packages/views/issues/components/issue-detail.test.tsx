@@ -984,6 +984,13 @@ describe("IssueDetail (shared)", () => {
     expect(mockApiObj.getIssue).toHaveBeenCalledWith("issue-1");
   });
 
+  it("does not fetch or subscribe to the whole workspace issue list", async () => {
+    renderIssueDetail();
+
+    await screen.findByDisplayValue("Add JWT auth to the backend");
+    expect(mockApiObj.listIssues).not.toHaveBeenCalled();
+  });
+
   it("opts the description editor into the unmount flush", async () => {
     // Closing the issue modal must save the description the user last saw —
     // ContentEditor drops pending debounced updates on unmount by default

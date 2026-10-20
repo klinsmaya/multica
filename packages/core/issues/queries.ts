@@ -377,6 +377,25 @@ export function issueListOptions(wsId: string, sort?: IssueSortParam) {
 }
 
 /**
+ * Read-only lookup of `issueId` across every cached workspace list. It never
+ * fetches and never subscribes, so a detail view can seed from a list another
+ * surface already loaded without loading the whole list itself.
+ */
+export function findIssueInListCache(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+): Issue | undefined {
+  for (const [, data] of qc.getQueriesData<ListIssuesCache>({
+    queryKey: issueKeys.list(wsId),
+  })) {
+    const found = data && flattenIssueBuckets(data).find((i) => i.id === issueId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
  * Page size for the scheduled-issue fetch. The Gantt view always pulls every
  * scheduled issue (no client pagination), so this is just the chunk size we
  * use to walk the server's `(limit, offset)` window until we hit `total`.

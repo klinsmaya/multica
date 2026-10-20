@@ -20,6 +20,7 @@ import {
   PROJECT_GANTT_PAGE_LIMIT,
   childrenByParentsOptions,
   childIssuesOptions,
+  findIssueInListCache,
   flattenIssueBuckets,
   issueIdentifierOptions,
   issueKeys,
@@ -693,5 +694,39 @@ describe("issueIdentifierOptions", () => {
       "identifier",
       "MUL-7",
     ]);
+  });
+});
+
+describe("findIssueInListCache", () => {
+  const todoIssue = makeIssue(1, { status: "todo", status_category: "unstarted" });
+  const startedIssue = makeIssue(2, { status: "in_progress", status_category: "started" });
+
+  it("finds an issue in a cached sorted-list entry", async () => {
+    const qc = new QueryClient();
+    const listIssues = vi
+      .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
+      .mockResolvedValue({ issues: [todoIssue, startedIssue], total: 2 });
+    installFakeApi(listIssues);
+    await qc.fetchQuery(issueListOptions(WS_ID, { sort_by: "position" }));
+    listIssues.mockClear();
+
+    expect(findIssueInListCache(qc, WS_ID, startedIssue.id)).toEqual(startedIssue);
+    expect(listIssues).not.toHaveBeenCalled();
+    qc.clear();
+  });
+
+  it("returns undefined without fetching when the issue is not cached", () => {
+    const qc = new QueryClient();
+    const listIssues = vi.fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>();
+    installFakeApi(listIssues);
+    qc.setQueryData<ListIssuesCache>(issueKeys.listSorted(WS_ID), {
+      byStatus: { unstarted: { issues: [todoIssue], total: 1 } },
+    });
+
+    expect(findIssueInListCache(qc, WS_ID, "missing")).toBeUndefined();
+    expect(findIssueInListCache(qc, "ws-other", todoIssue.id)).toBeUndefined();
+    expect(findIssueInListCache(new QueryClient(), WS_ID, todoIssue.id)).toBeUndefined();
+    expect(listIssues).not.toHaveBeenCalled();
+    qc.clear();
   });
 });

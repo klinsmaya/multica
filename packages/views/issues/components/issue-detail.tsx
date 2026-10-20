@@ -125,7 +125,7 @@ import {
 } from "./deliverables/deliverable-details";
 import { collectDeliverableFiles } from "@multica/core/attachments/deliverables";
 import { AttachmentVersionsProvider } from "./deliverables/attachment-versions";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useActorName } from "@multica/core/workspace/hooks";
@@ -135,7 +135,7 @@ import {
 } from "@multica/core/issue-workflows";
 import { useRecentContextStore } from "@multica/core/chat";
 import { useModalStore } from "@multica/core/modals";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
+import { findIssueInListCache, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@multica/core/labels";
@@ -1307,7 +1307,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     members.find((m) => m.user_id === user?.id)?.role ?? null;
   const canModerateComments =
     currentUserRole === "owner" || currentUserRole === "admin";
-  const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
+  const qc = useQueryClient();
   const { getActorName } = useActorName();
   const resolveStatusLabel = useStatusLabel(wsId);
   // Activity and issue visuals share the catalog's custom geometry and color;
@@ -1518,7 +1518,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // hides source context until a full page refresh.
     refetchOnMount: "always",
     initialData: () => {
-      const cached = allIssues.find((i) => i.id === id);
+      const cached = findIssueInListCache(qc, wsId, id);
       return cached?.description != null ? cached : undefined;
     },
   });
@@ -2029,7 +2029,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: parentIssue = null } = useQuery({
     ...issueDetailOptions(wsId, parentIssueId ?? ""),
     enabled: !!parentIssueId,
-    initialData: () => allIssues.find((i) => i.id === parentIssueId),
+    initialData: () =>
+      parentIssueId ? findIssueInListCache(qc, wsId, parentIssueId) : undefined,
   });
 
   // Project segment in the breadcrumb. The issue's project_id is the source of
