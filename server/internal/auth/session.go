@@ -220,8 +220,8 @@ func RenewSessionToken(claims jwt.MapClaims) (string, time.Time, error) {
 	// A user disabled since their token was signed must not have that token
 	// extended — renewal is the one place a live session's lifetime is
 	// decided after login, so the check belongs here as much as at issuance.
-	if IsTemporarilyDisabledUser(sub, email) {
-		return "", time.Time{}, ErrTemporarilyDisabledUser
+	if IsDisabledUser(sub, email) {
+		return "", time.Time{}, ErrDisabledUser
 	}
 
 	sid, _ := claims[sessionIDClaim].(string)

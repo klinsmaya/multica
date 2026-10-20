@@ -17,17 +17,17 @@ import (
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
 
-func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userID, email, authPath string) bool {
-	if !auth.IsTemporarilyDisabledUser(userID, email) {
+func rejectDisabledUser(w http.ResponseWriter, r *http.Request, userID, email, authPath string) bool {
+	if !auth.IsDisabledUser(userID, email) {
 		return false
 	}
 	slog.Warn(
-		"auth: temporarily disabled user rejected",
+		"auth: disabled user rejected",
 		"path", r.URL.Path,
 		"user_id", userID,
 		"auth_path", authPath,
 	)
-	writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+	writeError(w, http.StatusForbidden, auth.DisabledUserError)
 	return true
 }
 
@@ -120,7 +120,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					return
 				}
 				userID := uuidToString(tt.UserID)
-				if rejectTemporarilyDisabledUser(w, r, userID, "", "task_token") {
+				if rejectDisabledUser(w, r, userID, "", "task_token") {
 					return
 				}
 				r.Header.Set("X-User-ID", userID)
@@ -177,7 +177,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					http.Error(w, `{"error":"cloud pat verifier unavailable"}`, http.StatusServiceUnavailable)
 					return
 				}
-				if rejectTemporarilyDisabledUser(w, r, identity.OwnerID, "", "cloud_pat") {
+				if rejectDisabledUser(w, r, identity.OwnerID, "", "cloud_pat") {
 					return
 				}
 				r.Header.Set("X-User-ID", identity.OwnerID)
@@ -206,7 +206,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				// entry since. Skip the DB SELECT and the last_used_at
 				// UPDATE — last_used_at is bumped once per TTL window.
 				if userID, ok := patCache.Get(r.Context(), hash); ok {
-					if rejectTemporarilyDisabledUser(w, r, userID, "", "pat_cache") {
+					if rejectDisabledUser(w, r, userID, "", "pat_cache") {
 						return
 					}
 					r.Header.Set("X-User-ID", userID)
@@ -226,7 +226,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				}
 
 				userID := uuidToString(pat.UserID)
-				if rejectTemporarilyDisabledUser(w, r, userID, "", "pat") {
+				if rejectDisabledUser(w, r, userID, "", "pat") {
 					return
 				}
 				r.Header.Set("X-User-ID", userID)
@@ -276,7 +276,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				return
 			}
 			email, _ := claims["email"].(string)
-			if rejectTemporarilyDisabledUser(w, r, sub, email, "jwt") {
+			if rejectDisabledUser(w, r, sub, email, "jwt") {
 				return
 			}
 			r.Header.Set("X-User-ID", sub)

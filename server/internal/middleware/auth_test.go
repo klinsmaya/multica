@@ -196,11 +196,13 @@ func TestAuth_ValidToken(t *testing.T) {
 	}
 }
 
-func TestAuth_TemporarilyDisabledJWTByUserID(t *testing.T) {
+func TestAuth_DisabledJWTByUserID(t *testing.T) {
 	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
 
+	auth.MarkUserDisabled("514492f7-b30f-4147-bd33-c0e8ce5d6d4f", "")
+	t.Cleanup(func() { auth.MarkUserEnabled("514492f7-b30f-4147-bd33-c0e8ce5d6d4f", "") })
 	claims := validClaims()
 	claims["sub"] = "514492f7-b30f-4147-bd33-c0e8ce5d6d4f"
 	token := generateToken(claims, auth.JWTSecret())
@@ -215,11 +217,13 @@ func TestAuth_TemporarilyDisabledJWTByUserID(t *testing.T) {
 	}
 }
 
-func TestAuth_TemporarilyDisabledJWTByEmail(t *testing.T) {
+func TestAuth_DisabledJWTByEmail(t *testing.T) {
 	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
 
+	auth.MarkUserDisabled("", "pdzzer68@embassybase.com")
+	t.Cleanup(func() { auth.MarkUserEnabled("", "pdzzer68@embassybase.com") })
 	claims := validClaims()
 	claims["sub"] = "not-the-disabled-id"
 	claims["email"] = "pdzzer68@embassybase.com"

@@ -178,7 +178,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 					writeError(w, http.StatusServiceUnavailable, "cloud pat verifier unavailable")
 					return
 				}
-				if rejectTemporarilyDisabledUser(w, r, identity.OwnerID, "", DaemonAuthPathCloudPAT) {
+				if rejectDisabledUser(w, r, identity.OwnerID, "", DaemonAuthPathCloudPAT) {
 					return
 				}
 				r.Header.Set("X-User-ID", identity.OwnerID)
@@ -202,7 +202,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				hash := auth.HashToken(tokenString)
 
 				if userID, ok := patCache.Get(r.Context(), hash); ok {
-					if rejectTemporarilyDisabledUser(w, r, userID, "", DaemonAuthPathPAT) {
+					if rejectDisabledUser(w, r, userID, "", DaemonAuthPathPAT) {
 						return
 					}
 					r.Header.Set("X-User-ID", userID)
@@ -223,7 +223,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				}
 
 				userID := uuidToString(pat.UserID)
-				if rejectTemporarilyDisabledUser(w, r, userID, "", DaemonAuthPathPAT) {
+				if rejectDisabledUser(w, r, userID, "", DaemonAuthPathPAT) {
 					return
 				}
 				r.Header.Set("X-User-ID", userID)
@@ -267,7 +267,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				return
 			}
 			email, _ := claims["email"].(string)
-			if rejectTemporarilyDisabledUser(w, r, sub, email, DaemonAuthPathJWT) {
+			if rejectDisabledUser(w, r, sub, email, DaemonAuthPathJWT) {
 				return
 			}
 			r.Header.Set("X-User-ID", sub)

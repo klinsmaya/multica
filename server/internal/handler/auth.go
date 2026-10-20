@@ -158,8 +158,8 @@ func isSixDigitCode(code string) bool {
 }
 
 func (h *Handler) issueJWT(user db.User) (string, error) {
-	if auth.IsTemporarilyDisabledUser(uuidToString(user.ID), user.Email) {
-		return "", auth.ErrTemporarilyDisabledUser
+	if auth.IsDisabledUser(uuidToString(user.ID), user.Email) {
+		return "", auth.ErrDisabledUser
 	}
 	// `sid` identifies this login for as long as it lasts: sliding renewal
 	// copies it forward, so it stays put while `exp` moves. The CSRF token is
@@ -186,8 +186,8 @@ func (h *Handler) issueJWT(user db.User) (string, error) {
 // event fires on that edge, covering both the verification-code and Google
 // OAuth entry points.
 func (h *Handler) findOrCreateUser(ctx context.Context, email string) (user db.User, isNew bool, err error) {
-	if auth.IsTemporarilyDisabledUserEmail(email) {
-		return db.User{}, false, auth.ErrTemporarilyDisabledUser
+	if auth.IsDisabledUserEmail(email) {
+		return db.User{}, false, auth.ErrDisabledUser
 	}
 
 	user, err = h.Queries.GetUserByEmail(ctx, email)
@@ -195,8 +195,8 @@ func (h *Handler) findOrCreateUser(ctx context.Context, email string) (user db.U
 	if err != nil && !isNew {
 		return db.User{}, false, err
 	}
-	if !isNew && auth.IsTemporarilyDisabledUser(uuidToString(user.ID), user.Email) {
-		return db.User{}, false, auth.ErrTemporarilyDisabledUser
+	if !isNew && auth.IsDisabledUser(uuidToString(user.ID), user.Email) {
+		return db.User{}, false, auth.ErrDisabledUser
 	}
 
 	if err := h.checkSignupAllowed(ctx, email, isNew); err != nil {
@@ -314,8 +314,8 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email is required")
 		return
 	}
-	if auth.IsTemporarilyDisabledUserEmail(email) {
-		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+	if auth.IsDisabledUserEmail(email) {
+		writeError(w, http.StatusForbidden, auth.DisabledUserError)
 		return
 	}
 
@@ -341,8 +341,8 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// User already exists → always allowed to login
-		if auth.IsTemporarilyDisabledUser(uuidToString(existingUser.ID), existingUser.Email) {
-			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+		if auth.IsDisabledUser(uuidToString(existingUser.ID), existingUser.Email) {
+			writeError(w, http.StatusForbidden, auth.DisabledUserError)
 			return
 		}
 		isNewUser := false
@@ -408,8 +408,8 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "email and code are required")
 		return
 	}
-	if auth.IsTemporarilyDisabledUserEmail(email) {
-		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+	if auth.IsDisabledUserEmail(email) {
+		writeError(w, http.StatusForbidden, auth.DisabledUserError)
 		return
 	}
 
@@ -433,8 +433,8 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	user, isNew, err := h.findOrCreateUser(r.Context(), email)
 	if err != nil {
-		if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
-			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+		if errors.Is(err, auth.ErrDisabledUser) {
+			writeError(w, http.StatusForbidden, auth.DisabledUserError)
 			return
 		}
 		var signupErr SignupError
@@ -452,8 +452,8 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := h.issueJWT(user)
 	if err != nil {
-		if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
-			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+		if errors.Is(err, auth.ErrDisabledUser) {
+			writeError(w, http.StatusForbidden, auth.DisabledUserError)
 			return
 		}
 		slog.Warn("login failed", append(logger.RequestAttrs(r), "error", err, "email", req.Email)...)
@@ -529,8 +529,8 @@ type googleUserInfo struct {
 
 func writeGoogleLoginActionableError(w http.ResponseWriter, err error) bool {
 	switch {
-	case errors.Is(err, auth.ErrTemporarilyDisabledUser):
-		writeErrorCode(w, http.StatusForbidden, googleLoginCodeAccountDisabled, auth.TemporarilyDisabledUserError)
+	case errors.Is(err, auth.ErrDisabledUser):
+		writeErrorCode(w, http.StatusForbidden, googleLoginCodeAccountDisabled, auth.DisabledUserError)
 	case errors.Is(err, ErrSignupProhibited):
 		writeErrorCode(w, http.StatusForbidden, googleLoginCodeSignupProhibited, ErrSignupProhibited.Error())
 	case errors.Is(err, ErrEmailNotAllowed):
@@ -669,8 +669,8 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if auth.IsTemporarilyDisabledUserEmail(email) {
-		writeErrorCode(w, http.StatusForbidden, googleLoginCodeAccountDisabled, auth.TemporarilyDisabledUserError)
+	if auth.IsDisabledUserEmail(email) {
+		writeErrorCode(w, http.StatusForbidden, googleLoginCodeAccountDisabled, auth.DisabledUserError)
 		return
 	}
 
@@ -759,8 +759,8 @@ func (h *Handler) IssueCliToken(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := h.issueJWT(user)
 	if err != nil {
-		if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
-			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+		if errors.Is(err, auth.ErrDisabledUser) {
+			writeError(w, http.StatusForbidden, auth.DisabledUserError)
 			return
 		}
 		slog.Warn("cli-token: failed to issue JWT", append(logger.RequestAttrs(r), "error", err, "user_id", userID)...)

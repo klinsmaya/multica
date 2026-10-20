@@ -708,7 +708,7 @@ func authenticateToken(tokenStr string, pr PATResolver, ctx context.Context) (st
 		if !ok {
 			return "", `{"error":"invalid token"}`
 		}
-		if auth.IsTemporarilyDisabledUserID(uid) {
+		if auth.IsDisabledUserID(uid) {
 			return "", `{"error":"account disabled"}`
 		}
 		return uid, ""
@@ -734,7 +734,7 @@ func authenticateToken(tokenStr string, pr PATResolver, ctx context.Context) (st
 		return "", `{"error":"invalid claims"}`
 	}
 	email, _ := claims["email"].(string)
-	if auth.IsTemporarilyDisabledUser(uid, email) {
+	if auth.IsDisabledUser(uid, email) {
 		return "", `{"error":"account disabled"}`
 	}
 	return uid, ""

@@ -117,6 +117,14 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
 
 白名单的准确判断顺序见[登录与注册](/auth-setup#注册范围控制)。
 
+### 运营后台
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PLATFORM_ADMIN_EMAILS` | 空 | 逗号分隔的邮箱，首次访问 `/admin` 时自动授予 `super_admin`。后续管理员在后台内授予，记录在 `platform_admin` 表。 |
+
+后台的每次写操作都必须填写原因，并写入 `admin_audit_log`。被禁用的账号在所有后端实例上 30 秒内对每个请求生效。
+
 ## 附件存储
 
 没有设置 `S3_BUCKET` 时，Multica 使用本地磁盘。

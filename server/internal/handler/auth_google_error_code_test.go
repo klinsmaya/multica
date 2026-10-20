@@ -227,7 +227,7 @@ func TestGoogleLoginActionableErrorMapping(t *testing.T) {
 		wantCode  string
 		wantError string
 	}{
-		{"account disabled", auth.ErrTemporarilyDisabledUser, "account_disabled", "account disabled"},
+		{"account disabled", auth.ErrDisabledUser, "account_disabled", "account disabled"},
 		{"signup prohibited", ErrSignupProhibited, "signup_prohibited", ErrSignupProhibited.Error()},
 		{"email not allowed", ErrEmailNotAllowed, "email_not_allowed", ErrEmailNotAllowed.Error()},
 		{"wrapped signup restriction", fmt.Errorf("signup: %w", ErrEmailNotAllowed), "email_not_allowed", ErrEmailNotAllowed.Error()},

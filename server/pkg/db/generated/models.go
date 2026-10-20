@@ -22,6 +22,19 @@ type ActivityLog struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type AdminAuditLog struct {
+	ID          pgtype.UUID        `json:"id"`
+	ActorUserID pgtype.UUID        `json:"actor_user_id"`
+	Action      string             `json:"action"`
+	TargetType  string             `json:"target_type"`
+	TargetID    string             `json:"target_id"`
+	Reason      string             `json:"reason"`
+	Payload     []byte             `json:"payload"`
+	Ip          string             `json:"ip"`
+	UserAgent   string             `json:"user_agent"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Agent struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
@@ -1231,6 +1244,13 @@ type PinnedItem struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PlatformAdmin struct {
+	UserID    pgtype.UUID        `json:"user_id"`
+	Role      string             `json:"role"`
+	GrantedBy pgtype.UUID        `json:"granted_by"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type PluginHookSchedule struct {
 	ID             pgtype.UUID        `json:"id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
@@ -1627,7 +1647,9 @@ type User struct {
 	Language                pgtype.Text        `json:"language"`
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
-	Timezone pgtype.Text `json:"timezone"`
+	Timezone       pgtype.Text        `json:"timezone"`
+	DisabledAt     pgtype.Timestamptz `json:"disabled_at"`
+	DisabledReason string             `json:"disabled_reason"`
 }
 
 type UserComposioConnection struct {
