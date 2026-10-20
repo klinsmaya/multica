@@ -18,6 +18,8 @@ type ConnectorProvider interface {
 	// "no overlay for this run". Errors are best-effort: callers log and skip.
 	BuildTaskOverlay(ctx context.Context, taskID, originatorUserID pgtype.UUID, agent db.Agent) (MCPOverlayResult, error)
 	// ReleaseTaskResources frees anything BuildTaskOverlay provisioned for the
-	// task. Must be idempotent.
-	ReleaseTaskResources(ctx context.Context, taskID pgtype.UUID) error
+	// task, identified by the MCPOverlayResult.ResourceHandle it returned. The
+	// task ID is not known when the overlay is built, so the handle is the
+	// only key. Must be idempotent.
+	ReleaseTaskResources(ctx context.Context, taskID pgtype.UUID, handle string) error
 }

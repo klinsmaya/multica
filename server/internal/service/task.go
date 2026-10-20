@@ -298,9 +298,9 @@ func (s *TaskService) BuildCommentTriggerSummary(ctx context.Context, workspaceI
 // audit attribution consistent with the latest trigger comment's originator
 // instead of the task's original one. Fails soft to empty (same as the enqueue
 // path) so a transient Composio hiccup never blocks the merge.
-func (s *TaskService) BuildRuntimeMCPOverlayForMerge(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) (overlay, connectedApps []byte) {
+func (s *TaskService) BuildRuntimeMCPOverlayForMerge(ctx context.Context, originatorUserID pgtype.UUID, agent db.Agent) (overlay, connectedApps, connectorHandles []byte) {
 	data := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
-	return data.Overlay, data.ConnectedApps
+	return data.Overlay, data.ConnectedApps, data.ConnectorHandles
 }
 
 func NewTaskService(q *db.Queries, tx TxStarter, hub *realtime.Hub, bus *events.Bus, wakeups ...TaskWakeupNotifier) *TaskService {
@@ -341,6 +341,10 @@ func (s *TaskService) captureTaskQueued(ctx context.Context, task db.AgentTaskQu
 type runtimeMCPOverlayData struct {
 	Overlay       json.RawMessage
 	ConnectedApps json.RawMessage
+	// ConnectorHandles is {"<provider>":"<ResourceHandle>"} for providers that
+	// provisioned a per-task resource; nil when none did. Persisted as
+	// agent_task_queue.runtime_connector_handles.
+	ConnectorHandles json.RawMessage
 }
 
 // buildRuntimeMCPOverlay computes the optional per-task connector MCP overlay
@@ -365,6 +369,7 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 	var (
 		overlays []json.RawMessage
 		apps     []runtimeapps.ConnectedApp
+		handles  = map[string]string{}
 	)
 	for _, p := range s.ConnectorProviders {
 		if p == nil {
@@ -393,6 +398,9 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 		}
 		overlays = append(overlays, result.MCPOverlay)
 		apps = append(apps, result.ConnectedApps...)
+		if result.ResourceHandle != "" {
+			handles[p.Name()] = result.ResourceHandle
+		}
 	}
 	if len(overlays) == 0 {
 		return runtimeMCPOverlayData{}
@@ -410,6 +418,18 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 		}
 	}
 	data := runtimeMCPOverlayData{Overlay: merged}
+	if len(handles) > 0 {
+		raw, err := json.Marshal(handles)
+		if err != nil {
+			// Without the handle the resource cannot be released by task id;
+			// release it now rather than leak it.
+			slog.Warn("runtime mcp overlay: marshal connector handles failed",
+				"agent_id", util.UUIDToString(agent.ID), "error", err)
+			s.releaseHandles(ctx, pgtype.UUID{}, handles)
+			return runtimeMCPOverlayData{}
+		}
+		data.ConnectorHandles = raw
+	}
 	if len(apps) > 0 {
 		raw, err := json.Marshal(apps)
 		if err != nil {
@@ -423,6 +443,103 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 		data.ConnectedApps = raw
 	}
 	return data
+}
+
+// releaseConnectorResources releases the per-task connector resources recorded
+// in task.RuntimeConnectorHandles once the task is terminal. It is best-effort
+// and runs after the terminal transaction commits: failures are logged and the
+// handles stay on the row so ReleaseStaleConnectorResources can retry.
+func (s *TaskService) releaseConnectorResources(ctx context.Context, task db.AgentTaskQueue) {
+	s.tryReleaseConnectorResources(ctx, task)
+}
+
+// tryReleaseConnectorResources reports whether the task had handles and all of
+// them were released and cleared.
+func (s *TaskService) tryReleaseConnectorResources(ctx context.Context, task db.AgentTaskQueue) bool {
+	if s == nil || len(task.RuntimeConnectorHandles) == 0 {
+		return false
+	}
+	var handles map[string]string
+	if err := json.Unmarshal(task.RuntimeConnectorHandles, &handles); err != nil {
+		slog.Warn("release connector resources: invalid handles",
+			"task_id", util.UUIDToString(task.ID), "error", err)
+		return false
+	}
+	if !s.releaseHandles(ctx, task.ID, handles) {
+		return false
+	}
+	if s.Queries == nil {
+		return false
+	}
+	if err := s.Queries.ClearTaskConnectorHandles(ctx, task.ID); err != nil {
+		slog.Warn("release connector resources: clear handles failed",
+			"task_id", util.UUIDToString(task.ID), "error", err)
+		return false
+	}
+	return true
+}
+
+// releaseOrphanedOverlayHandles releases handles of an overlay that was built
+// but never persisted on a queue row.
+func (s *TaskService) releaseOrphanedOverlayHandles(ctx context.Context, raw json.RawMessage) {
+	if len(raw) == 0 {
+		return
+	}
+	var handles map[string]string
+	if err := json.Unmarshal(raw, &handles); err != nil {
+		return
+	}
+	s.releaseHandles(ctx, pgtype.UUID{}, handles)
+}
+
+// releaseHandles calls ReleaseTaskResources for every handle and reports
+// whether all of them succeeded. A handle whose provider is no longer
+// registered is skipped and counts as a failure, so the row stays visible.
+func (s *TaskService) releaseHandles(ctx context.Context, taskID pgtype.UUID, handles map[string]string) bool {
+	byName := make(map[string]runtimeapps.ConnectorProvider, len(s.ConnectorProviders))
+	for _, p := range s.ConnectorProviders {
+		if p != nil {
+			byName[p.Name()] = p
+		}
+	}
+	ok := true
+	for name, handle := range handles {
+		p := byName[name]
+		if p == nil {
+			slog.Warn("release connector resources: provider not registered",
+				"task_id", util.UUIDToString(taskID), "provider", name)
+			ok = false
+			continue
+		}
+		if err := p.ReleaseTaskResources(ctx, taskID, handle); err != nil {
+			slog.Warn("release connector resources failed",
+				"task_id", util.UUIDToString(taskID), "provider", name, "error", err)
+			ok = false
+		}
+	}
+	return ok
+}
+
+// ReleaseStaleConnectorResources retries the release for terminal tasks whose
+// connector handles were not cleared (best-effort release failed, or the
+// process stopped between the terminal transition and the release). It
+// returns how many tasks were fully released. Intended for a periodic job.
+func (s *TaskService) ReleaseStaleConnectorResources(ctx context.Context) (int, error) {
+	tasks, err := s.Queries.ListTerminalTasksWithConnectorHandles(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list terminal tasks with connector handles: %w", err)
+	}
+	released := 0
+	for _, task := range tasks {
+		if s.tryReleaseConnectorResources(ctx, task) {
+			released++
+		}
+	}
+	// Piggyback: purge expired in-flight connector OAuth state rows.
+	if _, err := s.Queries.DeleteExpiredConnectorOAuthStates(ctx, pgtype.Timestamptz{Time: time.Now(), Valid: true}); err != nil {
+		slog.Warn("delete expired connector oauth states failed", "error", err)
+	}
+	return released, nil
 }
 
 // mergeProviderOverlays merges {"mcpServers":{...}} documents by server key.
@@ -1216,8 +1333,14 @@ func (s *TaskService) hydrateDeferredChannelIssueTaskOverlay(ctx context.Context
 		ID:                       task.ID,
 		RuntimeMcpOverlay:        overlay.Overlay,
 		RuntimeConnectedApps:     overlay.ConnectedApps,
+		RuntimeConnectorHandles:  overlay.ConnectorHandles,
 		ExpectedOriginatorUserID: task.OriginatorUserID,
 	})
+	if err != nil || updated == 0 {
+		// The built overlay was not stored, so nothing would release its
+		// per-task resources later.
+		s.releaseOrphanedOverlayHandles(ctx, overlay.ConnectorHandles)
+	}
 	if err != nil {
 		return fmt.Errorf("set deferred channel issue task overlay: %w", err)
 	}
@@ -1333,26 +1456,27 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	createParams := db.CreateAgentTaskParams{
-		ID:                   dbid.NewV7(),
-		AgentID:              issue.AssigneeID,
-		RuntimeID:            agent.RuntimeID,
-		IssueID:              issue.ID,
-		Priority:             priorityToInt(issue.Priority),
-		TriggerCommentID:     triggerCommentID,
-		CoalescedCommentIds:  coalescedCommentIDs,
-		TriggerSummary:       s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
-		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
-		HandoffNote:          pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
-		OriginatorUserID:     originatorUserID,
-		AccountableUserID:    attr.AccountableUserID,
-		RuleVersionID:        attr.RuleVersionID,
-		RerunOfTaskID:        rerunOfTaskID,
-		RuntimeMcpOverlay:    runtimeMCPOverlay.Overlay,
-		RuntimeConnectedApps: runtimeMCPOverlay.ConnectedApps,
-		OriginatorSource:     attrSource,
-		DelegatedFromTaskID:  attrDelegatedFrom,
-		TriggerEvidenceKind:  attrEvidenceKind,
-		TriggerEvidenceRefID: attrEvidenceRef,
+		ID:                      dbid.NewV7(),
+		AgentID:                 issue.AssigneeID,
+		RuntimeID:               agent.RuntimeID,
+		IssueID:                 issue.ID,
+		Priority:                priorityToInt(issue.Priority),
+		TriggerCommentID:        triggerCommentID,
+		CoalescedCommentIds:     coalescedCommentIDs,
+		TriggerSummary:          s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
+		ForceFreshSession:       pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
+		HandoffNote:             pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
+		OriginatorUserID:        originatorUserID,
+		AccountableUserID:       attr.AccountableUserID,
+		RuleVersionID:           attr.RuleVersionID,
+		RerunOfTaskID:           rerunOfTaskID,
+		RuntimeMcpOverlay:       runtimeMCPOverlay.Overlay,
+		RuntimeConnectedApps:    runtimeMCPOverlay.ConnectedApps,
+		RuntimeConnectorHandles: runtimeMCPOverlay.ConnectorHandles,
+		OriginatorSource:        attrSource,
+		DelegatedFromTaskID:     attrDelegatedFrom,
+		TriggerEvidenceKind:     attrEvidenceKind,
+		TriggerEvidenceRefID:    attrEvidenceRef,
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1360,30 +1484,31 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	var task db.AgentTaskQueue
 	if fireAt.Valid {
 		task, err = s.Queries.CreateDeferredChannelIssueTask(ctx, db.CreateDeferredChannelIssueTaskParams{
-			ID:                   dbid.NewV7(),
-			AgentID:              createParams.AgentID,
-			RuntimeID:            createParams.RuntimeID,
-			IssueID:              createParams.IssueID,
-			Priority:             createParams.Priority,
-			TriggerCommentID:     createParams.TriggerCommentID,
-			CoalescedCommentIds:  createParams.CoalescedCommentIds,
-			TriggerSummary:       createParams.TriggerSummary,
-			ForceFreshSession:    createParams.ForceFreshSession,
-			IsLeaderTask:         createParams.IsLeaderTask,
-			HandoffNote:          createParams.HandoffNote,
-			SquadID:              createParams.SquadID,
-			HeadSha:              createParams.HeadSha,
-			OriginatorUserID:     createParams.OriginatorUserID,
-			AccountableUserID:    createParams.AccountableUserID,
-			RuntimeMcpOverlay:    createParams.RuntimeMcpOverlay,
-			RuntimeConnectedApps: createParams.RuntimeConnectedApps,
-			OriginatorSource:     createParams.OriginatorSource,
-			DelegatedFromTaskID:  createParams.DelegatedFromTaskID,
-			RuleVersionID:        createParams.RuleVersionID,
-			RerunOfTaskID:        createParams.RerunOfTaskID,
-			TriggerEvidenceKind:  createParams.TriggerEvidenceKind,
-			TriggerEvidenceRefID: createParams.TriggerEvidenceRefID,
-			FireAt:               fireAt,
+			ID:                      dbid.NewV7(),
+			AgentID:                 createParams.AgentID,
+			RuntimeID:               createParams.RuntimeID,
+			IssueID:                 createParams.IssueID,
+			Priority:                createParams.Priority,
+			TriggerCommentID:        createParams.TriggerCommentID,
+			CoalescedCommentIds:     createParams.CoalescedCommentIds,
+			TriggerSummary:          createParams.TriggerSummary,
+			ForceFreshSession:       createParams.ForceFreshSession,
+			IsLeaderTask:            createParams.IsLeaderTask,
+			HandoffNote:             createParams.HandoffNote,
+			SquadID:                 createParams.SquadID,
+			HeadSha:                 createParams.HeadSha,
+			OriginatorUserID:        createParams.OriginatorUserID,
+			AccountableUserID:       createParams.AccountableUserID,
+			RuntimeMcpOverlay:       createParams.RuntimeMcpOverlay,
+			RuntimeConnectedApps:    createParams.RuntimeConnectedApps,
+			RuntimeConnectorHandles: createParams.RuntimeConnectorHandles,
+			OriginatorSource:        createParams.OriginatorSource,
+			DelegatedFromTaskID:     createParams.DelegatedFromTaskID,
+			RuleVersionID:           createParams.RuleVersionID,
+			RerunOfTaskID:           createParams.RerunOfTaskID,
+			TriggerEvidenceKind:     createParams.TriggerEvidenceKind,
+			TriggerEvidenceRefID:    createParams.TriggerEvidenceRefID,
+			FireAt:                  fireAt,
 		})
 	} else {
 		task, err = s.Queries.CreateAgentTask(ctx, createParams)
@@ -1504,28 +1629,29 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		ID:                   dbid.NewV7(),
-		AgentID:              agentID,
-		RuntimeID:            agent.RuntimeID,
-		IssueID:              issue.ID,
-		Priority:             priorityToInt(issue.Priority),
-		TriggerCommentID:     triggerCommentID,
-		CoalescedCommentIds:  coalescedCommentIDs,
-		TriggerSummary:       s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
-		IsLeaderTask:         pgtype.Bool{Bool: isLeader, Valid: isLeader},
-		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
-		HandoffNote:          pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
-		SquadID:              squadID,
-		OriginatorUserID:     originatorUserID,
-		AccountableUserID:    attr.AccountableUserID,
-		RuleVersionID:        attr.RuleVersionID,
-		RerunOfTaskID:        rerunOfTaskID,
-		RuntimeMcpOverlay:    runtimeMCPOverlay.Overlay,
-		RuntimeConnectedApps: runtimeMCPOverlay.ConnectedApps,
-		OriginatorSource:     attrSource,
-		DelegatedFromTaskID:  attrDelegatedFrom,
-		TriggerEvidenceKind:  attrEvidenceKind,
-		TriggerEvidenceRefID: attrEvidenceRef,
+		ID:                      dbid.NewV7(),
+		AgentID:                 agentID,
+		RuntimeID:               agent.RuntimeID,
+		IssueID:                 issue.ID,
+		Priority:                priorityToInt(issue.Priority),
+		TriggerCommentID:        triggerCommentID,
+		CoalescedCommentIds:     coalescedCommentIDs,
+		TriggerSummary:          s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
+		IsLeaderTask:            pgtype.Bool{Bool: isLeader, Valid: isLeader},
+		ForceFreshSession:       pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
+		HandoffNote:             pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
+		SquadID:                 squadID,
+		OriginatorUserID:        originatorUserID,
+		AccountableUserID:       attr.AccountableUserID,
+		RuleVersionID:           attr.RuleVersionID,
+		RerunOfTaskID:           rerunOfTaskID,
+		RuntimeMcpOverlay:       runtimeMCPOverlay.Overlay,
+		RuntimeConnectedApps:    runtimeMCPOverlay.ConnectedApps,
+		RuntimeConnectorHandles: runtimeMCPOverlay.ConnectorHandles,
+		OriginatorSource:        attrSource,
+		DelegatedFromTaskID:     attrDelegatedFrom,
+		TriggerEvidenceKind:     attrEvidenceKind,
+		TriggerEvidenceRefID:    attrEvidenceRef,
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1686,18 +1812,19 @@ func (s *TaskService) enqueueQuickCreateTask(ctx context.Context, workspaceID, r
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, requesterID, agent)
 	taskID := dbid.NewV7()
 	createParams := db.CreateQuickCreateTaskParams{
-		ID:                   taskID,
-		AgentID:              agentID,
-		RuntimeID:            agent.RuntimeID,
-		Priority:             priorityToInt("high"),
-		Context:              contextJSON,
-		OriginatorUserID:     requesterID,
-		AccountableUserID:    attr.AccountableUserID,
-		RuntimeMcpOverlay:    runtimeMCPOverlay.Overlay,
-		RuntimeConnectedApps: runtimeMCPOverlay.ConnectedApps,
-		OriginatorSource:     attrSource,
-		TriggerEvidenceKind:  attrEvidenceKind,
-		TriggerEvidenceRefID: attrEvidenceRef,
+		ID:                      taskID,
+		AgentID:                 agentID,
+		RuntimeID:               agent.RuntimeID,
+		Priority:                priorityToInt("high"),
+		Context:                 contextJSON,
+		OriginatorUserID:        requesterID,
+		AccountableUserID:       attr.AccountableUserID,
+		RuntimeMcpOverlay:       runtimeMCPOverlay.Overlay,
+		RuntimeConnectedApps:    runtimeMCPOverlay.ConnectedApps,
+		RuntimeConnectorHandles: runtimeMCPOverlay.ConnectorHandles,
+		OriginatorSource:        attrSource,
+		TriggerEvidenceKind:     attrEvidenceKind,
+		TriggerEvidenceRefID:    attrEvidenceRef,
 	}
 	var task db.AgentTaskQueue
 	if capture == nil {
@@ -1811,11 +1938,12 @@ func (s *TaskService) RetrySourceContextQuickCreate(ctx context.Context, workspa
 		return nil, ErrSourceContextRetryUnavailable
 	}
 	child, err := qtx.CreateManualQuickCreateRetryTask(ctx, db.CreateManualQuickCreateRetryTaskParams{
-		ActorUserID:          requesterID,
-		RuntimeMcpOverlay:    overlay.Overlay,
-		RuntimeConnectedApps: overlay.ConnectedApps,
-		NewTaskID:            dbid.NewV7(),
-		SourceTaskID:         sourceTaskID,
+		ActorUserID:             requesterID,
+		RuntimeMcpOverlay:       overlay.Overlay,
+		RuntimeConnectedApps:    overlay.ConnectedApps,
+		RuntimeConnectorHandles: overlay.ConnectorHandles,
+		NewTaskID:               dbid.NewV7(),
+		SourceTaskID:            sourceTaskID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create source context manual retry: %w", err)
@@ -2125,21 +2253,22 @@ func (s *TaskService) enqueueChatTaskTx(
 	}
 
 	task, err := qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
-		ID:                   dbid.NewV7(),
-		AgentID:              chatSession.AgentID,
-		RuntimeID:            agent.RuntimeID,
-		Priority:             2,
-		ChatSessionID:        chatSession.ID,
-		InitiatorUserID:      initiatorUserID,
-		FireAt:               mediaPendingUntil,
-		OriginatorUserID:     initiatorUserID,
-		AccountableUserID:    prepared.accountableUser,
-		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: true},
-		RuntimeMcpOverlay:    prepared.runtimeOverlay.Overlay,
-		RuntimeConnectedApps: prepared.runtimeOverlay.ConnectedApps,
-		OriginatorSource:     prepared.attrSource,
-		TriggerEvidenceKind:  prepared.attrEvidenceKind,
-		TriggerEvidenceRefID: chatSession.ID,
+		ID:                      dbid.NewV7(),
+		AgentID:                 chatSession.AgentID,
+		RuntimeID:               agent.RuntimeID,
+		Priority:                2,
+		ChatSessionID:           chatSession.ID,
+		InitiatorUserID:         initiatorUserID,
+		FireAt:                  mediaPendingUntil,
+		OriginatorUserID:        initiatorUserID,
+		AccountableUserID:       prepared.accountableUser,
+		ForceFreshSession:       pgtype.Bool{Bool: forceFreshSession, Valid: true},
+		RuntimeMcpOverlay:       prepared.runtimeOverlay.Overlay,
+		RuntimeConnectedApps:    prepared.runtimeOverlay.ConnectedApps,
+		RuntimeConnectorHandles: prepared.runtimeOverlay.ConnectorHandles,
+		OriginatorSource:        prepared.attrSource,
+		TriggerEvidenceKind:     prepared.attrEvidenceKind,
+		TriggerEvidenceRefID:    chatSession.ID,
 		ChannelContextRevision: pgtype.Int8{
 			Int64: contextRevision, Valid: contextRevision > 0,
 		},
@@ -2431,20 +2560,21 @@ func (s *TaskService) SendDirectChatMessage(
 		out.Queued = queued
 
 		task, err := qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
-			ID:                   dbid.NewV7(),
-			AgentID:              session.AgentID,
-			RuntimeID:            carrier.RuntimeID,
-			Priority:             2, // medium priority for chat; matches EnqueueChatTask
-			ChatSessionID:        session.ID,
-			InitiatorUserID:      initiatorUserID,
-			OriginatorUserID:     attr.UserID,
-			AccountableUserID:    attr.AccountableUserID,
-			ForceFreshSession:    pgtype.Bool{Bool: false, Valid: true},
-			RuntimeMcpOverlay:    overlay.Overlay,
-			RuntimeConnectedApps: overlay.ConnectedApps,
-			OriginatorSource:     attrSource,
-			TriggerEvidenceKind:  attrEvidenceKind,
-			TriggerEvidenceRefID: attrEvidenceRef,
+			ID:                      dbid.NewV7(),
+			AgentID:                 session.AgentID,
+			RuntimeID:               carrier.RuntimeID,
+			Priority:                2, // medium priority for chat; matches EnqueueChatTask
+			ChatSessionID:           session.ID,
+			InitiatorUserID:         initiatorUserID,
+			OriginatorUserID:        attr.UserID,
+			AccountableUserID:       attr.AccountableUserID,
+			ForceFreshSession:       pgtype.Bool{Bool: false, Valid: true},
+			RuntimeMcpOverlay:       overlay.Overlay,
+			RuntimeConnectedApps:    overlay.ConnectedApps,
+			RuntimeConnectorHandles: overlay.ConnectorHandles,
+			OriginatorSource:        attrSource,
+			TriggerEvidenceKind:     attrEvidenceKind,
+			TriggerEvidenceRefID:    attrEvidenceRef,
 		})
 		if err != nil {
 			return fmt.Errorf("create direct chat task: %w", err)
@@ -3038,6 +3168,7 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 
 	slog.Info("task cancelled", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCancelled(ctx, task)
+	s.releaseConnectorResources(ctx, task)
 	if !opts.QueuedOnly {
 		cancelledChatMessage = s.finalizeCancelledChatMessage(ctx, task, opts)
 	}
@@ -4559,6 +4690,7 @@ func (s *TaskService) CompleteTaskWithTransition(ctx context.Context, taskID pgt
 
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCompleted(ctx, task)
+	s.releaseConnectorResources(ctx, task)
 
 	// Invariant: every completed issue task must have at least one agent
 	// comment on the issue, so the user always sees something when a run
@@ -5080,12 +5212,13 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 		}
 		if createRetry {
 			child, cerr := qtx.CreateRetryTask(ctx, db.CreateRetryTaskParams{
-				NewTaskID:            dbid.NewV7(),
-				ID:                   taskID,
-				FireAt:               retryFireAt,
-				MaxAttempts:          retryMaxAttempts,
-				RuntimeMcpOverlay:    retryOverlay.Overlay,
-				RuntimeConnectedApps: retryOverlay.ConnectedApps,
+				NewTaskID:               dbid.NewV7(),
+				ID:                      taskID,
+				FireAt:                  retryFireAt,
+				MaxAttempts:             retryMaxAttempts,
+				RuntimeMcpOverlay:       retryOverlay.Overlay,
+				RuntimeConnectedApps:    retryOverlay.ConnectedApps,
+				RuntimeConnectorHandles: retryOverlay.ConnectorHandles,
 			})
 			switch {
 			case cerr == nil:
@@ -5190,6 +5323,7 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
+	s.releaseConnectorResources(ctx, task)
 
 	// The auto-retry child (if any) was created inside the transaction above so
 	// no newer chat task could jump ahead of it. Surface it now: broadcast
@@ -5568,12 +5702,13 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 		return nil, err
 	}
 	child, err := qtx.CreateRetryTask(ctx, db.CreateRetryTaskParams{
-		NewTaskID:            dbid.NewV7(),
-		ID:                   parent.ID,
-		FireAt:               retryFireAt,
-		MaxAttempts:          pgtype.Int4{Int32: retryAttemptCeiling(reason, parent.MaxAttempts), Valid: true},
-		RuntimeMcpOverlay:    runtimeMCPOverlay.Overlay,
-		RuntimeConnectedApps: runtimeMCPOverlay.ConnectedApps,
+		NewTaskID:               dbid.NewV7(),
+		ID:                      parent.ID,
+		FireAt:                  retryFireAt,
+		MaxAttempts:             pgtype.Int4{Int32: retryAttemptCeiling(reason, parent.MaxAttempts), Valid: true},
+		RuntimeMcpOverlay:       runtimeMCPOverlay.Overlay,
+		RuntimeConnectedApps:    runtimeMCPOverlay.ConnectedApps,
+		RuntimeConnectorHandles: runtimeMCPOverlay.ConnectorHandles,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Workspace torn down, or the pending slot was taken between the check
@@ -6696,25 +6831,26 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 		}
 		overlay := s.buildRuntimeMCPOverlay(ctx, originator, target.agent)
 		task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-			ID:                   dbid.NewV7(),
-			AgentID:              target.agent.ID,
-			RuntimeID:            target.agent.RuntimeID,
-			IssueID:              target.issue.ID,
-			Priority:             priorityToInt(target.issue.Priority),
-			TriggerCommentID:     target.comment.ID,
-			TriggerSummary:       s.buildCommentTriggerSummary(ctx, target.issue.WorkspaceID, target.comment.ID),
-			IsLeaderTask:         pgtype.Bool{Bool: target.source.IsLeaderTask, Valid: target.source.IsLeaderTask},
-			SquadID:              target.source.SquadID,
-			OriginatorUserID:     originator,
-			AccountableUserID:    accountable,
-			RuntimeMcpOverlay:    overlay.Overlay,
-			RuntimeConnectedApps: overlay.ConnectedApps,
-			OriginatorSource:     pgtype.Text{String: string(source), Valid: true},
-			DelegatedFromTaskID:  target.failed.ID,
-			RuleVersionID:        ruleVersionID,
-			TriggerEvidenceKind:  pgtype.Text{String: string(attribution.EvidenceDelegatedFailure), Valid: true},
-			TriggerEvidenceRefID: target.failed.ID,
-			HeadSha:              headShaText(s.ResolveIssueReviewSHA(ctx, target.issue.ID)),
+			ID:                      dbid.NewV7(),
+			AgentID:                 target.agent.ID,
+			RuntimeID:               target.agent.RuntimeID,
+			IssueID:                 target.issue.ID,
+			Priority:                priorityToInt(target.issue.Priority),
+			TriggerCommentID:        target.comment.ID,
+			TriggerSummary:          s.buildCommentTriggerSummary(ctx, target.issue.WorkspaceID, target.comment.ID),
+			IsLeaderTask:            pgtype.Bool{Bool: target.source.IsLeaderTask, Valid: target.source.IsLeaderTask},
+			SquadID:                 target.source.SquadID,
+			OriginatorUserID:        originator,
+			AccountableUserID:       accountable,
+			RuntimeMcpOverlay:       overlay.Overlay,
+			RuntimeConnectedApps:    overlay.ConnectedApps,
+			RuntimeConnectorHandles: overlay.ConnectorHandles,
+			OriginatorSource:        pgtype.Text{String: string(source), Valid: true},
+			DelegatedFromTaskID:     target.failed.ID,
+			RuleVersionID:           ruleVersionID,
+			TriggerEvidenceKind:     pgtype.Text{String: string(attribution.EvidenceDelegatedFailure), Valid: true},
+			TriggerEvidenceRefID:    target.failed.ID,
+			HeadSha:                 headShaText(s.ResolveIssueReviewSHA(ctx, target.issue.ID)),
 		})
 		if err == nil {
 			slog.Info("delegated failure recovery task enqueued",

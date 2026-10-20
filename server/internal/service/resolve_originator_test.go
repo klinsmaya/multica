@@ -37,7 +37,9 @@ type stubOverlayBuilder struct {
 
 func (s *stubOverlayBuilder) Name() string { return "composio" }
 
-func (s *stubOverlayBuilder) ReleaseTaskResources(context.Context, pgtype.UUID) error { return nil }
+func (s *stubOverlayBuilder) ReleaseTaskResources(context.Context, pgtype.UUID, string) error {
+	return nil
+}
 
 func (s *stubOverlayBuilder) BuildTaskOverlay(_ context.Context, _ pgtype.UUID, originatorUserID pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
 	s.calls++

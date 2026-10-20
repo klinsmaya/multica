@@ -88,7 +88,7 @@ func (s *Service) Name() string { return "composio" }
 
 // ReleaseTaskResources implements runtimeapps.ConnectorProvider. Composio
 // sessions are not per-task resources, so there is nothing to release.
-func (s *Service) ReleaseTaskResources(context.Context, pgtype.UUID) error { return nil }
+func (s *Service) ReleaseTaskResources(context.Context, pgtype.UUID, string) error { return nil }
 
 var _ runtimeapps.ConnectorProvider = (*Service)(nil)
 

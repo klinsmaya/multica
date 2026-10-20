@@ -58,14 +58,16 @@ INSERT INTO agent (
     runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
     instructions, custom_env, custom_args, mcp_config, model, thinking_level,
     service_tier, conversation_starters,
-    composio_toolkit_allowlist, permission_mode
+    composio_toolkit_allowlist, permission_mode,
+    connector_service_allowlist
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16,
     $17, COALESCE(sqlc.narg('conversation_starters')::jsonb, '[]'::jsonb),
     sqlc.narg('composio_toolkit_allowlist')::text[],
-    COALESCE(sqlc.narg('permission_mode'), 'private')
+    COALESCE(sqlc.narg('permission_mode'), 'private'),
+    sqlc.narg('connector_service_allowlist')::text[]
 )
 RETURNING *;
 
@@ -144,6 +146,7 @@ UPDATE agent SET
     service_tier = COALESCE(sqlc.narg('service_tier'), service_tier),
     conversation_starters = COALESCE(sqlc.narg('conversation_starters'), conversation_starters),
     composio_toolkit_allowlist = COALESCE(sqlc.narg('composio_toolkit_allowlist')::text[], composio_toolkit_allowlist),
+    connector_service_allowlist = COALESCE(sqlc.narg('connector_service_allowlist')::text[], connector_service_allowlist),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -156,6 +159,13 @@ RETURNING *;
 -- dedicated query when the agent owner removes every toolkit; subsequent
 -- dispatch decisions treat NULL identically to `{}` (both -> no overlay).
 UPDATE agent SET composio_toolkit_allowlist = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ClearAgentConnectorServiceAllowlist :one
+-- Explicit NULL-clear for connector_service_allowlist; see
+-- ClearAgentComposioToolkitAllowlist for why COALESCE cannot do this.
+UPDATE agent SET connector_service_allowlist = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
@@ -318,7 +328,7 @@ LIMIT @page_limit;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
-    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps, runtime_connector_handles,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
     workflow_step, id
 )
@@ -338,7 +348,7 @@ SELECT
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     sqlc.narg(runtime_mcp_overlay),
-    sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     sqlc.narg(originator_source),
     sqlc.narg(delegated_from_task_id),
     sqlc.narg(rule_version_id),
@@ -362,7 +372,7 @@ RETURNING *;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
-    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps, runtime_connector_handles,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id,
     trigger_evidence_kind, trigger_evidence_ref_id, fire_at,
     workflow_step, id
@@ -382,7 +392,7 @@ SELECT
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     sqlc.narg(runtime_mcp_overlay),
-    sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     sqlc.narg(originator_source),
     sqlc.narg(delegated_from_task_id),
     sqlc.narg(rule_version_id),
@@ -410,7 +420,8 @@ RETURNING *;
 -- merge may already have replaced the trigger, attribution, and matching overlay.
 UPDATE agent_task_queue
 SET runtime_mcp_overlay = sqlc.narg(runtime_mcp_overlay),
-    runtime_connected_apps = sqlc.narg(runtime_connected_apps)
+    runtime_connected_apps = sqlc.narg(runtime_connected_apps),
+    runtime_connector_handles = sqlc.narg(runtime_connector_handles)
 WHERE id = @id
   AND status = 'deferred'
   AND context->>'channel_issue_media_pending' = 'true'
@@ -430,7 +441,7 @@ WHERE id = @id
 -- NULL-source enqueue bypass (MUL-4302 §2).
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, context, originator_user_id,
-    accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    accountable_user_id, runtime_mcp_overlay, runtime_connected_apps, runtime_connector_handles,
     originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
     id
 )
@@ -439,7 +450,7 @@ SELECT
     sqlc.narg(originator_user_id),
     sqlc.narg(accountable_user_id),
     sqlc.narg(runtime_mcp_overlay),
-    sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     sqlc.narg(originator_source),
     sqlc.narg(trigger_evidence_kind),
     sqlc.narg(trigger_evidence_ref_id),
@@ -484,7 +495,7 @@ INSERT INTO agent_task_queue (
     status, priority, trigger_comment_id, coalesced_comment_ids, trigger_summary, context,
     session_id, work_dir,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    squad_id, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    squad_id, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps, runtime_connector_handles,
     originator_source, delegated_from_task_id, rule_version_id,
     trigger_evidence_kind, trigger_evidence_ref_id, retry_of_task_id,
     chat_input_task_id, fire_at,
@@ -504,7 +515,7 @@ SELECT
     p.originator_user_id,
     p.accountable_user_id,
     sqlc.narg(runtime_mcp_overlay),
-    sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     p.originator_source, p.delegated_from_task_id, p.rule_version_id,
     p.trigger_evidence_kind, p.trigger_evidence_ref_id, p.id,
     p.chat_input_task_id, sqlc.narg(fire_at),
@@ -543,14 +554,14 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, status, priority, context,
     force_fresh_session, is_leader_task, squad_id,
     originator_user_id, accountable_user_id,
-    runtime_mcp_overlay, runtime_connected_apps,
+    runtime_mcp_overlay, runtime_connected_apps, runtime_connector_handles,
     originator_source, rerun_of_task_id, id
 )
 SELECT
     p.agent_id, p.runtime_id, 'queued', p.priority, p.context,
     TRUE, p.is_leader_task, p.squad_id,
     sqlc.arg(actor_user_id), sqlc.arg(actor_user_id),
-    sqlc.narg(runtime_mcp_overlay), sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_mcp_overlay), sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     'direct_human', p.id, sqlc.arg(new_task_id)
 FROM agent_task_queue p
 WHERE p.id = sqlc.arg(source_task_id)
@@ -1751,7 +1762,8 @@ SET coalesced_comment_ids = (
     trigger_evidence_kind = sqlc.narg('new_trigger_evidence_kind'),
     trigger_evidence_ref_id = sqlc.narg('new_trigger_evidence_ref_id')::uuid,
     runtime_mcp_overlay = sqlc.narg('new_runtime_mcp_overlay'),
-    runtime_connected_apps = sqlc.narg('new_runtime_connected_apps')
+    runtime_connected_apps = sqlc.narg('new_runtime_connected_apps'),
+    runtime_connector_handles = sqlc.narg('new_runtime_connector_handles')
 WHERE id = (
     SELECT t.id FROM agent_task_queue t
     WHERE t.context->>'wakeup_id' IS NULL AND t.issue_id = @issue_id
@@ -2661,3 +2673,18 @@ RETURNING *;
 
 -- name: GetCommentThreadRootID :one
 SELECT comment_thread_root_id(@comment_id::uuid)::uuid AS id;
+
+-- name: ClearTaskConnectorHandles :exec
+-- Called after a task's per-provider resources were released.
+UPDATE agent_task_queue SET runtime_connector_handles = NULL
+WHERE id = $1;
+
+-- name: ListTerminalTasksWithConnectorHandles :many
+-- Reaper input: terminal tasks whose connector resources were not released
+-- (best-effort release failed or the process died). Served by the partial
+-- index on runtime_connector_handles.
+SELECT * FROM agent_task_queue
+WHERE runtime_connector_handles IS NOT NULL
+  AND status IN ('completed', 'failed', 'cancelled')
+ORDER BY id
+LIMIT 200;

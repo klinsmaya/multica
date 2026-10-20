@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS user_connector_connection_user_status_idx;
