@@ -51,3 +51,38 @@ export function useUpdateAgentAllowlist(agentId: string) {
     },
   });
 }
+
+/**
+ * open-connector counterpart of `useUpdateAgentAllowlist`: writes an agent's
+ * `connector_service_allowlist` (service slugs of the owner's connections)
+ * with the same optimistic-patch / rollback / invalidate-on-settle behavior.
+ * Pass the full desired list; `[]` clears every service.
+ */
+export function useUpdateAgentConnectorAllowlist(agentId: string) {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+
+  return useMutation<Agent, Error, string[], { previous?: Agent[] }>({
+    mutationFn: (allowlist) =>
+      api.updateAgent(agentId, { connector_service_allowlist: allowlist }),
+    onMutate: async (allowlist) => {
+      const queryKey = workspaceKeys.agents(wsId);
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<Agent[]>(queryKey);
+      qc.setQueryData<Agent[]>(queryKey, (old) =>
+        old?.map((a) =>
+          a.id === agentId ? ({ ...a, connector_service_allowlist: allowlist } as Agent) : a,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, _allowlist, context) => {
+      if (context?.previous) {
+        qc.setQueryData(workspaceKeys.agents(wsId), context.previous);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+    },
+  });
+}

@@ -49,7 +49,8 @@ export function resolveSettingsLocation(
     case "integrations": {
       const composioCallback =
         params.has("connected") ||
-        params.get("error") === "composio_connect_failed";
+        params.get("error") === "composio_connect_failed" ||
+        params.get("error") === "open_connector_connect_failed";
       if (composioCallback || integration === "composio") {
         return { tab: "apps", section: null, integration: null };
       }

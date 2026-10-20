@@ -744,6 +744,19 @@
       "started_prefix": "{{when}}启动",
       "dispatched_prefix": "{{when}}派发",
       "queued_prefix": "{{when}}排队"
+    },
+    "open_connector_mcp": {
+      "heading": "Open Connector",
+      "loading": "正在加载你的连接…",
+      "load_failed": "无法加载你已连接的应用，请稍后重试。",
+      "empty_title": "还没有已连接的应用",
+      "toggle_aria": "允许该智能体使用 {{service}}",
+      "saving": "保存中…",
+      "save_failed_toast": "保存失败，请重试",
+      "redacted_title": "已配置——对你不可见",
+      "redacted_hint": "只有该智能体的创建者可以查看或修改它可使用的应用。",
+      "shared_warning": "该智能体已共享。能运行该智能体的人可以使用你在此启用的 Open Connector 应用。",
+      "workspace_warning": "对工作区公开：任何工作区成员都可以通过该智能体使用这些 Open Connector 应用。"
     }
   },
   "char_counter": {
@@ -791,7 +804,8 @@
     "public_group": "公开访问",
     "owner_only_readonly": "只有该智能体的所有者可以更改谁能调用它。",
     "members_empty": "没有可选择的工作区成员",
-    "composio_switch_hint": "提示——该智能体已启用 Composio 应用。共享后，所有获得访问权限的人都可以通过该智能体使用这些应用。"
+    "composio_switch_hint": "提示——该智能体已启用 Composio 应用。共享后，所有获得访问权限的人都可以通过该智能体使用这些应用。",
+    "connector_switch_hint": "提示——该智能体已启用 Open Connector 应用。共享后，所有获得访问权限的人都可以通过该智能体使用这些应用。"
   },
   "profile_card": {
     "unavailable": "智能体不可用",
