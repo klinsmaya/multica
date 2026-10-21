@@ -4,6 +4,7 @@
     "overview": "概览",
     "users": "用户",
     "workspaces": "工作区",
+    "connectors": "连接器",
     "audit": "审计日志",
     "admins": "平台管理员",
     "back_to_app": "返回应用"
@@ -131,5 +132,69 @@
     "required": "必须填写原因。"
   },
   "action_failed": "操作失败",
-  "working": "处理中…"
+  "working": "处理中…",
+  "connectors": {
+    "title": "open-connector",
+    "health": {
+      "title": "服务健康",
+      "not_configured": "未配置",
+      "not_configured_help": "在 API 上设置 OPEN_CONNECTOR_BASE_URL 和 OPEN_CONNECTOR_ADMIN_TOKEN 后即可启用集成。",
+      "reachable": "可达",
+      "unreachable": "不可达",
+      "latency": "延迟",
+      "latency_value": "{{ms}} ms",
+      "providers": "目录中的服务",
+      "oauth_configured": "已配置 OAuth 客户端",
+      "checked_at": "检查时间",
+      "check_again": "重新检查"
+    },
+    "services": {
+      "title": "服务",
+      "search_placeholder": "筛选服务",
+      "catalog_error": "无法从 open-connector 加载目录：{{error}}",
+      "col_service": "服务",
+      "col_auth": "认证方式",
+      "col_connections": "连接",
+      "col_users": "允许用户",
+      "col_tools": "工具",
+      "col_published": "已上架",
+      "unavailable": "实例未提供",
+      "everyone": "所有人",
+      "all_tools": "全部",
+      "users_count_other": "{{count}} 位用户",
+      "tools_count_other": "{{count}} 个工具",
+      "connections_summary": "{{active}} 个活跃 · {{users}} 位用户",
+      "publish_label": "上架 {{name}}",
+      "edit_policy": "策略",
+      "enable_dialog_title": "上架 {{name}}？",
+      "enable_dialog_description": "允许列表内的用户可立即在设置中连接 {{name}}。",
+      "disable_dialog_title": "下架 {{name}}？",
+      "disable_dialog_description": "立即停止新建连接，task 不再获得 {{name}} 的工具。已有连接保留，直到所有者自行断开。",
+      "publish": "上架",
+      "unpublish": "下架",
+      "policy_dialog_title": "{{name}} 的策略",
+      "policy_dialog_description": "留空表示不限制。",
+      "tools_label": "允许的工具",
+      "tools_placeholder": "每行一个操作，例如 create_issue",
+      "tools_help": "task 的运行时令牌只能调用 {{service}} 的这些操作。",
+      "users_label": "允许的用户",
+      "users_placeholder": "每行一个邮箱",
+      "save": "保存策略",
+      "published_toast": "服务已上架",
+      "unpublished_toast": "服务已下架",
+      "policy_saved_toast": "策略已保存",
+      "empty": "实例没有可连接的服务。请先在 open-connector 中注册 OAuth 客户端。"
+    },
+    "users": {
+      "title": "按用户查看连接",
+      "all_services": "全部服务",
+      "col_user": "用户",
+      "col_services": "服务",
+      "col_active": "活跃",
+      "col_reauth": "待重新授权",
+      "col_revoked": "已撤销",
+      "col_last_connected": "最近连接",
+      "empty": "没有匹配的连接。"
+    }
+  }
 }

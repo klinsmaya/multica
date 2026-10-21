@@ -1,11 +1,18 @@
 import {
   AdminAuditPageSchema,
+  AdminConnectorHealthResponseSchema,
+  AdminConnectorPolicySchema,
+  AdminConnectorServicesResponseSchema,
+  AdminConnectorUserPageSchema,
   AdminMeSchema,
   AdminOverviewSchema,
   AdminUserDetailSchema,
   AdminUserPageSchema,
   AdminWorkspaceDetailSchema,
   AdminWorkspacePageSchema,
+  EMPTY_ADMIN_CONNECTOR_HEALTH,
+  EMPTY_ADMIN_CONNECTOR_POLICY,
+  EMPTY_ADMIN_CONNECTOR_SERVICES,
   EMPTY_ADMIN_ME,
   EMPTY_ADMIN_OVERVIEW,
   EMPTY_ADMIN_USER_DETAIL,
@@ -17,6 +24,11 @@ import {
   type AdminActionRequest,
   type AdminAuditEntry,
   type AdminAuditListParams,
+  type AdminConnectorHealthResponse,
+  type AdminConnectorPolicy,
+  type AdminConnectorServicesResponse,
+  type AdminConnectorUser,
+  type AdminConnectorUserListParams,
   type AdminMe,
   type AdminOverview,
   type AdminPage,
@@ -27,6 +39,7 @@ import {
   type AdminWorkspaceDetail,
   type AdminWorkspaceListParams,
   type PlatformAdmin,
+  type SetConnectorPolicyRequest,
   type SetPlatformAdminRequest,
 } from "../admin/schemas";
 import type { ZodType } from "zod";
@@ -5640,6 +5653,67 @@ export class ApiClient {
     await this.fetch(`/api/admin/admins/${userId}`, {
       method: "DELETE",
       body: JSON.stringify(body),
+    });
+  }
+
+  // open-connector operations. The catalog and policy reads tolerate an
+  // unreachable instance (configured / catalog_error in the body); writes
+  // change only Multica's policy table.
+  async adminOpenConnectorHealth(): Promise<AdminConnectorHealthResponse> {
+    const raw = await this.fetch<unknown>("/api/admin/open-connector/health");
+    return parseWithFallback(raw, AdminConnectorHealthResponseSchema, EMPTY_ADMIN_CONNECTOR_HEALTH, {
+      endpoint: "GET /api/admin/open-connector/health",
+    });
+  }
+
+  async adminOpenConnectorListServices(): Promise<AdminConnectorServicesResponse> {
+    const raw = await this.fetch<unknown>("/api/admin/open-connector/services");
+    return parseWithFallback(raw, AdminConnectorServicesResponseSchema, EMPTY_ADMIN_CONNECTOR_SERVICES, {
+      endpoint: "GET /api/admin/open-connector/services",
+    });
+  }
+
+  async adminOpenConnectorListUsers(
+    params: AdminConnectorUserListParams = {},
+  ): Promise<AdminPage<AdminConnectorUser>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/users${this.adminQuery({
+        service: params.service,
+        q: params.q,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, AdminConnectorUserPageSchema, emptyAdminPage<AdminConnectorUser>(), {
+      endpoint: "GET /api/admin/open-connector/users",
+    });
+  }
+
+  async adminOpenConnectorSetServiceEnabled(
+    service: string,
+    enabled: boolean,
+    body: AdminActionRequest,
+  ): Promise<AdminConnectorPolicy> {
+    const verb = enabled ? "enable" : "disable";
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/services/${encodeURIComponent(service)}/${verb}`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(raw, AdminConnectorPolicySchema, EMPTY_ADMIN_CONNECTOR_POLICY, {
+      endpoint: `POST /api/admin/open-connector/services/:service/${verb}`,
+    });
+  }
+
+  async adminOpenConnectorSetPolicy(
+    service: string,
+    body: SetConnectorPolicyRequest,
+  ): Promise<AdminConnectorPolicy> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/services/${encodeURIComponent(service)}/policy`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(raw, AdminConnectorPolicySchema, EMPTY_ADMIN_CONNECTOR_POLICY, {
+      endpoint: "PUT /api/admin/open-connector/services/:service/policy",
     });
   }
 }

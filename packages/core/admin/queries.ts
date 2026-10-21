@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 import type {
   AdminAuditListParams,
+  AdminConnectorUserListParams,
   AdminUserListParams,
   AdminWorkspaceListParams,
 } from "./schemas";
@@ -21,6 +22,10 @@ export const adminKeys = {
   audit: (params: AdminAuditListParams) =>
     [...adminKeys.all, "audit", params] as const,
   admins: () => [...adminKeys.all, "admins"] as const,
+  connectorHealth: () => [...adminKeys.all, "connector-health"] as const,
+  connectorServices: () => [...adminKeys.all, "connector-services"] as const,
+  connectorUsers: (params: AdminConnectorUserListParams) =>
+    [...adminKeys.all, "connector-users", params] as const,
 };
 
 export function adminMeOptions() {
@@ -80,5 +85,29 @@ export function adminPlatformAdminsOptions() {
   return queryOptions({
     queryKey: adminKeys.admins(),
     queryFn: () => api.adminListPlatformAdmins(),
+  });
+}
+
+export function adminConnectorHealthOptions() {
+  return queryOptions({
+    queryKey: adminKeys.connectorHealth(),
+    queryFn: () => api.adminOpenConnectorHealth(),
+    // Each fetch is a live probe of the instance; refetch only on demand.
+    staleTime: Infinity,
+  });
+}
+
+export function adminConnectorServicesOptions() {
+  return queryOptions({
+    queryKey: adminKeys.connectorServices(),
+    queryFn: () => api.adminOpenConnectorListServices(),
+    staleTime: 30_000,
+  });
+}
+
+export function adminConnectorUsersOptions(params: AdminConnectorUserListParams) {
+  return queryOptions({
+    queryKey: adminKeys.connectorUsers(params),
+    queryFn: () => api.adminOpenConnectorListUsers(params),
   });
 }
