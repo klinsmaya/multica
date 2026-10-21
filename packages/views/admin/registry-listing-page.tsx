@@ -242,6 +242,24 @@ function ListingDetail({ listing, back }: { listing: RegistryListingDetail; back
   );
 }
 
+/**
+ * The squad a package declares under metadata.multica.squad. Read loosely:
+ * the registry stores the block as the package wrote it.
+ */
+function templateSquad(metadata: Record<string, unknown>): { name: string; lead: string; members: string[] } | null {
+  const multica = metadata.multica;
+  if (!multica || typeof multica !== "object") return null;
+  const squad = (multica as Record<string, unknown>).squad;
+  if (!squad || typeof squad !== "object") return null;
+  const { name, lead, members } = squad as Record<string, unknown>;
+  if (typeof lead !== "string" || lead === "") return null;
+  return {
+    name: typeof name === "string" && name !== "" ? name : lead,
+    lead,
+    members: Array.isArray(members) ? members.filter((m): m is string => typeof m === "string") : [],
+  };
+}
+
 /** What a reviewer is approving: the capabilities, not only the name. */
 function VersionContents({ version }: { version: RegistryVersion }) {
   const { t } = useT("admin");
@@ -251,6 +269,10 @@ function VersionContents({ version }: { version: RegistryVersion }) {
   }
   if (version.agents.length > 0) {
     parts.push(t(($) => $.registry.versions.agents, { count: version.agents.length, names: version.agents.join(", ") }));
+  }
+  const squad = templateSquad(version.metadata);
+  if (squad) {
+    parts.push(t(($) => $.registry.versions.squad, { name: squad.name, lead: squad.lead, members: squad.members.join(", ") || "—" }));
   }
   for (const server of version.mcp_servers) {
     parts.push(t(($) => $.registry.versions.mcp_server, { name: server.name, url: server.url }));

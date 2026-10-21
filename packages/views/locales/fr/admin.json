@@ -199,7 +199,8 @@
       "col_uploaded": "Téléversée",
       "skills": "{{count}} compétences : {{names}}",
       "agents": "{{count}} agents : {{names}}",
-      "mcp_server": "Serveur MCP {{name}} → {{url}}"
+      "mcp_server": "Serveur MCP {{name}} → {{url}}",
+      "squad": "Escouade {{name}} : responsable {{lead}}, membres {{members}}"
     },
     "review": {
       "pending": "En attente",

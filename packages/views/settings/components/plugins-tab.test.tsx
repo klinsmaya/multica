@@ -288,11 +288,25 @@ describe("PluginsTab marketplace", () => {
     configStore.getState().setFeatureFlags({ marketplace_v1: true });
     mockPreview.mockResolvedValue({
       ...PREVIEW,
-      manifest: { ...PREVIEW.manifest, key: "self.pr-helper", name: "PR Helper" },
       scopes: ["issues:read", "net:mcp.example.com"],
       version_id: "",
       version: "1.1.0",
       registry_version_id: "registry-version-1",
+      manifest: {
+        ...PREVIEW.manifest,
+        key: "self.pr-helper",
+        name: "PR Helper",
+        contributes: {
+          hooks: [],
+          resources: [
+            { type: "skill", key: "triage" },
+            { type: "agent", key: "triager" },
+            { type: "agent", key: "responder" },
+            { type: "squad", key: "support" },
+          ],
+        },
+      },
+      requires: { runtime: "claude-code", min_backend: "", connectors: ["zendesk"] },
     });
     mockInstall.mockResolvedValue(INSTALLATION);
   });
@@ -306,6 +320,11 @@ describe("PluginsTab marketplace", () => {
     await waitFor(() => expect(mockPreview).toHaveBeenCalledWith({ registry_version_id: "registry-version-1" }));
     await screen.findByText("This Plugin is asking for the following access");
     expect(screen.getByText("net:mcp.example.com")).toBeInTheDocument();
+    // What the template creates, and what the workspace has to do afterwards.
+    expect(screen.getByText("2 agents: triager, responder")).toBeInTheDocument();
+    expect(screen.getByText("1 squads: support")).toBeInTheDocument();
+    expect(screen.getByText(/Bind one in each agent's settings/)).toBeInTheDocument();
+    expect(screen.getByText("Uses these connectors: zendesk.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Grant and install" }));
     await waitFor(() => expect(mockInstall).toHaveBeenCalledWith({

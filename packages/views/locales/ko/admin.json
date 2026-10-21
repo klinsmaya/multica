@@ -199,7 +199,8 @@
       "col_uploaded": "업로드",
       "skills": "스킬 {{count}}개: {{names}}",
       "agents": "에이전트 {{count}}개: {{names}}",
-      "mcp_server": "MCP 서버 {{name}} → {{url}}"
+      "mcp_server": "MCP 서버 {{name}} → {{url}}",
+      "squad": "스쿼드 {{name}}: 리더 {{lead}}, 멤버 {{members}}"
     },
     "review": {
       "pending": "검토 대기",

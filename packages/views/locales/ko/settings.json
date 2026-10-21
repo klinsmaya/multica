@@ -457,7 +457,14 @@
       "installed": "Plugin을 설치했습니다",
       "upgrade_from": " · v{{version}}에서 업그레이드",
       "new_scope": "신규",
-      "no_scopes": "이 Plugin은 스킬만 추가하며 접근 권한을 요청하지 않습니다."
+      "no_scopes": "이 Plugin은 스킬만 추가하며 접근 권한을 요청하지 않습니다.",
+      "contents_title": "이 Plugin이 추가하는 항목",
+      "contents_skills": "스킬 {{count}}개: {{names}}",
+      "contents_agents": "에이전트 {{count}}개: {{names}}",
+      "contents_squads": "스쿼드 {{count}}개: {{names}}",
+      "agents_runtime_note": "에이전트는 런타임 없이 생성됩니다. 작업을 배정하기 전에 각 에이전트 설정에서 런타임을 연결하세요.",
+      "requires_runtime": "{{runtime}} 런타임용으로 작성되었습니다.",
+      "requires_connectors": "다음 커넥터를 사용합니다: {{names}}."
     },
     "schedule": {
       "title": "자동 스케줄",

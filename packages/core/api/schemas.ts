@@ -262,7 +262,17 @@ export const PluginManifestSummarySchema = z.object({
         timezone: z.string().default(""),
       }).loose().optional(),
     }).loose()).default([]),
+    resources: z.array(z.object({
+      type: z.string().default(""),
+      key: z.string().default(""),
+    }).loose()).default([]),
   }).loose().optional(),
+}).loose();
+
+export const PluginTemplateRequiresSchema = z.object({
+  runtime: z.string().default(""),
+  min_backend: z.string().default(""),
+  connectors: z.array(z.string()).default([]),
 }).loose();
 
 export const PluginPreviewSchema = z.object({
@@ -276,6 +286,7 @@ export const PluginPreviewSchema = z.object({
   installed_version: z.string().optional(),
   added_scopes: z.array(z.string()).default([]),
   registry_version_id: z.string().optional(),
+  requires: PluginTemplateRequiresSchema.optional(),
 }).loose();
 
 export const EMPTY_PLUGIN_PREVIEW: PluginPreview = {

@@ -199,7 +199,8 @@
       "col_uploaded": "アップロード日時",
       "skills": "スキル {{count}} 件: {{names}}",
       "agents": "エージェント {{count}} 件: {{names}}",
-      "mcp_server": "MCP サーバー {{name}} → {{url}}"
+      "mcp_server": "MCP サーバー {{name}} → {{url}}",
+      "squad": "スクワッド {{name}}: リーダー {{lead}}、メンバー {{members}}"
     },
     "review": {
       "pending": "審査待ち",

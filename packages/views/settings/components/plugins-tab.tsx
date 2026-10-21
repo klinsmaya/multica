@@ -463,6 +463,17 @@ function ConsentCard({
   const { t } = useT("settings");
   const scheduledHooks = (preview.manifest.contributes?.hooks ?? [])
     .filter((hook) => hook.schedule !== undefined);
+  const resources = preview.manifest.contributes?.resources ?? [];
+  const names = (type: string) => resources.filter((r) => r.type === type).map((r) => r.key);
+  const skills = names("skill");
+  const agents = names("agent");
+  const squads = names("squad");
+  const requires = preview.requires;
+  const contents = [
+    skills.length > 0 ? t(($) => $.plugins.consent.contents_skills, { count: skills.length, names: skills.join(", ") }) : null,
+    agents.length > 0 ? t(($) => $.plugins.consent.contents_agents, { count: agents.length, names: agents.join(", ") }) : null,
+    squads.length > 0 ? t(($) => $.plugins.consent.contents_squads, { count: squads.length, names: squads.join(", ") }) : null,
+  ].filter((line): line is string => line !== null);
   return (
     <div className="space-y-4 border-t border-surface-border px-4 py-4">
       <div>
@@ -492,6 +503,28 @@ function ConsentCard({
       ) : (
         <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
       )}
+
+      {contents.length > 0 ? (
+        <div className="space-y-1 text-caption">
+          <div className="font-medium">{t(($) => $.plugins.consent.contents_title)}</div>
+          <ul className="space-y-0.5 text-muted-foreground">
+            {contents.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {agents.length > 0 ? (
+            <p className="text-muted-foreground">{t(($) => $.plugins.consent.agents_runtime_note)}</p>
+          ) : null}
+          {requires?.runtime ? (
+            <p className="text-muted-foreground">{t(($) => $.plugins.consent.requires_runtime, { runtime: requires.runtime })}</p>
+          ) : null}
+          {requires && requires.connectors.length > 0 ? (
+            <p className="text-muted-foreground">
+              {t(($) => $.plugins.consent.requires_connectors, { names: requires.connectors.join(", ") })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {scheduledHooks.length > 0 ? (
         <Alert>

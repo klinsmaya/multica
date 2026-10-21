@@ -2138,6 +2138,29 @@ describe("Plugin schemas", () => {
     expect(parsed.added_scopes).toEqual(["comments:write"]);
   });
 
+  it("keeps template contents and requirements on a preview, with defaults for what is missing", () => {
+    const parsed = PluginPreviewSchema.parse({
+      manifest: {
+        key: "multica.support",
+        name: "Support",
+        version: "1.0.0",
+        author: { name: "Multica" },
+        contributes: { resources: [{ type: "agent", key: "triager" }, { type: "squad", key: "support" }] },
+      },
+      registry_version_id: "registry-version-1",
+      requires: { runtime: "claude-code" },
+    });
+    expect(parsed.manifest.contributes?.resources).toEqual([
+      { type: "agent", key: "triager" },
+      { type: "squad", key: "support" },
+    ]);
+    expect(parsed.requires).toEqual({ runtime: "claude-code", min_backend: "", connectors: [] });
+
+    const bare = PluginPreviewSchema.parse({ manifest: { key: "k", name: "n", version: "1.0.0", author: { name: "a" } } });
+    expect(bare.requires).toBeUndefined();
+    expect(bare.manifest.contributes).toBeUndefined();
+  });
+
   it("preserves automatic schedules on both consent and installed Plugin payloads", () => {
     const schedule = { cron: "*/5 * * * *", timezone: "Asia/Shanghai" };
     const preview = PluginPreviewSchema.parse({

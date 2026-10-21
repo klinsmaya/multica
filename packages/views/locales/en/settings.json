@@ -460,7 +460,14 @@
       "installed": "Plugin installed",
       "upgrade_from": " · upgrading from v{{version}}",
       "new_scope": "New",
-      "no_scopes": "This Plugin only adds skills and asks for no access."
+      "no_scopes": "This Plugin only adds skills and asks for no access.",
+      "contents_title": "This Plugin adds",
+      "contents_skills": "{{count}} skills: {{names}}",
+      "contents_agents": "{{count}} agents: {{names}}",
+      "contents_squads": "{{count}} squads: {{names}}",
+      "agents_runtime_note": "Agents are created without a runtime. Bind one in each agent's settings before assigning work.",
+      "requires_runtime": "Written for the {{runtime}} runtime.",
+      "requires_connectors": "Uses these connectors: {{names}}."
     },
     "schedule": {
       "title": "Automatic schedules",

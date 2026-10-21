@@ -199,7 +199,8 @@
       "col_uploaded": "Uploaded",
       "skills": "{{count}} skills: {{names}}",
       "agents": "{{count}} agents: {{names}}",
-      "mcp_server": "MCP server {{name}} → {{url}}"
+      "mcp_server": "MCP server {{name}} → {{url}}",
+      "squad": "Squad {{name}}: lead {{lead}}, members {{members}}"
     },
     "review": {
       "pending": "Pending",

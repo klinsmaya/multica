@@ -457,7 +457,14 @@
       "installed": "Plugin をインストールしました",
       "upgrade_from": " · v{{version}} からアップグレード",
       "new_scope": "新規",
-      "no_scopes": "この Plugin はスキルのみを追加し、アクセス権限を要求しません。"
+      "no_scopes": "この Plugin はスキルのみを追加し、アクセス権限を要求しません。",
+      "contents_title": "この Plugin が追加するもの",
+      "contents_skills": "スキル {{count}} 件: {{names}}",
+      "contents_agents": "エージェント {{count}} 件: {{names}}",
+      "contents_squads": "スクワッド {{count}} 件: {{names}}",
+      "agents_runtime_note": "エージェントはランタイム未割り当てで作成されます。作業を割り当てる前に、各エージェントの設定でランタイムを割り当ててください。",
+      "requires_runtime": "{{runtime}} ランタイム向けに作成されています。",
+      "requires_connectors": "次のコネクタを使用します: {{names}}。"
     },
     "schedule": {
       "title": "自動スケジュール",

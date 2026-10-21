@@ -199,7 +199,8 @@
       "col_uploaded": "上传时间",
       "skills": "{{count}} 个技能：{{names}}",
       "agents": "{{count}} 个 agent：{{names}}",
-      "mcp_server": "MCP 服务器 {{name}} → {{url}}"
+      "mcp_server": "MCP 服务器 {{name}} → {{url}}",
+      "squad": "Squad {{name}}：负责人 {{lead}}，成员 {{members}}"
     },
     "review": {
       "pending": "待审核",

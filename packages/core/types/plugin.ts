@@ -97,7 +97,18 @@ export interface PluginManifestSummary {
       triggers: (PluginHookTrigger | string)[];
       schedule?: PluginHookSchedule;
     }>;
+    resources?: Array<{ type: string; key: string }>;
   };
+}
+
+/**
+ * What a template asks the workspace to provide after install. Informational:
+ * the consent screen shows it, nothing is granted or checked by the server.
+ */
+export interface PluginTemplateRequires {
+  runtime: string;
+  min_backend: string;
+  connectors: string[];
 }
 
 /**
@@ -119,6 +130,7 @@ export interface PluginPreview {
   added_scopes?: string[];
   /** Set when the preview describes a template marketplace version. */
   registry_version_id?: string;
+  requires?: PluginTemplateRequires;
 }
 
 /** Exactly one of the two ids: a workspace publish, or a marketplace version. */
