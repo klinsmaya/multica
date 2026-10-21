@@ -182,5 +182,13 @@
     "direction_desc": "Décroissant",
     "section_columns": "Colonnes",
     "view": "Vue"
+  },
+  "sidebar": {
+    "tab_properties": "Propriétés",
+    "tab_overview": "Aperçu",
+    "tab_autopilots": "Automatisations",
+    "tab_library": "Bibliothèque",
+    "tab_pull_requests": "PR",
+    "tabs_label": "Panneaux du projet"
   }
 }

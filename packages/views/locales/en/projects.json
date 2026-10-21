@@ -182,5 +182,13 @@
     "direction_desc": "Descending",
     "section_columns": "Columns",
     "view": "View"
+  },
+  "sidebar": {
+    "tab_properties": "Properties",
+    "tab_overview": "Overview",
+    "tab_autopilots": "Automations",
+    "tab_library": "Library",
+    "tab_pull_requests": "PRs",
+    "tabs_label": "Project panels"
   }
 }

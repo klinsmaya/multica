@@ -180,5 +180,13 @@
     "direction_desc": "降序",
     "section_columns": "列",
     "view": "视图"
+  },
+  "sidebar": {
+    "tab_properties": "属性",
+    "tab_overview": "概览",
+    "tab_autopilots": "自动化",
+    "tab_library": "库",
+    "tab_pull_requests": "PR",
+    "tabs_label": "项目面板"
   }
 }

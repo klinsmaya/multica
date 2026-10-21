@@ -180,5 +180,13 @@
     "direction_desc": "내림차순",
     "section_columns": "열",
     "view": "보기"
+  },
+  "sidebar": {
+    "tab_properties": "속성",
+    "tab_overview": "개요",
+    "tab_autopilots": "자동화",
+    "tab_library": "라이브러리",
+    "tab_pull_requests": "PR",
+    "tabs_label": "프로젝트 패널"
   }
 }

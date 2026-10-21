@@ -180,5 +180,13 @@
     "direction_desc": "降順",
     "section_columns": "列",
     "view": "ビュー"
+  },
+  "sidebar": {
+    "tab_properties": "プロパティ",
+    "tab_overview": "概要",
+    "tab_autopilots": "自動化",
+    "tab_library": "ライブラリ",
+    "tab_pull_requests": "PR",
+    "tabs_label": "プロジェクトパネル"
   }
 }

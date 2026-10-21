@@ -28,6 +28,7 @@ import { currentPath, useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectSidebarTabs } from "./project-sidebar-tabs";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { ProjectWorkflowControl } from "../../workflows/project-workflow-row";
@@ -583,15 +584,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           panelRef={sidebarRef}
           onResize={handleDesktopSidebarResize}
         >
-          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled}>
-            {sidebarContent}
+          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled} padded={false}>
+            <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} />
           </AnimatedRightSidebar>
         </ResizablePanel>
         )}
         {isMobile && (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-            <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-              {sidebarContent}
+            <SheetContent side="right" showCloseButton={false} className="flex w-[320px] flex-col overflow-hidden p-0">
+              <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} />
             </SheetContent>
           </Sheet>
         )}
