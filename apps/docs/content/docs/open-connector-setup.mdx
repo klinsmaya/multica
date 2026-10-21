@@ -1,0 +1,112 @@
+---
+title: Connect open-connector
+description: Deploy open-connector next to a self-hosted Multica so members can connect their own apps and agents can use them.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+[open-connector](https://github.com/oomol-lab/open-connector) is a self-hosted gateway that holds OAuth and API key connections to third-party apps and exposes them to agents over MCP. Once Multica is wired to it, members connect their own accounts in **Settings → Apps**, and agents they own can call those apps during a run.
+
+Multica stores no app credentials. open-connector keeps them encrypted; Multica keeps only a record of who owns which connection and issues a short-lived runtime token to each run.
+
+## 1. Deploy open-connector
+
+open-connector requires Node 24; the official image already includes it. This Compose file runs it with PostgreSQL:
+
+```yaml
+services:
+  open-connector-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oc
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: oc
+    volumes:
+      - open-connector-db:/var/lib/postgresql/data
+
+  open-connector:
+    image: ghcr.io/oomol-lab/open-connector:latest
+    restart: unless-stopped
+    depends_on:
+      - open-connector-db
+    ports:
+      - "3100:3000"
+    environment:
+      OOMOL_CONNECT_ORIGIN: https://connect.example.com
+      OOMOL_CONNECT_ADMIN_TOKEN: <admin-token>
+      OOMOL_CONNECT_ENCRYPTION_KEY: <encryption-key>
+      OOMOL_CONNECT_DATABASE_URL: postgres://oc:change-me@open-connector-db:5432/oc
+      OOMOL_CONNECT_BLOCKED_PROXIES: "*"
+
+volumes:
+  open-connector-db:
+```
+
+Generate the two secrets with `openssl rand -hex 32`. Keep the encryption key: losing it makes stored connections unreadable.
+
+On first start, run the database migration once:
+
+```bash
+docker compose run --rm open-connector migrate
+docker compose up -d
+```
+
+| Variable | Meaning |
+|---|---|
+| `OOMOL_CONNECT_ORIGIN` | Public origin of open-connector. OAuth providers redirect users back to `<origin>/oauth/callback`. |
+| `OOMOL_CONNECT_ADMIN_TOKEN` | Bearer token for the admin API. Multica uses it to manage connections. |
+| `OOMOL_CONNECT_ENCRYPTION_KEY` | Key that encrypts stored credentials. |
+| `OOMOL_CONNECT_DATABASE_URL` | PostgreSQL connection string. |
+| `OOMOL_CONNECT_BLOCKED_PROXIES` | `*` disables the generic proxy so agents can only use actions. |
+
+## 2. Configure Multica
+
+Set these on the Multica API and restart it. The integration is enabled only when both `OPEN_CONNECTOR_BASE_URL` and `OPEN_CONNECTOR_ADMIN_TOKEN` are set.
+
+| Variable | Meaning |
+|---|---|
+| `OPEN_CONNECTOR_BASE_URL` | Address Multica uses to reach open-connector, such as `http://open-connector:3000`. |
+| `OPEN_CONNECTOR_ADMIN_TOKEN` | Same value as `OOMOL_CONNECT_ADMIN_TOKEN`. |
+| `OPEN_CONNECTOR_MCP_URL` | MCP endpoint mounted into agent runs. Defaults to `OPEN_CONNECTOR_BASE_URL` plus `/mcp`. Set it when daemons reach open-connector at a different address. |
+| `OPEN_CONNECTOR_STATE_SECRET` | Signs the OAuth connect state. Defaults to a key derived from `JWT_SECRET`. |
+| `OPEN_CONNECTOR_CALLBACK_BASE_URL` | Public API base used for the OAuth callback. Defaults to `MULTICA_PUBLIC_URL`. |
+| `OPEN_CONNECTOR_OAUTH_SCOPES` | Optional JSON map of service to authorization option IDs, such as `{"github":["repo"]}`. Replaces the default minimal scopes. |
+
+Nothing is offered to users until a platform admin publishes it: open `/admin/connectors` (see `PLATFORM_ADMIN_EMAILS`), check that the instance is reachable, and switch on each service users may connect. The same page sets, per service, which actions task runtime tokens may call and which users may connect it, and shows connection counts by service and by user. Every change asks for a reason and is written to the audit log.
+
+## 3. Register OAuth clients
+
+open-connector ships no shared OAuth clients. For each service you want to offer through OAuth, create an OAuth app at the provider, then register it:
+
+1. In the provider's developer console, create an OAuth app and set its redirect URL to `<OOMOL_CONNECT_ORIGIN>/oauth/callback`.
+2. Send the client ID and secret to open-connector:
+
+```bash
+curl -X PUT "$OOMOL_CONNECT_ORIGIN/api/oauth/configs/github" \
+  -H "Authorization: Bearer $OOMOL_CONNECT_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"<client-id>","clientSecret":"<client-secret>"}'
+```
+
+Only services with a registered client can be published as OAuth apps in Multica; services that accept an API key need no registration. Publish them from `/admin/connectors` afterwards.
+
+## 4. Reverse proxy rules
+
+| Path | Exposure |
+|---|---|
+| `/oauth/callback` | Public internet. Browsers land here after the provider authorizes. |
+| `/api`, `/`, `/docs`, `/openapi.json` | Operator IPs only. These expose the admin API and console. |
+| `/mcp` | Networks where daemons run. Agents call it with their runtime token. |
+
+Multica reaches `/v1` and `/api` over `OPEN_CONNECTOR_BASE_URL`, so keep that path off the public internet.
+
+## Known limits
+
+- open-connector tokens do not expire. Multica revokes each run's token when the run ends.
+- open-connector has a single owner, so only one member can connect a given service at a time. A second attempt is rejected until the first finishes or expires after about ten minutes.
+- Agents reach open-connector through MCP from the daemon's machine. The daemon must be able to reach `OPEN_CONNECTOR_MCP_URL` directly.
+
+<Callout type="warning">
+A shared agent exposes its owner's connected apps to everyone who can run it. Share such agents only with people you trust with those accounts.
+</Callout>

@@ -94,6 +94,7 @@ export const paths = {
     workspace: (id: string) => `/admin/workspaces/${encode(id)}`,
     audit: () => "/admin/audit",
     admins: () => "/admin/admins",
+    connectors: () => "/admin/connectors",
   },
 };
 

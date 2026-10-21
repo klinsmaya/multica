@@ -1,11 +1,18 @@
 import {
   AdminAuditPageSchema,
+  AdminConnectorHealthResponseSchema,
+  AdminConnectorPolicySchema,
+  AdminConnectorServicesResponseSchema,
+  AdminConnectorUserPageSchema,
   AdminMeSchema,
   AdminOverviewSchema,
   AdminUserDetailSchema,
   AdminUserPageSchema,
   AdminWorkspaceDetailSchema,
   AdminWorkspacePageSchema,
+  EMPTY_ADMIN_CONNECTOR_HEALTH,
+  EMPTY_ADMIN_CONNECTOR_POLICY,
+  EMPTY_ADMIN_CONNECTOR_SERVICES,
   EMPTY_ADMIN_ME,
   EMPTY_ADMIN_OVERVIEW,
   EMPTY_ADMIN_USER_DETAIL,
@@ -17,6 +24,11 @@ import {
   type AdminActionRequest,
   type AdminAuditEntry,
   type AdminAuditListParams,
+  type AdminConnectorHealthResponse,
+  type AdminConnectorPolicy,
+  type AdminConnectorServicesResponse,
+  type AdminConnectorUser,
+  type AdminConnectorUserListParams,
   type AdminMe,
   type AdminOverview,
   type AdminPage,
@@ -27,6 +39,7 @@ import {
   type AdminWorkspaceDetail,
   type AdminWorkspaceListParams,
   type PlatformAdmin,
+  type SetConnectorPolicyRequest,
   type SetPlatformAdminRequest,
 } from "../admin/schemas";
 import type { ZodType } from "zod";
@@ -224,6 +237,11 @@ import type {
   ComposioToolkit,
   ComposioConnection,
   ComposioConnectInitResponse,
+  OpenConnectorApp,
+  OpenConnectorConnection,
+  OpenConnectorConnectInitResponse,
+  OpenConnectorConnectApiKeyRequest,
+  UpdateOpenConnectorConnectionRequest,
   SlackInstallation,
   ListSlackInstallationsResponse,
   RegisterSlackBYORequest,
@@ -414,6 +432,14 @@ import {
   RedeemWecomBindingTokenResponseSchema,
   EMPTY_WECOM_INSTALLATION,
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
+  OpenConnectorAppListSchema,
+  OpenConnectorConnectionListSchema,
+  OpenConnectorConnectionSchema,
+  OpenConnectorConnectInitResponseSchema,
+  EMPTY_OPEN_CONNECTOR_APP_LIST,
+  EMPTY_OPEN_CONNECTOR_CONNECTION_LIST,
+  EMPTY_OPEN_CONNECTOR_CONNECTION,
+  EMPTY_OPEN_CONNECTOR_CONNECT_INIT_RESPONSE,
   EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
   TelegramInstallationSchema,
   ListTelegramInstallationsResponseSchema,
@@ -5163,6 +5189,76 @@ export class ApiClient {
     });
   }
 
+  // open-connector integration. User-scoped like Composio (no workspaceId).
+  // A deployment without the integration answers 403 `open_connector_not_configured`.
+
+  /** The connectable open-connector services. */
+  async listOpenConnectorApps(): Promise<OpenConnectorApp[]> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/apps`);
+    return parseWithFallback(raw, OpenConnectorAppListSchema, EMPTY_OPEN_CONNECTOR_APP_LIST, {
+      endpoint: "GET /api/integrations/open-connector/apps",
+    });
+  }
+
+  /** The caller's non-revoked open-connector connections. */
+  async listOpenConnectorConnections(): Promise<OpenConnectorConnection[]> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connections`);
+    return parseWithFallback(
+      raw,
+      OpenConnectorConnectionListSchema,
+      EMPTY_OPEN_CONNECTOR_CONNECTION_LIST,
+      { endpoint: "GET /api/integrations/open-connector/connections" },
+    );
+  }
+
+  /** Starts an OAuth connect flow; the browser is sent to `redirect_url`. */
+  async openConnectorConnectInit(service: string): Promise<OpenConnectorConnectInitResponse> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connect/init`, {
+      method: "POST",
+      body: JSON.stringify({ service }),
+    });
+    return parseWithFallback(
+      raw,
+      OpenConnectorConnectInitResponseSchema,
+      EMPTY_OPEN_CONNECTOR_CONNECT_INIT_RESPONSE,
+      { endpoint: "POST /api/integrations/open-connector/connect/init" },
+    );
+  }
+
+  /** Connects with an API key. The key is never echoed back by the server. */
+  async openConnectorConnectApiKey(
+    req: OpenConnectorConnectApiKeyRequest,
+  ): Promise<OpenConnectorConnection> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connect/api-key`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+    return parseWithFallback(raw, OpenConnectorConnectionSchema, EMPTY_OPEN_CONNECTOR_CONNECTION, {
+      endpoint: "POST /api/integrations/open-connector/connect/api-key",
+    });
+  }
+
+  /** Renames a connection and/or makes it the default of its service. */
+  async updateOpenConnectorConnection(
+    id: string,
+    data: UpdateOpenConnectorConnectionRequest,
+  ): Promise<OpenConnectorConnection> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, OpenConnectorConnectionSchema, EMPTY_OPEN_CONNECTOR_CONNECTION, {
+      endpoint: "PATCH /api/integrations/open-connector/connections/:id",
+    });
+  }
+
+  /** Disconnects a connection the caller owns. */
+  async deleteOpenConnectorConnection(id: string): Promise<void> {
+    await this.fetch(`/api/integrations/open-connector/connections/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   // Slack integration (MUL-3666)
   async listSlackInstallations(workspaceId: string): Promise<ListSlackInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/slack/installations`);
@@ -5557,6 +5653,67 @@ export class ApiClient {
     await this.fetch(`/api/admin/admins/${userId}`, {
       method: "DELETE",
       body: JSON.stringify(body),
+    });
+  }
+
+  // open-connector operations. The catalog and policy reads tolerate an
+  // unreachable instance (configured / catalog_error in the body); writes
+  // change only Multica's policy table.
+  async adminOpenConnectorHealth(): Promise<AdminConnectorHealthResponse> {
+    const raw = await this.fetch<unknown>("/api/admin/open-connector/health");
+    return parseWithFallback(raw, AdminConnectorHealthResponseSchema, EMPTY_ADMIN_CONNECTOR_HEALTH, {
+      endpoint: "GET /api/admin/open-connector/health",
+    });
+  }
+
+  async adminOpenConnectorListServices(): Promise<AdminConnectorServicesResponse> {
+    const raw = await this.fetch<unknown>("/api/admin/open-connector/services");
+    return parseWithFallback(raw, AdminConnectorServicesResponseSchema, EMPTY_ADMIN_CONNECTOR_SERVICES, {
+      endpoint: "GET /api/admin/open-connector/services",
+    });
+  }
+
+  async adminOpenConnectorListUsers(
+    params: AdminConnectorUserListParams = {},
+  ): Promise<AdminPage<AdminConnectorUser>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/users${this.adminQuery({
+        service: params.service,
+        q: params.q,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, AdminConnectorUserPageSchema, emptyAdminPage<AdminConnectorUser>(), {
+      endpoint: "GET /api/admin/open-connector/users",
+    });
+  }
+
+  async adminOpenConnectorSetServiceEnabled(
+    service: string,
+    enabled: boolean,
+    body: AdminActionRequest,
+  ): Promise<AdminConnectorPolicy> {
+    const verb = enabled ? "enable" : "disable";
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/services/${encodeURIComponent(service)}/${verb}`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(raw, AdminConnectorPolicySchema, EMPTY_ADMIN_CONNECTOR_POLICY, {
+      endpoint: `POST /api/admin/open-connector/services/:service/${verb}`,
+    });
+  }
+
+  async adminOpenConnectorSetPolicy(
+    service: string,
+    body: SetConnectorPolicyRequest,
+  ): Promise<AdminConnectorPolicy> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/open-connector/services/${encodeURIComponent(service)}/policy`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(raw, AdminConnectorPolicySchema, EMPTY_ADMIN_CONNECTOR_POLICY, {
+      endpoint: "PUT /api/admin/open-connector/services/:service/policy",
     });
   }
 }

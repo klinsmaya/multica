@@ -83,7 +83,7 @@ func TestBuildTaskOverlay_FollowsOwnerRegardlessOfOriginator(t *testing.T) {
 	agent := makeAgent(owner, "notion")
 	seedActiveConnection(t, store, owner, "notion", "ca_owner_notion")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, pgtype.UUID{}, agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestBuildTaskOverlay_UsesOwnerConnectionNotOriginator(t *testing.T) {
 		// The originator also has a matching connection; it must NOT be used.
 		seedActiveConnection(t, store, other, "notion", "ca_other_notion")
 
-		result, err := svc.BuildTaskOverlay(context.Background(), other, agent)
+		result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, other, agent)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -147,7 +147,7 @@ func TestBuildTaskOverlay_UsesOwnerConnectionNotOriginator(t *testing.T) {
 		agent := makeAgent(owner, "notion")
 		seedActiveConnection(t, store, other, "notion", "ca_other_notion")
 
-		result, err := svc.BuildTaskOverlay(context.Background(), other, agent)
+		result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, other, agent)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -181,7 +181,7 @@ func TestBuildTaskOverlay_EmptyAllowlistIsNoOp(t *testing.T) {
 			agent := makeAgent(owner, allowlist...)
 			seedActiveConnection(t, store, owner, "notion", "ca_owner_notion")
 
-			result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+			result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -211,7 +211,7 @@ func TestBuildTaskOverlay_NoMatchingConnectionIsNoOp(t *testing.T) {
 	// Owner connected SLACK only — not in allowlist.
 	seedActiveConnection(t, store, owner, "slack", "ca_owner_slack")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestBuildTaskOverlay_HappyPath_FiltersBothWays(t *testing.T) {
 	seedActiveConnection(t, store, owner, "github", "ca_owner_github")
 	seedActiveConnection(t, store, owner, "slack", "ca_owner_slack")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestBuildTaskOverlay_CreateSessionWireContract(t *testing.T) {
 	seedActiveConnection(t, store, owner, "github", "ca_owner_github")
 	seedActiveConnection(t, store, owner, "slack", "ca_owner_slack")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err != nil {
 		t.Fatalf("BuildTaskOverlay: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestBuildTaskOverlay_EmptyURL(t *testing.T) {
 	agent := makeAgent(owner, "github")
 	seedActiveConnection(t, store, owner, "github", "ca_owner_github")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestBuildTaskOverlay_SDKError(t *testing.T) {
 	agent := makeAgent(owner, "slack")
 	seedActiveConnection(t, store, owner, "slack", "ca_owner_slack")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err == nil {
 		t.Fatalf("expected error from SDK failure, got nil")
 	}
@@ -458,7 +458,7 @@ func TestBuildTaskOverlay_NormalisesAllowlistAndConnectionSlugs(t *testing.T) {
 	// is what the connect flow always writes).
 	seedActiveConnection(t, store, owner, "notion", "ca_a")
 
-	result, err := svc.BuildTaskOverlay(context.Background(), owner, agent)
+	result, err := svc.BuildTaskOverlay(context.Background(), pgtype.UUID{}, owner, agent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

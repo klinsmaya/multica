@@ -4,6 +4,7 @@
     "overview": "概要",
     "users": "ユーザー",
     "workspaces": "ワークスペース",
+    "connectors": "コネクタ",
     "audit": "監査ログ",
     "admins": "プラットフォーム管理者",
     "back_to_app": "アプリに戻る"
@@ -131,5 +132,69 @@
     "required": "理由は必須です。"
   },
   "action_failed": "操作に失敗しました",
-  "working": "処理中…"
+  "working": "処理中…",
+  "connectors": {
+    "title": "open-connector",
+    "health": {
+      "title": "サービスの状態",
+      "not_configured": "未設定",
+      "not_configured_help": "API に OPEN_CONNECTOR_BASE_URL と OPEN_CONNECTOR_ADMIN_TOKEN を設定すると連携が有効になります。",
+      "reachable": "到達可能",
+      "unreachable": "到達不可",
+      "latency": "レイテンシ",
+      "latency_value": "{{ms}} ms",
+      "providers": "カタログ内のサービス",
+      "oauth_configured": "設定済み OAuth クライアント",
+      "checked_at": "確認日時",
+      "check_again": "再確認"
+    },
+    "services": {
+      "title": "サービス",
+      "search_placeholder": "サービスを絞り込む",
+      "catalog_error": "open-connector からカタログを読み込めませんでした: {{error}}",
+      "col_service": "サービス",
+      "col_auth": "認証",
+      "col_connections": "接続",
+      "col_users": "許可ユーザー",
+      "col_tools": "ツール",
+      "col_published": "公開",
+      "unavailable": "インスタンスで提供されていません",
+      "everyone": "全員",
+      "all_tools": "すべて",
+      "users_count_other": "{{count}} 人のユーザー",
+      "tools_count_other": "{{count}} 件のツール",
+      "connections_summary": "有効 {{active}} · ユーザー {{users}}",
+      "publish_label": "{{name}} を公開",
+      "edit_policy": "ポリシー",
+      "enable_dialog_title": "{{name}} を公開しますか？",
+      "enable_dialog_description": "許可リストのユーザーはすぐに設定から {{name}} を接続できます。",
+      "disable_dialog_title": "{{name}} の公開を停止しますか？",
+      "disable_dialog_description": "新規接続は直ちに停止し、タスクは {{name}} のツールを受け取らなくなります。既存の接続は所有者が切断するまで残ります。",
+      "publish": "公開",
+      "unpublish": "公開停止",
+      "policy_dialog_title": "{{name}} のポリシー",
+      "policy_dialog_description": "空のリストはすべてを許可します。",
+      "tools_label": "許可するツール",
+      "tools_placeholder": "1 行に 1 アクション（例: create_issue）",
+      "tools_help": "タスクのランタイムトークンは {{service}} のこれらのアクションのみ使えます。",
+      "users_label": "許可するユーザー",
+      "users_placeholder": "1 行に 1 メールアドレス",
+      "save": "ポリシーを保存",
+      "published_toast": "サービスを公開しました",
+      "unpublished_toast": "サービスの公開を停止しました",
+      "policy_saved_toast": "ポリシーを保存しました",
+      "empty": "インスタンスに接続可能なサービスがありません。まず open-connector で OAuth クライアントを登録してください。"
+    },
+    "users": {
+      "title": "ユーザー別の接続",
+      "all_services": "すべてのサービス",
+      "col_user": "ユーザー",
+      "col_services": "サービス",
+      "col_active": "有効",
+      "col_reauth": "再認証待ち",
+      "col_revoked": "失効",
+      "col_last_connected": "最終接続",
+      "empty": "一致する接続はありません。"
+    }
+  }
 }

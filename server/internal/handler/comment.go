@@ -2408,22 +2408,23 @@ func (h *Handler) mergeCommentIntoPendingTask(ctx context.Context, issue db.Issu
 		}
 		return commentMergeError
 	}
-	overlay, connectedApps := h.TaskService.BuildRuntimeMCPOverlayForMerge(ctx, attr.UserID, trigger.Agent)
+	overlay, connectedApps, connectorHandles := h.TaskService.BuildRuntimeMCPOverlayForMerge(ctx, attr.UserID, trigger.Agent)
 	row, err := h.Queries.MergeCommentIntoPendingTask(ctx, db.MergeCommentIntoPendingTaskParams{
-		IssueID:                 issue.ID,
-		AgentID:                 trigger.Agent.ID,
-		NewTriggerCommentID:     newTriggerCommentID,
-		NewOriginatorUserID:     attr.UserID,
-		NewAccountableUserID:    attr.AccountableUserID,
-		NewOriginatorSource:     pgtype.Text{String: attr.Source.String(), Valid: true},
-		NewDelegatedFromTaskID:  attr.DelegatedFromTaskID,
-		NewRuleVersionID:        attr.RuleVersionID,
-		NewTriggerEvidenceKind:  pgtype.Text{String: string(attr.EvidenceKind), Valid: attr.EvidenceKind != ""},
-		NewTriggerEvidenceRefID: attr.EvidenceRefID,
-		NewTriggerSummary:       h.TaskService.BuildCommentTriggerSummary(ctx, issue.WorkspaceID, newTriggerCommentID),
-		NewRuntimeMcpOverlay:    overlay,
-		NewRuntimeConnectedApps: connectedApps,
-		HeadSha:                 headSha,
+		IssueID:                    issue.ID,
+		AgentID:                    trigger.Agent.ID,
+		NewTriggerCommentID:        newTriggerCommentID,
+		NewOriginatorUserID:        attr.UserID,
+		NewAccountableUserID:       attr.AccountableUserID,
+		NewOriginatorSource:        pgtype.Text{String: attr.Source.String(), Valid: true},
+		NewDelegatedFromTaskID:     attr.DelegatedFromTaskID,
+		NewRuleVersionID:           attr.RuleVersionID,
+		NewTriggerEvidenceKind:     pgtype.Text{String: string(attr.EvidenceKind), Valid: attr.EvidenceKind != ""},
+		NewTriggerEvidenceRefID:    attr.EvidenceRefID,
+		NewTriggerSummary:          h.TaskService.BuildCommentTriggerSummary(ctx, issue.WorkspaceID, newTriggerCommentID),
+		NewRuntimeMcpOverlay:       overlay,
+		NewRuntimeConnectedApps:    connectedApps,
+		NewRuntimeConnectorHandles: connectorHandles,
+		HeadSha:                    headSha,
 	})
 	if err != nil {
 		if isNotFound(err) {

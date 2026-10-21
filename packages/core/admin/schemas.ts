@@ -234,3 +234,128 @@ export interface SetPlatformAdminRequest {
   role: PlatformRole;
   reason: string;
 }
+
+// --- open-connector operations (/api/admin/open-connector/*) ---
+
+export const AdminConnectorHealthSchema = z
+  .object({
+    base_url: z.string().default(""),
+    reachable: z.boolean().default(false),
+    latency_ms: z.number().default(0),
+    error: z.string().default(""),
+    providers_total: z.number().default(0),
+    oauth_configured: z.number().default(0),
+    checked_at: z.string().default(""),
+  })
+  .loose();
+export type AdminConnectorHealth = z.infer<typeof AdminConnectorHealthSchema>;
+
+export const AdminConnectorHealthResponseSchema = z
+  .object({
+    configured: z.boolean().default(false),
+    health: AdminConnectorHealthSchema.nullable().default(null),
+  })
+  .loose();
+export type AdminConnectorHealthResponse = z.infer<typeof AdminConnectorHealthResponseSchema>;
+export const EMPTY_ADMIN_CONNECTOR_HEALTH: AdminConnectorHealthResponse = {
+  configured: false,
+  health: null,
+};
+
+export const AdminConnectorUserRefSchema = z
+  .object({
+    user_id: z.string(),
+    name: z.string().default(""),
+    email: z.string().default(""),
+  })
+  .loose();
+export type AdminConnectorUserRef = z.infer<typeof AdminConnectorUserRefSchema>;
+
+export const AdminConnectorCountsSchema = z
+  .object({
+    active: z.number().default(0),
+    reauth_required: z.number().default(0),
+    revoked: z.number().default(0),
+    users: z.number().default(0),
+  })
+  .loose();
+export type AdminConnectorCounts = z.infer<typeof AdminConnectorCountsSchema>;
+const EMPTY_CONNECTOR_COUNTS: AdminConnectorCounts = {
+  active: 0,
+  reauth_required: 0,
+  revoked: 0,
+  users: 0,
+};
+
+export const AdminConnectorServiceSchema = z
+  .object({
+    service: z.string(),
+    name: z.string().default(""),
+    logo: z.string().default(""),
+    auth_types: z.array(z.string()).default([]),
+    available: z.boolean().default(false),
+    enabled: z.boolean().default(false),
+    allowed_tools: z.array(z.string()).default([]),
+    allowed_users: z.array(AdminConnectorUserRefSchema).default([]),
+    connections: AdminConnectorCountsSchema.default(EMPTY_CONNECTOR_COUNTS),
+    updated_at: z.string().nullable().default(null),
+  })
+  .loose();
+export type AdminConnectorService = z.infer<typeof AdminConnectorServiceSchema>;
+
+export const AdminConnectorServicesResponseSchema = z
+  .object({
+    configured: z.boolean().default(false),
+    catalog_error: z.string().default(""),
+    items: z.array(AdminConnectorServiceSchema).default([]),
+  })
+  .loose();
+export type AdminConnectorServicesResponse = z.infer<typeof AdminConnectorServicesResponseSchema>;
+export const EMPTY_ADMIN_CONNECTOR_SERVICES: AdminConnectorServicesResponse = {
+  configured: false,
+  catalog_error: "",
+  items: [],
+};
+
+export const AdminConnectorPolicySchema = z
+  .object({
+    service: z.string().default(""),
+    enabled: z.boolean().default(false),
+    allowed_tools: z.array(z.string()).default([]),
+    allowed_users: z.array(AdminConnectorUserRefSchema).default([]),
+    updated_at: z.string().nullable().default(null),
+  })
+  .loose();
+export type AdminConnectorPolicy = z.infer<typeof AdminConnectorPolicySchema>;
+export const EMPTY_ADMIN_CONNECTOR_POLICY: AdminConnectorPolicy = {
+  service: "",
+  enabled: false,
+  allowed_tools: [],
+  allowed_users: [],
+  updated_at: null,
+};
+
+export const AdminConnectorUserSchema = z
+  .object({
+    user_id: z.string(),
+    name: z.string().default(""),
+    email: z.string().default(""),
+    disabled_at: z.string().nullable().default(null),
+    services: z.array(z.string()).default([]),
+    connections: AdminConnectorCountsSchema.default(EMPTY_CONNECTOR_COUNTS),
+    last_connected_at: z.string().nullable().default(null),
+  })
+  .loose();
+export type AdminConnectorUser = z.infer<typeof AdminConnectorUserSchema>;
+export const AdminConnectorUserPageSchema = adminPageSchema(AdminConnectorUserSchema);
+
+export interface AdminConnectorUserListParams extends AdminPaging {
+  service?: string;
+  q?: string;
+}
+
+export interface SetConnectorPolicyRequest {
+  allowed_tools: string[];
+  allowed_user_emails: string[];
+  reason: string;
+}

@@ -39,7 +39,7 @@ const shell = vi.hoisted(() => ({
 }));
 vi.mock("./connected-apps-tab", () => ({
   ConnectedAppsTab: () => <div>ConnectedAppsTab</div>,
-  useComposioAvailable: () => shell.appsAvailable,
+  useConnectedAppsAvailable: () => shell.appsAvailable,
 }));
 
 vi.mock("@multica/core/paths", () => ({

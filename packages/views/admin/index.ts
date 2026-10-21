@@ -6,3 +6,4 @@ export { AdminWorkspacesPage } from "./workspaces-page";
 export { AdminWorkspaceDetailPage } from "./workspace-detail-page";
 export { AdminAuditPage } from "./audit-page";
 export { AdminAdminsPage } from "./admins-page";
+export { AdminConnectorsPage } from "./connectors-page";

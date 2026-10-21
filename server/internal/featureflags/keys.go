@@ -18,6 +18,12 @@ const (
 	// The access model exists to gate Composio sharing, so the two ship on the
 	// same switch.
 	ComposioMCPApps = "composio_mcp_apps"
+	// OpenConnectorApps is published to clients so they show the open-connector
+	// app management UI and the per-agent connector_service_allowlist. It is
+	// not an operator-set flag: handler.Config sets it from whether the
+	// integration is wired (OPEN_CONNECTOR_BASE_URL / ADMIN_TOKEN), and which
+	// services are offered is decided per service in the admin console.
+	OpenConnectorApps = "open_connector_apps"
 	// PluginsV1 gates the user-facing Plugin catalog and lifecycle management
 	// APIs while the first product slice is dogfooded. It deliberately does not
 	// gate pinned Task/Run execution: disabling discovery and management must not

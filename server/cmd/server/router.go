@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -33,6 +34,7 @@ import (
 	composiointeg "github.com/multica-ai/multica/server/internal/integrations/composio"
 	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
 	"github.com/multica-ai/multica/server/internal/integrations/lark"
+	openconnectorinteg "github.com/multica-ai/multica/server/internal/integrations/openconnector"
 	"github.com/multica-ai/multica/server/internal/integrations/slack"
 	"github.com/multica-ai/multica/server/internal/integrations/telegram"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
@@ -48,6 +50,7 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/featureflag"
 	"github.com/multica-ai/multica/server/pkg/llm"
+	openconnectorsdk "github.com/multica-ai/multica/server/pkg/openconnector"
 	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
 )
 
@@ -1286,7 +1289,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 						// Composio field for exactly this kind of late wiring,
 						// so no Handler-level mutation is needed.
 						if h.TaskService != nil {
-							h.TaskService.Composio = svc
+							h.TaskService.ConnectorProviders = append(h.TaskService.ConnectorProviders, svc)
 						}
 						slog.Info("composio integration enabled")
 					}
@@ -1296,6 +1299,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	} else {
 		slog.Info("composio integration disabled (COMPOSIO_API_KEY not set)")
 	}
+
+	wireOpenConnector(h, queries, signupConfig.PublicURL)
 
 	// VCS at-rest encryption: the box encrypts per-workspace access tokens and
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
@@ -1555,6 +1560,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Auth group made a missing cookie a hard 401, breaking the flow for exactly
 	// the browsers above; the other four composio endpoints stay session-gated.
 	r.Get("/api/integrations/composio/callback", h.ComposioCallback)
+	// open-connector OAuth callback: public for the same reason as Composio's;
+	// identity comes from the signed state. Every failure is a generic 302.
+	r.Get("/api/integrations/open-connector/callback", h.OpenConnectorCallback)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -1907,6 +1915,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Delete("/connections/{id}", h.DeleteComposioConnection)
 		})
 
+		// open-connector integration: user-scoped like Composio. All return 403
+		// open_connector_not_configured when unconfigured or the flag is off.
+		r.Route("/api/integrations/open-connector", func(r chi.Router) {
+			r.Post("/connect/init", h.OpenConnectorConnectInit)
+			r.Post("/connect/api-key", h.OpenConnectorConnectAPIKey)
+			r.Get("/apps", h.ListOpenConnectorApps)
+			r.Get("/connections", h.ListOpenConnectorConnections)
+			r.Patch("/connections/{id}", h.UpdateOpenConnectorConnection)
+			r.Delete("/connections/{id}", h.DeleteOpenConnectorConnection)
+		})
+
 		// User-scoped invitation routes (no workspace context required)
 		r.Get("/api/invitations", h.ListMyInvitations)
 		r.Get("/api/invitations/{id}", h.GetMyInvitation)
@@ -1958,12 +1977,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/workspaces/{id}", h.AdminGetWorkspace)
 				r.Get("/audit", h.AdminListAudit)
 				r.Get("/admins", h.AdminListPlatformAdmins)
+				// open-connector operations: health, service catalog with
+				// publication policy, connection counts. See admin_openconnector.go.
+				r.Get("/open-connector/health", h.AdminOpenConnectorHealth)
+				r.Get("/open-connector/services", h.AdminOpenConnectorListServices)
+				r.Get("/open-connector/users", h.AdminOpenConnectorListUsers)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleOperator))
 				r.Post("/users/{id}/disable", h.AdminDisableUser)
 				r.Post("/users/{id}/enable", h.AdminEnableUser)
 				r.Post("/users/{id}/tokens/{tokenId}/revoke", h.AdminRevokeUserToken)
+				r.Post("/open-connector/services/{service}/enable", h.AdminOpenConnectorEnableService)
+				r.Post("/open-connector/services/{service}/disable", h.AdminOpenConnectorDisableService)
+				r.Put("/open-connector/services/{service}/policy", h.AdminOpenConnectorSetPolicy)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleSuperAdmin))
@@ -2736,6 +2763,79 @@ func composioCallbackBaseURL(publicURL string) string {
 		return publicURL
 	}
 	return appURLFromEnv()
+}
+
+// wireOpenConnector enables the open-connector integration when
+// OPEN_CONNECTOR_BASE_URL and OPEN_CONNECTOR_ADMIN_TOKEN are both set. Which
+// services users can connect is decided in the admin console
+// (connector_service_policy), not here.
+func wireOpenConnector(h *handler.Handler, queries *db.Queries, publicURL string) {
+	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_BASE_URL")), "/")
+	adminToken := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_ADMIN_TOKEN"))
+	if baseURL == "" || adminToken == "" {
+		slog.Info("open-connector integration disabled (OPEN_CONNECTOR_BASE_URL / OPEN_CONNECTOR_ADMIN_TOKEN not set)")
+		return
+	}
+	sdkClient, err := openconnectorsdk.NewClient(openconnectorsdk.Options{BaseURL: baseURL, AdminToken: adminToken})
+	if err != nil {
+		slog.Error("open-connector: SDK client init failed; integration disabled", "error", err)
+		return
+	}
+	stateSecret := openConnectorStateSecret()
+	if len(stateSecret) == 0 {
+		slog.Error("open-connector: no state secret (set OPEN_CONNECTOR_STATE_SECRET or JWT_SECRET); integration disabled")
+		return
+	}
+	callbackBase := strings.TrimRight(strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_CALLBACK_BASE_URL")), "/")
+	if callbackBase == "" {
+		callbackBase = publicURL
+	}
+	if callbackBase == "" {
+		slog.Error("open-connector: no callback base url (set OPEN_CONNECTOR_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); integration disabled")
+		return
+	}
+	mcpURL := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_MCP_URL"))
+	if mcpURL == "" {
+		mcpURL = baseURL + "/mcp"
+	}
+	cfg := openconnectorinteg.Config{
+		StateSecret:     stateSecret,
+		CallbackBaseURL: callbackBase,
+		FrontendBaseURL: appURLFromEnv(),
+		MCPURL:          mcpURL,
+		BaseURL:         baseURL,
+	}
+	if raw := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_OAUTH_SCOPES")); raw != "" {
+		var overrides map[string][]string
+		if err := json.Unmarshal([]byte(raw), &overrides); err != nil {
+			slog.Error("open-connector: OPEN_CONNECTOR_OAUTH_SCOPES is not valid JSON; integration disabled", "error", err)
+			return
+		}
+		cfg.ScopeOverrides = overrides
+	}
+	svc, err := openconnectorinteg.NewService(sdkClient, queries, cfg)
+	if err != nil {
+		slog.Error("open-connector: service init failed; integration disabled", "error", err)
+		return
+	}
+	h.OpenConnector = svc
+	if h.TaskService != nil {
+		h.TaskService.ConnectorProviders = append(h.TaskService.ConnectorProviders, svc)
+	}
+	slog.Info("open-connector integration enabled")
+}
+
+// openConnectorStateSecret mirrors composioStateSecret with its own derivation
+// domain.
+func openConnectorStateSecret() []byte {
+	if v := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_STATE_SECRET")); v != "" {
+		return []byte(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("JWT_SECRET")); v != "" {
+		sum := sha256.Sum256([]byte("open-connector-state:" + v))
+		return sum[:]
+	}
+	return nil
 }
 
 // WecomRelay is what the WeCom adapter needs from the realtime relay:

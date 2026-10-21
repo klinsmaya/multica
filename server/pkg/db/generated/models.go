@@ -67,6 +67,8 @@ type Agent struct {
 	DisabledRuntimeSkills []byte      `json:"disabled_runtime_skills"`
 	ServiceTier           pgtype.Text `json:"service_tier"`
 	ConversationStarters  []byte      `json:"conversation_starters"`
+	// open-connector service names this agent may mount as MCP. NULL or empty array = no overlay. Intersected with the agent owner's active connections when the task overlay is built.
+	ConnectorServiceAllowlist []string `json:"connector_service_allowlist"`
 }
 
 type AgentBuilderDraft struct {
@@ -192,6 +194,8 @@ type AgentTaskQueue struct {
 	CancelledByName           pgtype.Text `json:"cancelled_by_name"`
 	IssueSnapshot             []byte      `json:"issue_snapshot"`
 	WorkflowStep              pgtype.Text `json:"workflow_step"`
+	// Opaque per-provider resource handles ({"<provider>":"<handle>"}) created by ConnectorProvider.BuildTaskOverlay. Not secret. NULL when nothing needs releasing or after release.
+	RuntimeConnectorHandles []byte `json:"runtime_connector_handles"`
 }
 
 type AgentToLabel struct {
@@ -629,6 +633,30 @@ type CommentReaction struct {
 	ActorID     pgtype.UUID        `json:"actor_id"`
 	Emoji       string             `json:"emoji"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type ConnectorOauthState struct {
+	NonceHash  []byte             `json:"nonce_hash"`
+	Provider   string             `json:"provider"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Service    string             `json:"service"`
+	RequestID  string             `json:"request_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type ConnectorServicePolicy struct {
+	Provider string `json:"provider"`
+	Service  string `json:"service"`
+	Enabled  bool   `json:"enabled"`
+	// Action names (without the service prefix) a task runtime token may call. Empty = every action of the service.
+	AllowedTools []string `json:"allowed_tools"`
+	// Users who may connect and mount this service. Empty = every user.
+	AllowedUserIds []pgtype.UUID      `json:"allowed_user_ids"`
+	UpdatedBy      pgtype.UUID        `json:"updated_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ContactSalesInquiry struct {
@@ -1664,6 +1692,25 @@ type UserComposioConnection struct {
 	LastUsedAt         pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UserConnectorConnection struct {
+	ID             pgtype.UUID `json:"id"`
+	Provider       string      `json:"provider"`
+	UserID         pgtype.UUID `json:"user_id"`
+	Service        string      `json:"service"`
+	ConnectionID   string      `json:"connection_id"`
+	ConnectionName string      `json:"connection_name"`
+	// oauth | api_key
+	AuthType string `json:"auth_type"`
+	// active | reauth_required | revoked
+	Status      string             `json:"status"`
+	IsDefault   bool               `json:"is_default"`
+	Label       string             `json:"label"`
+	ConnectedAt pgtype.Timestamptz `json:"connected_at"`
+	LastUsedAt  pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
 type VcsCommitStatus struct {

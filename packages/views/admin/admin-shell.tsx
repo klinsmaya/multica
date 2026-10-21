@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
   LayoutDashboard,
+  Plug,
   ScrollText,
   ShieldCheck,
   Users,
@@ -47,6 +48,7 @@ const NAV = [
   { key: "overview", icon: LayoutDashboard, href: paths.admin.overview() },
   { key: "users", icon: Users, href: paths.admin.users() },
   { key: "workspaces", icon: Building2, href: paths.admin.workspaces() },
+  { key: "connectors", icon: Plug, href: paths.admin.connectors() },
   { key: "audit", icon: ScrollText, href: paths.admin.audit() },
   { key: "admins", icon: ShieldCheck, href: paths.admin.admins() },
 ] as const;

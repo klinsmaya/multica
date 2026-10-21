@@ -1,0 +1,112 @@
+---
+title: 接入 open-connector
+description: 在自托管 Multica 旁部署 open-connector，让成员连接自己的应用，并让智能体在运行时使用。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+[open-connector](https://github.com/oomol-lab/open-connector) 是一个自托管网关，保存第三方应用的 OAuth 与 API key 连接，并通过 MCP 提供给智能体。接入后，成员在 **设置 → 应用** 里连接自己的账号，其名下的智能体即可在运行时调用这些应用。
+
+Multica 不保存应用凭据。凭据由 open-connector 加密保管；Multica 只记录连接归属，并为每次运行签发一个临时 runtime token。
+
+## 1. 部署 open-connector
+
+open-connector 需要 Node 24，官方镜像已内置。下面的 Compose 文件同时启动 PostgreSQL：
+
+```yaml
+services:
+  open-connector-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oc
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: oc
+    volumes:
+      - open-connector-db:/var/lib/postgresql/data
+
+  open-connector:
+    image: ghcr.io/oomol-lab/open-connector:latest
+    restart: unless-stopped
+    depends_on:
+      - open-connector-db
+    ports:
+      - "3100:3000"
+    environment:
+      OOMOL_CONNECT_ORIGIN: https://connect.example.com
+      OOMOL_CONNECT_ADMIN_TOKEN: <admin-token>
+      OOMOL_CONNECT_ENCRYPTION_KEY: <encryption-key>
+      OOMOL_CONNECT_DATABASE_URL: postgres://oc:change-me@open-connector-db:5432/oc
+      OOMOL_CONNECT_BLOCKED_PROXIES: "*"
+
+volumes:
+  open-connector-db:
+```
+
+两个密钥用 `openssl rand -hex 32` 生成。请妥善保管加密密钥：丢失后已保存的连接无法解密。
+
+首次启动前先执行一次数据库迁移：
+
+```bash
+docker compose run --rm open-connector migrate
+docker compose up -d
+```
+
+| 变量 | 说明 |
+|---|---|
+| `OOMOL_CONNECT_ORIGIN` | open-connector 的公网地址。OAuth 提供方授权后跳回 `<origin>/oauth/callback`。 |
+| `OOMOL_CONNECT_ADMIN_TOKEN` | 管理 API 的 Bearer token，Multica 用它管理连接。 |
+| `OOMOL_CONNECT_ENCRYPTION_KEY` | 加密已保存凭据的密钥。 |
+| `OOMOL_CONNECT_DATABASE_URL` | PostgreSQL 连接串。 |
+| `OOMOL_CONNECT_BLOCKED_PROXIES` | 设为 `*` 关闭通用代理，智能体只能调用 action。 |
+
+## 2. 配置 Multica
+
+在 Multica API 上设置下列变量并重启。只有 `OPEN_CONNECTOR_BASE_URL` 与 `OPEN_CONNECTOR_ADMIN_TOKEN` 都设置时，集成才会启用。
+
+| 变量 | 说明 |
+|---|---|
+| `OPEN_CONNECTOR_BASE_URL` | Multica 访问 open-connector 的地址，例如 `http://open-connector:3000`。 |
+| `OPEN_CONNECTOR_ADMIN_TOKEN` | 与 `OOMOL_CONNECT_ADMIN_TOKEN` 相同。 |
+| `OPEN_CONNECTOR_MCP_URL` | 挂载到智能体运行中的 MCP 地址，默认为 `OPEN_CONNECTOR_BASE_URL` 加 `/mcp`。守护进程访问 open-connector 的地址不同时再设置。 |
+| `OPEN_CONNECTOR_STATE_SECRET` | 用于签名 OAuth 连接 state，默认由 `JWT_SECRET` 派生。 |
+| `OPEN_CONNECTOR_CALLBACK_BASE_URL` | OAuth 回调使用的公网 API 地址，默认为 `MULTICA_PUBLIC_URL`。 |
+| `OPEN_CONNECTOR_OAUTH_SCOPES` | 可选。service 到授权选项 ID 的 JSON 映射，例如 `{"github":["repo"]}`，替换默认的最小权限。 |
+
+在平台管理员上架之前，用户看不到任何服务：打开 `/admin/connectors`（见 `PLATFORM_ADMIN_EMAILS`），确认实例可达，然后逐个打开允许用户连接的服务。同一页面还可按服务设置 task 运行时令牌可调用的操作、允许连接的用户，并按服务和按用户查看连接数。每次修改都需要填写原因并写入审计日志。
+
+## 3. 登记 OAuth client
+
+open-connector 不自带共享的 OAuth client。要通过 OAuth 提供的每个服务，都需先在提供方创建 OAuth 应用，再登记：
+
+1. 在提供方的开发者后台创建 OAuth 应用，回调地址填 `<OOMOL_CONNECT_ORIGIN>/oauth/callback`。
+2. 把 client ID 和 secret 提交给 open-connector：
+
+```bash
+curl -X PUT "$OOMOL_CONNECT_ORIGIN/api/oauth/configs/github" \
+  -H "Authorization: Bearer $OOMOL_CONNECT_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"<client-id>","clientSecret":"<client-secret>"}'
+```
+
+只有已登记 client 的服务才会在 Multica 中显示为 OAuth 应用。API key 服务无需登记。
+
+## 4. 反向代理规则
+
+| 路径 | 开放范围 |
+|---|---|
+| `/oauth/callback` | 公网。提供方授权后浏览器会跳到这里。 |
+| `/api`、`/`、`/docs`、`/openapi.json` | 仅限运维 IP。这些路径暴露管理 API 与控制台。 |
+| `/mcp` | 对守护进程所在网络开放。智能体用 runtime token 调用。 |
+
+Multica 通过 `OPEN_CONNECTOR_BASE_URL` 访问 `/v1` 与 `/api`，请不要把这条通道暴露到公网。
+
+## 已知限制
+
+- open-connector 的 token 不会过期。Multica 在每次运行结束时回收该次的 token。
+- open-connector 只有一个 owner，同一个服务同一时间只能有一位成员在连接。第二次尝试会被拒绝，直到前一次完成或约十分钟后过期。
+- 智能体从守护进程所在机器经 MCP 访问 open-connector，守护进程必须能直接访问 `OPEN_CONNECTOR_MCP_URL`。
+
+<Callout type="warning">
+共享的智能体会把其 owner 已连接的应用暴露给所有能运行它的人。只与你信任其账号使用的人共享此类智能体。
+</Callout>

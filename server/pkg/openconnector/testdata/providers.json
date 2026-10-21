@@ -1,0 +1,99 @@
+{
+  "success": true,
+  "message": "OK",
+  "data": [
+    {
+      "service": "17track",
+      "displayName": "17TRACK",
+      "iconUrl": null,
+      "homepageUrl": "https://www.17track.net/",
+      "categories": [
+        {
+          "id": "Productivity",
+          "displayName": "Productivity"
+        },
+        {
+          "id": "Location",
+          "displayName": "Location"
+        }
+      ],
+      "scenario": "cross-border-ecommerce",
+      "authTypes": [
+        "api_key"
+      ]
+    },
+    {
+      "service": "7_shifts",
+      "displayName": "7shifts",
+      "iconUrl": null,
+      "homepageUrl": "https://www.7shifts.com/",
+      "categories": [
+        {
+          "id": "Productivity",
+          "displayName": "Productivity"
+        }
+      ],
+      "scenario": "productivity",
+      "authTypes": [
+        "api_key"
+      ]
+    },
+    {
+      "service": "a_leads",
+      "displayName": "A-Leads",
+      "iconUrl": null,
+      "homepageUrl": "https://a-leads.co",
+      "categories": [
+        {
+          "id": "Marketing",
+          "displayName": "Marketing"
+        },
+        {
+          "id": "Data",
+          "displayName": "Data"
+        }
+      ],
+      "scenario": "marketing",
+      "authTypes": [
+        "api_key"
+      ]
+    },
+    {
+      "service": "ablefy",
+      "displayName": "ablefy",
+      "iconUrl": null,
+      "homepageUrl": "https://ablefy.io",
+      "categories": [
+        {
+          "id": "Marketing",
+          "displayName": "Marketing"
+        },
+        {
+          "id": "Productivity",
+          "displayName": "Productivity"
+        }
+      ],
+      "scenario": "marketing",
+      "authTypes": [
+        "api_key"
+      ]
+    },
+    {
+      "service": "ably",
+      "displayName": "Ably",
+      "iconUrl": null,
+      "homepageUrl": "https://ably.com",
+      "categories": [
+        {
+          "id": "Developer Tools",
+          "displayName": "Developer Tools"
+        }
+      ],
+      "scenario": "developer",
+      "authTypes": [
+        "api_key"
+      ]
+    }
+  ],
+  "meta": {}
+}

@@ -12,6 +12,12 @@ type ConnectedApp struct {
 	ServerName  string `json:"server_name"`
 	ToolkitSlug string `json:"toolkit_slug"`
 	ToolkitName string `json:"toolkit_name,omitempty"`
+	// ConnectionName is the provider-side name of the connection the agent
+	// must pass when calling the provider's tools. Set by providers that allow
+	// several connections per service (open-connector); empty otherwise.
+	ConnectionName string `json:"connection_name,omitempty"`
+	// IsDefault marks the user's default connection of the service.
+	IsDefault bool `json:"is_default,omitempty"`
 }
 
 // MCPOverlayResult carries both the secret-bearing MCP config overlay and the
@@ -19,6 +25,11 @@ type ConnectedApp struct {
 type MCPOverlayResult struct {
 	MCPOverlay    json.RawMessage
 	ConnectedApps []ConnectedApp
+	// ResourceHandle is an opaque, non-secret, provider-private handle for a
+	// per-task resource created while building the overlay (open-connector:
+	// the runtime token id). It is persisted with the queue row and handed
+	// back to ReleaseTaskResources. Empty when nothing needs releasing.
+	ResourceHandle string
 }
 
 // DisplayNameForToolkitSlug returns a compact human-readable label without

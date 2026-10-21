@@ -47,6 +47,7 @@ export function AccessPicker({
   ownerId,
   canEdit = true,
   hasComposioAllowlist = false,
+  hasConnectorAllowlist = false,
   onDirtyChange,
   onReadyChange,
   onChange,
@@ -59,6 +60,7 @@ export function AccessPicker({
   ownerId?: string | null;
   canEdit?: boolean;
   hasComposioAllowlist?: boolean;
+  hasConnectorAllowlist?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   /** Notified when the draft becomes committable / non-committable.
    *  The optional second argument is the current AccessChange when the draft
@@ -317,11 +319,20 @@ export function AccessPicker({
         </div>
       ) : null}
 
-      {hasComposioAllowlist && persistedPrivate && draftScope !== "private" ? (
-        <div className="border-t border-surface-border bg-muted/20 px-4 py-4 sm:px-6">
-          <p className="border-l-2 border-warning pl-3 text-caption leading-5 text-muted-foreground">
-            {t(($) => $.access.composio_switch_hint)}
-          </p>
+      {(hasComposioAllowlist || hasConnectorAllowlist) &&
+      persistedPrivate &&
+      draftScope !== "private" ? (
+        <div className="space-y-2 border-t border-surface-border bg-muted/20 px-4 py-4 sm:px-6">
+          {hasComposioAllowlist ? (
+            <p className="border-l-2 border-warning pl-3 text-caption leading-5 text-muted-foreground">
+              {t(($) => $.access.composio_switch_hint)}
+            </p>
+          ) : null}
+          {hasConnectorAllowlist ? (
+            <p className="border-l-2 border-warning pl-3 text-caption leading-5 text-muted-foreground">
+              {t(($) => $.access.connector_switch_hint)}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

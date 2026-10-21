@@ -759,6 +759,19 @@
       "started_prefix": "Démarrée {{when}}",
       "dispatched_prefix": "Envoyée {{when}}",
       "queued_prefix": "Mise en file d'attente {{when}}"
+    },
+    "open_connector_mcp": {
+      "heading": "Open Connector",
+      "loading": "Chargement de vos connexions…",
+      "load_failed": "Impossible de charger vos applications connectées. Réessayez dans un instant.",
+      "empty_title": "Aucune application connectée pour l'instant",
+      "toggle_aria": "Autoriser {{service}} pour cet agent",
+      "saving": "Enregistrement…",
+      "save_failed_toast": "Impossible d'enregistrer — veuillez réessayer",
+      "redacted_title": "Configuré — masqué pour vous",
+      "redacted_hint": "Seul le créateur de l'agent peut voir ou modifier les applications qu'il peut utiliser.",
+      "shared_warning": "Cet agent est partagé. Les personnes qui peuvent l'exécuter peuvent utiliser les applications Open Connector que vous activez ici.",
+      "workspace_warning": "Public pour l'espace de travail : tout membre de l'espace de travail peut utiliser ces applications Open Connector via cet agent."
     }
   },
   "char_counter": {
@@ -806,7 +819,8 @@
     "public_group": "Accès public",
     "owner_only_readonly": "Seul le propriétaire de l'agent peut modifier qui peut l'exécuter.",
     "members_empty": "Aucun membre de l'espace de travail à choisir",
-    "composio_switch_hint": "Attention — cet agent a des applications Composio activées. Le partager permet à toute personne y ayant accès d'utiliser ces applications via cet agent."
+    "composio_switch_hint": "Attention — cet agent a des applications Composio activées. Le partager permet à toute personne y ayant accès d'utiliser ces applications via cet agent.",
+    "connector_switch_hint": "Attention — cet agent a des applications Open Connector activées. Le partager permet à toute personne y ayant accès d'utiliser ces applications via cet agent."
   },
   "profile_card": {
     "unavailable": "Agent indisponible",

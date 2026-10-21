@@ -140,6 +140,9 @@ var pgBigmOperatorClass = extensionOperatorClass{
 // they are still pending: a fresh self-hosted install, which is exactly where an
 // interrupted build would otherwise leave a permanently unusable index.
 var concurrentIndexCleanups = map[string]string{
+	"596_connector_oauth_state_pending_idx":                     "connector_oauth_state_pending_idx",
+	"594_agent_task_queue_connector_handles_idx":                "agent_task_queue_connector_handles_idx",
+	"593_user_connector_connection_user_status_idx":             "user_connector_connection_user_status_idx",
 	"563_search_index_change_changed_at_index":                  "idx_search_index_change_changed_at",
 	"562_search_index_change_workspace_index":                   "idx_search_index_change_workspace_xid",
 	"552_agent_task_history_page_index":                         "idx_agent_task_queue_history_page",
@@ -153,6 +156,7 @@ var concurrentIndexCleanups = map[string]string{
 	"574_issue_workflow_pkey_index":                             "issue_workflow_pkey_uidx",
 	"576_issue_workflow_workspace_name_index":                   "idx_issue_workflow_workspace_name",
 	"582_issue_workflow_default_index":                          "idx_issue_workflow_workspace_default",
+	"598_connector_service_policy_pkey_index":                   "connector_service_policy_pkey_uidx",
 	"601_platform_admin_pkey_index":                             "platform_admin_pkey_uidx",
 	"603_admin_audit_log_pkey_index":                            "admin_audit_log_pkey_uidx",
 	"605_admin_audit_log_created_idx":                           "idx_admin_audit_log_created",

@@ -46,8 +46,12 @@ describe("settings location", () => {
     });
   });
 
-  it.each(["connected=notion", "error=composio_connect_failed"])(
-    "sends the Composio OAuth callback (%s) to Connected apps",
+  it.each([
+    "connected=notion",
+    "error=composio_connect_failed",
+    "error=open_connector_connect_failed",
+  ])(
+    "sends the app OAuth callback (%s) to Connected apps",
     (callback) => {
       expect(resolve(`tab=integrations&${callback}`).tab).toBe("apps");
     },

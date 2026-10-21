@@ -4,6 +4,7 @@
     "overview": "개요",
     "users": "사용자",
     "workspaces": "워크스페이스",
+    "connectors": "커넥터",
     "audit": "감사 로그",
     "admins": "플랫폼 관리자",
     "back_to_app": "앱으로 돌아가기"
@@ -131,5 +132,69 @@
     "required": "사유는 필수입니다."
   },
   "action_failed": "작업에 실패했습니다",
-  "working": "처리 중…"
+  "working": "처리 중…",
+  "connectors": {
+    "title": "open-connector",
+    "health": {
+      "title": "서비스 상태",
+      "not_configured": "미설정",
+      "not_configured_help": "API에 OPEN_CONNECTOR_BASE_URL과 OPEN_CONNECTOR_ADMIN_TOKEN을 설정하면 연동이 활성화됩니다.",
+      "reachable": "연결 가능",
+      "unreachable": "연결 불가",
+      "latency": "지연 시간",
+      "latency_value": "{{ms}} ms",
+      "providers": "카탈로그의 서비스",
+      "oauth_configured": "설정된 OAuth 클라이언트",
+      "checked_at": "확인 시각",
+      "check_again": "다시 확인"
+    },
+    "services": {
+      "title": "서비스",
+      "search_placeholder": "서비스 필터",
+      "catalog_error": "open-connector에서 카탈로그를 불러오지 못했습니다: {{error}}",
+      "col_service": "서비스",
+      "col_auth": "인증",
+      "col_connections": "연결",
+      "col_users": "허용 사용자",
+      "col_tools": "도구",
+      "col_published": "게시됨",
+      "unavailable": "인스턴스에서 제공하지 않음",
+      "everyone": "모든 사용자",
+      "all_tools": "전체",
+      "users_count_other": "사용자 {{count}}명",
+      "tools_count_other": "도구 {{count}}개",
+      "connections_summary": "활성 {{active}} · 사용자 {{users}}",
+      "publish_label": "{{name}} 게시",
+      "edit_policy": "정책",
+      "enable_dialog_title": "{{name}}을(를) 게시할까요?",
+      "enable_dialog_description": "허용 목록의 사용자는 즉시 설정에서 {{name}}을(를) 연결할 수 있습니다.",
+      "disable_dialog_title": "{{name}} 게시를 중단할까요?",
+      "disable_dialog_description": "새 연결은 즉시 중단되고 task는 더 이상 {{name}} 도구를 받지 않습니다. 기존 연결은 소유자가 해제할 때까지 유지됩니다.",
+      "publish": "게시",
+      "unpublish": "게시 중단",
+      "policy_dialog_title": "{{name}} 정책",
+      "policy_dialog_description": "목록을 비우면 모두 허용됩니다.",
+      "tools_label": "허용 도구",
+      "tools_placeholder": "한 줄에 하나의 액션, 예: create_issue",
+      "tools_help": "task 런타임 토큰은 {{service}}의 이 액션만 사용할 수 있습니다.",
+      "users_label": "허용 사용자",
+      "users_placeholder": "한 줄에 하나의 이메일",
+      "save": "정책 저장",
+      "published_toast": "서비스를 게시했습니다",
+      "unpublished_toast": "서비스 게시를 중단했습니다",
+      "policy_saved_toast": "정책을 저장했습니다",
+      "empty": "인스턴스에 연결 가능한 서비스가 없습니다. 먼저 open-connector에 OAuth 클라이언트를 등록하세요."
+    },
+    "users": {
+      "title": "사용자별 연결",
+      "all_services": "모든 서비스",
+      "col_user": "사용자",
+      "col_services": "서비스",
+      "col_active": "활성",
+      "col_reauth": "재인증 필요",
+      "col_revoked": "해지됨",
+      "col_last_connected": "마지막 연결",
+      "empty": "일치하는 연결이 없습니다."
+    }
+  }
 }
