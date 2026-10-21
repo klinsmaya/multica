@@ -391,6 +391,7 @@
     "sub_issues_label": "子任务",
     "sub_issue_of": "属于父任务",
     "add_sub_issues": "添加子任务",
+    "load_more_sub_issues": "加载更多子任务",
     "add_sub_issue_tooltip": "添加子任务",
     "add_sub_issue_aria": "添加子任务",
     "select_all_sub_issues_aria": "全选子任务",

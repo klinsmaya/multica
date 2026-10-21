@@ -391,6 +391,7 @@
     "sub_issues_label": "サブタスク",
     "sub_issue_of": "親タスク",
     "add_sub_issues": "サブタスクを追加",
+    "load_more_sub_issues": "さらにサブタスクを表示",
     "add_sub_issue_tooltip": "サブタスクを追加",
     "add_sub_issue_aria": "サブタスクを追加",
     "select_all_sub_issues_aria": "すべてのサブタスクを選択",

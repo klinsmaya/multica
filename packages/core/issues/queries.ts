@@ -142,6 +142,17 @@ export const issueKeys = {
     [...issueKeys.all(wsId), "children"] as const,
   children: (wsId: string, id: string) =>
     [...issueKeys.childrenAll(wsId), id] as const,
+  /**
+   * One page of a parent's children. Nested under `children(wsId, id)` so the
+   * per-parent invalidation and the Issue[] cache patchers reach it, but a
+   * separate entry from the full list: a partial page must never be read by a
+   * consumer that expects every child.
+   */
+  childrenPage: (
+    wsId: string,
+    id: string,
+    page: { limit: number; offset: number },
+  ) => [...issueKeys.children(wsId, id), "page", page.offset, page.limit] as const,
   /** Prefix for invalidating all batched-children queries in a workspace. */
   childrenByParentsAll: (wsId: string) =>
     [...issueKeys.all(wsId), "children-by-parents"] as const,
@@ -539,16 +550,24 @@ export function issueDuplicatesOptions(wsId: string, id: string) {
   });
 }
 
-export function childIssuesOptions(wsId: string, id: string) {
+/**
+ * A parent's children. Without `page` this is the full list (cached under
+ * `issueKeys.children`); with `page` it is one slice, cached separately.
+ * Realtime child events invalidate both (see ws-updaters).
+ */
+export function childIssuesOptions(
+  wsId: string,
+  id: string,
+  page?: { limit: number; offset: number },
+) {
   return queryOptions({
-    queryKey: issueKeys.children(wsId, id),
-    queryFn: () => api.listChildIssues(id).then((r) => r.issues),
-    // Child creation can happen while this workspace is not the active
-    // realtime subscription (for example, an agent creates it while a
-    // desktop tab is showing another workspace). The global Infinity
-    // staleTime would otherwise reuse an incomplete children snapshot when
-    // the parent is opened again, with no later event guaranteed to heal it.
-    refetchOnMount: "always",
+    queryKey: page
+      ? issueKeys.childrenPage(wsId, id, page)
+      : issueKeys.children(wsId, id),
+    queryFn: () =>
+      (page ? api.listChildIssues(id, page) : api.listChildIssues(id)).then(
+        (r) => r.issues,
+      ),
   });
 }
 

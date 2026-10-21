@@ -409,6 +409,8 @@ export function onIssueCreated(
   qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });
   if (issue.parent_issue_id) {
     qc.invalidateQueries({ queryKey: issueKeys.children(wsId, issue.parent_issue_id) });
+    // The parent's detail carries child_count / child_done_count.
+    qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issue.parent_issue_id) });
     qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
   }
 }
@@ -509,16 +511,23 @@ export function onIssueUpdated(
     if (parentChanged) {
       qc.invalidateQueries({ queryKey: issueKeys.children(wsId, oldParentId) });
     } else {
-      qc.setQueryData<Issue[]>(issueKeys.children(wsId, oldParentId), (old) =>
-        old?.map((c) =>
-          c.id === issue.id &&
-          (issue.revision === undefined ||
-            c.revision === undefined ||
-            issue.revision > c.revision)
-            ? { ...c, ...issue }
-            : c,
-        ),
-      );
+      // The prefix covers the full list and any loaded child pages.
+      for (const [key, children] of issueArrayEntries(
+        qc,
+        issueKeys.children(wsId, oldParentId),
+      )) {
+        qc.setQueryData<Issue[]>(
+          key,
+          children.map((c) =>
+            c.id === issue.id &&
+            (issue.revision === undefined ||
+              c.revision === undefined ||
+              issue.revision > c.revision)
+              ? { ...c, ...issue }
+              : c,
+          ),
+        );
+      }
     }
   }
   // Invalidate new parent's children (issue was added to it)
@@ -528,6 +537,15 @@ export function onIssueUpdated(
   if (oldParentId || newParentId) {
     if (issue.status !== undefined || issue.parent_issue_id !== undefined) {
       qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
+    }
+    // Parent details carry child_count / child_done_count, which only a
+    // status change or a re-parent can move.
+    if (changed.status || parentChanged) {
+      for (const parentId of new Set([oldParentId, newParentId])) {
+        if (parentId) {
+          qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, parentId) });
+        }
+      }
     }
     qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   }

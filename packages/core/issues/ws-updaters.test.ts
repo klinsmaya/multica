@@ -1126,3 +1126,83 @@ describe("project gantt cache invalidation", () => {
     expectInvalidated(qc, issueKeys.projectGantt(WS_ID, PROJECT_ID));
   });
 });
+
+describe("parent detail counts (child_count / child_done_count)", () => {
+  const parentDetailKey = issueKeys.detail(WS_ID, PARENT_ISSUE_ID);
+  const pageKey = issueKeys.childrenPage(WS_ID, PARENT_ISSUE_ID, { limit: 50, offset: 0 });
+  const makeParent = (): Issue => ({
+    ...baseIssue,
+    id: PARENT_ISSUE_ID,
+    identifier: "MUL-0",
+    child_count: 2,
+    child_done_count: 1,
+  });
+
+  it("invalidates the parent's detail and child pages when a sub-issue is created", () => {
+    const qc = new QueryClient();
+    qc.setQueryData<Issue>(parentDetailKey, makeParent());
+    qc.setQueryData<Issue[]>(pageKey, [otherIssue]);
+
+    onIssueCreated(qc, WS_ID, parentedIssue);
+
+    expectInvalidated(qc, parentDetailKey);
+    expectInvalidated(qc, pageKey);
+  });
+
+  it("invalidates the parent's detail when a sub-issue changes status", () => {
+    const qc = new QueryClient();
+    const child: Issue = { ...parentedIssue, revision: 1 };
+    qc.setQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID), child);
+    qc.setQueryData<Issue>(parentDetailKey, makeParent());
+
+    onIssueUpdated(qc, WS_ID, { ...child, status: "done", revision: 2 }, { statusChanged: true });
+
+    expectInvalidated(qc, parentDetailKey);
+  });
+
+  it("leaves the parent's detail alone when a sub-issue changes something that cannot move the counts", () => {
+    const qc = new QueryClient();
+    const child: Issue = { ...parentedIssue, revision: 1 };
+    qc.setQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID), child);
+    qc.setQueryData<Issue>(parentDetailKey, makeParent());
+
+    onIssueUpdated(qc, WS_ID, { ...child, title: "Renamed", revision: 2 }, { statusChanged: false });
+
+    expect(qc.getQueryState(parentDetailKey)?.isInvalidated).toBe(false);
+  });
+
+  it("invalidates both the old and new parent's detail when a sub-issue is re-parented", () => {
+    const qc = new QueryClient();
+    const newParentDetailKey = issueKeys.detail(WS_ID, "parent-2");
+    const child: Issue = { ...parentedIssue, revision: 1 };
+    qc.setQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID), child);
+    qc.setQueryData<Issue>(parentDetailKey, makeParent());
+    qc.setQueryData<Issue>(newParentDetailKey, { ...makeParent(), id: "parent-2" });
+
+    onIssueUpdated(qc, WS_ID, { ...child, parent_issue_id: "parent-2", revision: 2 });
+
+    expectInvalidated(qc, parentDetailKey);
+    expectInvalidated(qc, newParentDetailKey);
+  });
+
+  it("invalidates the parent's detail when a sub-issue is deleted", () => {
+    const qc = new QueryClient();
+    qc.setQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID), parentedIssue);
+    qc.setQueryData<Issue>(parentDetailKey, makeParent());
+
+    onIssueDeleted(qc, WS_ID, ISSUE_ID);
+
+    expectInvalidated(qc, parentDetailKey);
+  });
+
+  it("patches a loaded child page in place when a sub-issue status changes", () => {
+    const qc = new QueryClient();
+    const child: Issue = { ...parentedIssue, revision: 1 };
+    qc.setQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID), child);
+    qc.setQueryData<Issue[]>(pageKey, [child]);
+
+    onIssueUpdated(qc, WS_ID, { ...child, status: "done", revision: 2 }, { statusChanged: true });
+
+    expect(qc.getQueryData<Issue[]>(pageKey)?.[0]).toMatchObject({ status: "done", revision: 2 });
+  });
+});

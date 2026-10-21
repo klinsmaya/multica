@@ -1589,8 +1589,13 @@ export class ApiClient {
     );
   }
 
-  async listChildIssues(id: string): Promise<{ issues: Issue[] }> {
-    const raw = await this.fetch<unknown>(`/api/issues/${id}/children`);
+  /** Without `page` the server returns every child (older servers ignore it). */
+  async listChildIssues(
+    id: string,
+    page?: { limit: number; offset: number },
+  ): Promise<{ issues: Issue[] }> {
+    const query = page ? `?limit=${page.limit}&offset=${page.offset}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/${id}/children${query}`);
     return parseWithFallback(raw, ChildIssuesResponseSchema, { issues: [] }, {
       endpoint: "GET /api/issues/:id/children",
     });

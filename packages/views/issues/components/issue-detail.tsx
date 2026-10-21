@@ -125,7 +125,7 @@ import {
 } from "./deliverables/deliverable-details";
 import { collectDeliverableFiles } from "@multica/core/attachments/deliverables";
 import { AttachmentVersionsProvider } from "./deliverables/attachment-versions";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useActorName } from "@multica/core/workspace/hooks";
@@ -485,6 +485,19 @@ function ActivityText({ entry, text }: { entry: TimelineEntry; text: string }) {
 // Stable reference for threads with no replies. Inline `[]` would create a
 // new array on every render and bust React.memo on CommentCard / ResolvedThreadBar.
 const EMPTY_REPLIES: TimelineEntry[] = [];
+
+// Sub-issues load a page at a time once the section is expanded.
+const CHILD_PAGE_SIZE = 50;
+const EMPTY_CHILD_ISSUES: Issue[] = [];
+
+// Module-level so useQueries can memoize the combined result: the flat list
+// below must keep a stable identity between renders.
+function combineChildPages(results: { data?: Issue[]; isFetching: boolean }[]) {
+  return {
+    issues: results.flatMap((r) => r.data ?? EMPTY_CHILD_ISSUES),
+    fetching: results.some((r) => r.isFetching),
+  };
+}
 
 // Sidebar progressive disclosure
 //
@@ -1509,7 +1522,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Issue data from TQ — uses detail query, seeded from list cache if available.
   // Only seed when description is present; the list API omits it, so a partial
   // list row must not masquerade as a hydrated issue detail.
-  const { data: issue = null, isLoading: issueLoading, refetch: refetchIssue } = useQuery({
+  const {
+    data: issue = null,
+    isLoading: issueLoading,
+    isFetching: issueFetching,
+    refetch: refetchIssue,
+  } = useQuery({
     ...issueDetailOptions(wsId, id),
     // List rows and issue-created realtime payloads intentionally omit the
     // detail-only source-context snapshot. They can still seed this query via
@@ -2040,21 +2058,54 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ...projectDetailOptions(wsId, issueProjectId ?? ""),
     enabled: !!issueProjectId,
   });
+  // The detail response carries sub-issue progress, so a collapsed section
+  // needs no list fetch. A detail seeded from a list row has no counts until
+  // its authoritative fetch lands; a backend that predates them never sends
+  // any, and then the whole list is loaded as before.
+  const serverChildCount = issue?.child_count;
+  const serverChildDoneCount = issue?.child_done_count;
+  const hasServerChildCounts =
+    serverChildCount !== undefined && serverChildDoneCount !== undefined;
+  const loadFullChildList = !!issue && !issueFetching && !hasServerChildCounts;
+  // Store-backed (not useState) so the collapsed state survives leaving the
+  // issue and navigating back within the session.
+  const subIssuesCollapsed = useSubIssuesCollapseStore((s) =>
+    s.collapsedIssueIds.has(issueId),
+  );
   const {
-    data: childIssues = [],
-    isSuccess: childIssuesLoaded,
-    isFetching: childIssuesFetching,
+    data: fullChildIssues = EMPTY_CHILD_ISSUES,
+    isSuccess: fullChildIssuesLoaded,
+    isFetching: fullChildIssuesFetching,
   } = useQuery({
     ...childIssuesOptions(wsId, id),
-    enabled: !!issue,
+    enabled: loadFullChildList,
   });
+  // Pages are only read while the section is expanded; "load more" adds one.
+  // Keyed by issue so navigating to another issue starts from the first page.
+  const [childPageState, setChildPageState] = useState({ id, count: 1 });
+  const childPageCount = childPageState.id === id ? childPageState.count : 1;
+  const { issues: pagedChildIssues, fetching: childPagesFetching } = useQueries({
+    queries: Array.from({ length: childPageCount }, (_, i) => ({
+      ...childIssuesOptions(wsId, id, {
+        limit: CHILD_PAGE_SIZE,
+        offset: i * CHILD_PAGE_SIZE,
+      }),
+      enabled:
+        !!issue &&
+        hasServerChildCounts &&
+        serverChildCount > 0 &&
+        !subIssuesCollapsed,
+    })),
+    combine: combineChildPages,
+  });
+  const childIssues = hasServerChildCounts ? pagedChildIssues : fullChildIssues;
+  const childTotal = hasServerChildCounts ? serverChildCount : childIssues.length;
   // Whether this issue has sub-issues, as opposed to "we have not looked yet".
-  // childIssuesOptions sets refetchOnMount: "always", so a cached snapshot is
-  // re-fetched on every mount and isSuccess alone still describes the previous
-  // visit. The unsubscribe control below picks a different server write from
-  // this answer, so a defaulted or stale empty array must not count as "no
+  // The unsubscribe control below picks a different server write from this
+  // answer, so a defaulted or stale empty array must not count as "no
   // sub-issues" (MUL-5714).
-  const childCountKnown = childIssuesLoaded && !childIssuesFetching;
+  const childCountKnown =
+    hasServerChildCounts || (fullChildIssuesLoaded && !fullChildIssuesFetching);
   // Parent's children — used to render the "x/y" progress next to the
   // "Sub-issue of …" breadcrumb under the title.
   const { data: parentChildIssues = [] } = useQuery({
@@ -2074,11 +2125,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // definitions — ids from other workspaces or archived properties drop out.
   const subIssueRowProps = useSubIssueDisplayStore((s) => s.rowProperties);
   const subIssueRowPropertyIds = useSubIssueDisplayStore((s) => s.rowPropertyIds);
-  // Store-backed (not useState) so the collapsed state survives leaving the
-  // issue and navigating back within the session.
-  const subIssuesCollapsed = useSubIssuesCollapseStore((s) =>
-    s.collapsedIssueIds.has(issueId),
-  );
   const setSubIssuesCollapsedFor = useSubIssuesCollapseStore(
     (s) => s.setCollapsed,
   );
@@ -3515,7 +3561,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>
 
           {/* Sub-issues — Linear-style */}
-          {childIssues.length === 0 && (
+          {childTotal === 0 && (
             <div className="mt-6">
               <button
                 type="button"
@@ -3527,8 +3573,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </button>
             </div>
           )}
-          {childIssues.length > 0 && (() => {
-            const doneCount = childIssues.filter((c) => issueBehavesAs(c, "done")).length;
+          {childTotal > 0 && (() => {
+            const doneCount = hasServerChildCounts
+              ? serverChildDoneCount
+              : childIssues.filter((c) => issueBehavesAs(c, "done")).length;
             return (
               // Provider hosts the shared right-click actions menu the rows
               // delegate to (one singleton menu, not one per row).
@@ -3550,9 +3598,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     <span>{t(($) => $.detail.sub_issues_label)}</span>
                   </button>
                   <div className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5">
-                    <ProgressRing done={doneCount} total={childIssues.length} size={11} />
+                    <ProgressRing done={doneCount} total={childTotal} size={11} />
                     <span className="text-micro text-muted-foreground tabular-nums font-medium">
-                      {doneCount}/{childIssues.length}
+                      {doneCount}/{childTotal}
                     </span>
                   </div>
                   {/* issue.id, not the route param — the endpoint takes a
@@ -3598,7 +3646,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <BatchActionToolbar issues={childIssues} placement="inline" />
 
                 {/* List */}
-                {!subIssuesCollapsed && (() => {
+                {!subIssuesCollapsed && childIssues.length > 0 && (() => {
                   const groups = groupSubIssuesByStage(childIssues);
                   const staged = childIssues.some((c) => c.stage != null);
                   return (
@@ -3623,6 +3671,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                           ))}
                         </Fragment>
                       ))}
+                      {hasServerChildCounts && childIssues.length < childTotal && (
+                        <div className="px-3 py-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={childPagesFetching}
+                            onClick={() =>
+                              setChildPageState({ id, count: childPageCount + 1 })
+                            }
+                          >
+                            {t(($) => $.detail.load_more_sub_issues)}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -3666,7 +3728,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     unresolved state is better shown as no control than as the
                     wrong one (MUL-5714). */}
                 {subscriptionKnown &&
-                  (!isSubscribed || (childCountKnown && childIssues.length === 0) ? (
+                  (!isSubscribed || (childCountKnown && childTotal === 0) ? (
                     /* One button, no menu, when there is nothing for the
                        subtree option to cover. This is the root-only path
                        (opt_out_scope='issue'), NOT the subtree one: even at

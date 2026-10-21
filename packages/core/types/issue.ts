@@ -246,4 +246,10 @@ export interface Issue {
   last_activity_at?: string | null;
   /** Present only on issue detail responses for issues created from a comment. */
   source_context?: IssueSourceContext;
+  /**
+   * Sub-issue progress, present only on issue detail responses from a backend
+   * that computes it. Absent on older backends and on list/board rows.
+   */
+  child_count?: number;
+  child_done_count?: number;
 }

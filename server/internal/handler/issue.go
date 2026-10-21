@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -106,6 +107,11 @@ type IssueResponse struct {
 	// SourceContext is detail-only. List, board, search, and children responses
 	// deliberately omit the potentially large immutable snapshot.
 	SourceContext *sourceContextDetailResponse `json:"source_context,omitempty"`
+	// ChildCount and ChildDoneCount are detail-only sub-issue progress
+	// (done = terminal status category). Pointers so list, board, and event
+	// payloads omit them; a non-nil zero means "no sub-issues".
+	ChildCount     *int64 `json:"child_count,omitempty"`
+	ChildDoneCount *int64 `json:"child_done_count,omitempty"`
 	// duplicateOfIssueID is the raw mark, kept off the wire; see DuplicateOf.
 	duplicateOfIssueID pgtype.UUID
 }
@@ -2521,8 +2527,28 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	terminalStatusKeys, err := h.terminalIssueStatusKeys(r.Context(), issue.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve status categories")
+		return
+	}
+	progress, err := h.Queries.ChildIssueProgressForParent(r.Context(), db.ChildIssueProgressForParentParams{
+		WorkspaceID:        issue.WorkspaceID,
+		ParentIssueID:      issue.ID,
+		TerminalStatusKeys: terminalStatusKeys,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
+		return
+	}
+	resp.ChildCount = &progress.Total
+	resp.ChildDoneCount = &progress.Done
+
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// maxChildIssuesPageSize caps a single page of GET /api/issues/{id}/children.
+const maxChildIssuesPageSize = 200
 
 func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -2530,7 +2556,43 @@ func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	children, err := h.Queries.ListChildIssues(r.Context(), issue.ID)
+	// Paging is opt-in: without `limit` every child is returned, as older
+	// clients expect.
+	q := r.URL.Query()
+	var (
+		children []db.Issue
+		total    int64
+		err      error
+	)
+	if rawLimit := q.Get("limit"); rawLimit != "" {
+		limit, convErr := strconv.Atoi(rawLimit)
+		if convErr != nil || limit < 1 || limit > maxChildIssuesPageSize {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("limit must be between 1 and %d", maxChildIssuesPageSize))
+			return
+		}
+		offset := 0
+		if rawOffset := q.Get("offset"); rawOffset != "" {
+			offset, convErr = strconv.Atoi(rawOffset)
+			if convErr != nil || offset < 0 || offset > math.MaxInt32 {
+				writeError(w, http.StatusBadRequest, "offset must be a non-negative integer")
+				return
+			}
+		}
+		children, err = h.Queries.ListChildIssuesPage(r.Context(), db.ListChildIssuesPageParams{
+			ParentIssueID: issue.ID,
+			Limit:         int32(limit),
+			Offset:        int32(offset),
+		})
+		if err == nil {
+			total, err = h.Queries.CountChildIssues(r.Context(), issue.ID)
+		}
+	} else if q.Get("offset") != "" {
+		writeError(w, http.StatusBadRequest, "offset requires limit")
+		return
+	} else {
+		children, err = h.Queries.ListChildIssues(r.Context(), issue.ID)
+		total = int64(len(children))
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list child issues")
 		return
@@ -2559,6 +2621,7 @@ func (h *Handler) ListChildIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issues": resp,
+		"total":  total,
 	})
 }
 

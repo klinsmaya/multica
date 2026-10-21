@@ -1477,6 +1477,10 @@ export const IssueSchema = z.object({
   // Detail-only and potentially large. A malformed additive field must not
   // erase an otherwise usable issue returned by a mixed-version server.
   source_context: IssueSourceContextSchema.optional().catch(undefined),
+  // Detail-only sub-issue progress. A malformed value degrades to "absent" so
+  // consumers take the list-based fallback instead of losing the whole issue.
+  child_count: z.number().int().nonnegative().optional().catch(undefined),
+  child_done_count: z.number().int().nonnegative().optional().catch(undefined),
 }).loose();
 
 export const ListIssuesResponseSchema = z.object({

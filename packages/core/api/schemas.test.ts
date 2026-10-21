@@ -198,6 +198,28 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     expect(parsed.issues[0]?.id).toBe(baseIssue.id);
     expect(parsed.issues[0]?.status_name).toBeUndefined();
   });
+  it("keeps sub-issue counts when present and leaves them undefined for older servers", () => {
+    const withCounts = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, child_count: 3, child_done_count: 1 }],
+      total: 1,
+    });
+    expect(withCounts.issues[0]?.child_count).toBe(3);
+    expect(withCounts.issues[0]?.child_done_count).toBe(1);
+    const without = ListIssuesResponseSchema.parse({ issues: [baseIssue], total: 1 });
+    expect(without.issues[0]?.child_count).toBeUndefined();
+    expect(without.issues[0]?.child_done_count).toBeUndefined();
+  });
+  it("drops malformed sub-issue counts without losing the issue", () => {
+    for (const bad of ["3", -1, 1.5, null, {}]) {
+      const parsed = ListIssuesResponseSchema.parse({
+        issues: [{ ...baseIssue, child_count: bad, child_done_count: bad }],
+        total: 1,
+      });
+      expect(parsed.issues).toHaveLength(1);
+      expect(parsed.issues[0]?.child_count).toBeUndefined();
+      expect(parsed.issues[0]?.child_done_count).toBeUndefined();
+    }
+  });
   it("keeps the issue while independently dropping a malformed source context", () => {
     const parsed = ListIssuesResponseSchema.parse({
       issues: [{ ...baseIssue, source_context: { snapshot: "bad" } }],

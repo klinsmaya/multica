@@ -8,7 +8,7 @@ import { issueStatusKeys } from "@multica/core/issue-statuses";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { toast } from "sonner";
 import { useResolvedExpandStore } from "@multica/core/issues/stores/resolved-expand-store";
-import { useCommentCollapseStore } from "@multica/core/issues/stores";
+import { useCommentCollapseStore, useSubIssuesCollapseStore } from "@multica/core/issues/stores";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
@@ -3185,6 +3185,143 @@ describe("IssueDetail (shared)", () => {
       const control = await screen.findByText("Unsubscribe");
 
       expect(control.getAttribute("aria-haspopup")).toBe("menu");
+    });
+  });
+
+  // Sub-issues are fetched on demand: the detail response carries the progress
+  // counts, so the list is only requested once the section is expanded.
+  describe("sub-issues on demand", () => {
+    beforeEach(() => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set() });
+      useSubIssueDisplayStore.setState({
+        rowProperties: { ...DEFAULT_SUB_ISSUE_ROW_PROPERTIES },
+        rowPropertyIds: [],
+      });
+    });
+
+    const child = (n: number, overrides: Partial<Issue> = {}): Issue => ({
+      ...mockIssue,
+      id: `child-${n}`,
+      number: 100 + n,
+      identifier: `TES-${100 + n}`,
+      title: `Child task ${n}`,
+      parent_issue_id: "issue-1",
+      assignee_type: null,
+      assignee_id: null,
+      due_date: null,
+      priority: "none",
+      status: "todo",
+      ...overrides,
+    });
+
+    it("does not list children while collapsed and shows the server counts", async () => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set(["issue-1"]) });
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 4,
+        child_done_count: 3,
+      });
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("3/4")).toBeInTheDocument();
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
+    });
+
+    it("requests the first page when the section is expanded", async () => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set(["issue-1"]) });
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 2,
+        child_done_count: 1,
+      });
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [child(1, { status: "done" }), child(2)],
+      });
+
+      renderIssueDetail();
+      await screen.findByText("1/2");
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Sub-issues" }));
+
+      await screen.findByText("Child task 1");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1", {
+        limit: 50,
+        offset: 0,
+      });
+      expect(screen.queryByRole("button", { name: "Load more sub-issues" })).toBeNull();
+    });
+
+    it("falls back to the full list when the backend sends no counts", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [child(1, { status: "done" }), child(2)],
+      });
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("1/2")).toBeInTheDocument();
+      await screen.findByText("Child task 2");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1");
+    });
+
+    it("loads the next page on demand when there are more than one page of children", async () => {
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 60,
+        child_done_count: 0,
+      });
+      mockApiObj.listChildIssues.mockImplementation(
+        async (_id: string, page?: { limit: number; offset: number }) => ({
+          issues: Array.from(
+            { length: page?.offset === 50 ? 10 : 50 },
+            (_, i) => child((page?.offset ?? 0) + i + 1),
+          ),
+        }),
+      );
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("0/60")).toBeInTheDocument();
+      await screen.findByText("Child task 50");
+      expect(screen.queryByText("Child task 51")).toBeNull();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Load more sub-issues" }));
+
+      await screen.findByText("Child task 60");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1", {
+        limit: 50,
+        offset: 50,
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Load more sub-issues" })).toBeNull(),
+      );
+    });
+
+    it("offers the direct unsubscribe button for a childless issue without listing children", async () => {
+      mockApiObj.listIssueSubscribers.mockResolvedValue([
+        {
+          issue_id: "issue-1",
+          user_type: "member" as const,
+          user_id: "user-1",
+          reason: "manual" as const,
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ]);
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 0,
+        child_done_count: 0,
+      });
+
+      renderIssueDetail();
+
+      await waitFor(() => {
+        const el = screen.getByText("Unsubscribe");
+        expect(el.getAttribute("aria-haspopup")).toBeNull();
+      });
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
     });
   });
 

@@ -92,7 +92,10 @@ function installFakeChildrenApi(
 }
 
 function installFakeChildApi(
-  listChildIssues: (parentId: string) => Promise<{ issues: Issue[] }>,
+  listChildIssues: (
+    parentId: string,
+    page?: { limit: number; offset: number },
+  ) => Promise<{ issues: Issue[] }>,
 ) {
   setApiInstance({ listChildIssues } as unknown as ApiClient);
 }
@@ -104,32 +107,54 @@ function installFakeIssueApi(
 }
 
 describe("childIssuesOptions", () => {
-  it("refetches a cached snapshot when the parent issue is opened again", async () => {
+  it("fetches the full list without a page and keeps it apart from page caches", async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
     const parentId = "parent-1";
-    const oldChild = makeIssue(1, { parent_issue_id: parentId });
-    const newChild = makeIssue(2, { parent_issue_id: parentId });
-    const listChildIssues = vi.fn().mockResolvedValue({
-      issues: [oldChild, newChild],
-    });
+    const child = makeIssue(1, { parent_issue_id: parentId });
+    const listChildIssues = vi.fn().mockResolvedValue({ issues: [child] });
     installFakeChildApi(listChildIssues);
-    qc.setQueryData(issueKeys.children(WS_ID, parentId), [oldChild]);
 
-    const observer = new QueryObserver(
-      qc,
-      childIssuesOptions(WS_ID, parentId),
-    );
-    const unsubscribe = observer.subscribe(() => {});
+    await qc.fetchQuery(childIssuesOptions(WS_ID, parentId));
 
-    await vi.waitFor(() => {
-      expect(listChildIssues).toHaveBeenCalledWith(parentId);
-      expect(observer.getCurrentResult().data).toEqual([oldChild, newChild]);
+    expect(listChildIssues).toHaveBeenCalledWith(parentId);
+    expect(qc.getQueryData(issueKeys.children(WS_ID, parentId))).toEqual([child]);
+    expect(
+      qc.getQueryData(issueKeys.childrenPage(WS_ID, parentId, { limit: 50, offset: 0 })),
+    ).toBeUndefined();
+  });
+
+  it("fetches one page under its own key without touching the full-list cache", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
+    const parentId = "parent-1";
+    const page = { limit: 50, offset: 50 };
+    const child = makeIssue(51, { parent_issue_id: parentId });
+    const listChildIssues = vi.fn().mockResolvedValue({ issues: [child] });
+    installFakeChildApi(listChildIssues);
 
-    unsubscribe();
-    qc.clear();
+    await qc.fetchQuery(childIssuesOptions(WS_ID, parentId, page));
+
+    expect(listChildIssues).toHaveBeenCalledWith(parentId, page);
+    expect(qc.getQueryData(issueKeys.childrenPage(WS_ID, parentId, page))).toEqual([child]);
+    expect(qc.getQueryData(issueKeys.children(WS_ID, parentId))).toBeUndefined();
+  });
+
+  it("is invalidated together with the full list by the per-parent children key", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const parentId = "parent-1";
+    const page = { limit: 50, offset: 0 };
+    qc.setQueryData(issueKeys.childrenPage(WS_ID, parentId, page), []);
+
+    await qc.invalidateQueries({ queryKey: issueKeys.children(WS_ID, parentId) });
+
+    expect(
+      qc.getQueryState(issueKeys.childrenPage(WS_ID, parentId, page))?.isInvalidated,
+    ).toBe(true);
   });
 });
 

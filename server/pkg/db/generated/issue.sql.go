@@ -52,6 +52,34 @@ func (q *Queries) ChildIssueProgress(ctx context.Context, arg ChildIssueProgress
 	return items, nil
 }
 
+const childIssueProgressForParent = `-- name: ChildIssueProgressForParent :one
+SELECT COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY($3::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = $2
+`
+
+type ChildIssueProgressForParentParams struct {
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	ParentIssueID      pgtype.UUID `json:"parent_issue_id"`
+	TerminalStatusKeys []string    `json:"terminal_status_keys"`
+}
+
+type ChildIssueProgressForParentRow struct {
+	Total int64 `json:"total"`
+	Done  int64 `json:"done"`
+}
+
+// Single-parent variant of ChildIssueProgress for the issue detail response.
+// Always returns one row; a parent without children yields 0/0.
+func (q *Queries) ChildIssueProgressForParent(ctx context.Context, arg ChildIssueProgressForParentParams) (ChildIssueProgressForParentRow, error) {
+	row := q.db.QueryRow(ctx, childIssueProgressForParent, arg.WorkspaceID, arg.ParentIssueID, arg.TerminalStatusKeys)
+	var i ChildIssueProgressForParentRow
+	err := row.Scan(&i.Total, &i.Done)
+	return i, err
+}
+
 const clearIssueDuplicatesOf = `-- name: ClearIssueDuplicatesOf :many
 UPDATE issue
 SET duplicate_of_issue_id = NULL,
@@ -122,6 +150,18 @@ func (q *Queries) ClearIssueDuplicatesOf(ctx context.Context, arg ClearIssueDupl
 		return nil, err
 	}
 	return items, nil
+}
+
+const countChildIssues = `-- name: CountChildIssues :one
+SELECT COUNT(*)::bigint AS total FROM issue
+WHERE parent_issue_id = $1
+`
+
+func (q *Queries) CountChildIssues(ctx context.Context, parentIssueID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countChildIssues, parentIssueID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const countCreatedIssueAssignees = `-- name: CountCreatedIssueAssignees :many
@@ -1112,6 +1152,71 @@ ORDER BY number ASC
 // monotonic counter and is sibling-stable.
 func (q *Queries) ListChildIssues(ctx context.Context, parentIssueID pgtype.UUID) ([]Issue, error) {
 	rows, err := q.db.Query(ctx, listChildIssues, parentIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+			&i.Stage,
+			&i.Properties,
+			&i.Revision,
+			&i.LastActivityAt,
+			&i.TriageState,
+			&i.DuplicateOfIssueID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChildIssuesPage = `-- name: ListChildIssuesPage :many
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id FROM issue
+WHERE parent_issue_id = $1
+ORDER BY number ASC
+LIMIT $2 OFFSET $3
+`
+
+type ListChildIssuesPageParams struct {
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
+	Limit         int32       `json:"limit"`
+	Offset        int32       `json:"offset"`
+}
+
+// Paged variant of ListChildIssues with the same sibling-stable ordering.
+func (q *Queries) ListChildIssuesPage(ctx context.Context, arg ListChildIssuesPageParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listChildIssuesPage, arg.ParentIssueID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
