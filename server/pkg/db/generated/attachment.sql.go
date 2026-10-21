@@ -53,6 +53,38 @@ func (q *Queries) BindChatAttachmentsToMessage(ctx context.Context, arg BindChat
 	return items, nil
 }
 
+const countProjectAttachments = `-- name: CountProjectAttachments :one
+SELECT
+  (count(*) FILTER (WHERE a.uploader_type = 'agent'))::bigint AS agent_count,
+  (count(*) FILTER (WHERE a.uploader_type = 'member'))::bigint AS member_count
+FROM attachment a
+JOIN issue i ON i.id = a.issue_id AND i.workspace_id = a.workspace_id
+LEFT JOIN comment c ON c.id = a.comment_id
+WHERE i.project_id = $1
+  AND i.workspace_id = $2
+  AND a.source_context_id IS NULL
+  AND c.deleted_at IS NULL
+`
+
+type CountProjectAttachmentsParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type CountProjectAttachmentsRow struct {
+	AgentCount  int64 `json:"agent_count"`
+	MemberCount int64 `json:"member_count"`
+}
+
+// Same row set as ListProjectAttachments, counted per uploader type so the
+// library can label both groups from one round trip.
+func (q *Queries) CountProjectAttachments(ctx context.Context, arg CountProjectAttachmentsParams) (CountProjectAttachmentsRow, error) {
+	row := q.db.QueryRow(ctx, countProjectAttachments, arg.ProjectID, arg.WorkspaceID)
+	var i CountProjectAttachmentsRow
+	err := row.Scan(&i.AgentCount, &i.MemberCount)
+	return i, err
+}
+
 const countUnboundChatAttachmentsForTask = `-- name: CountUnboundChatAttachmentsForTask :one
 SELECT COUNT(*) FROM attachment
 WHERE workspace_id = $1
@@ -483,6 +515,62 @@ func (q *Queries) GetAttachmentByIDOnly(ctx context.Context, id pgtype.UUID) (At
 		&i.ChatMessageID,
 		&i.TaskID,
 		&i.SourceContextID,
+	)
+	return i, err
+}
+
+const getProjectLibraryIssue = `-- name: GetProjectLibraryIssue :one
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id FROM issue
+WHERE project_id = $1
+  AND workspace_id = $2
+  AND parent_issue_id IS NULL
+  AND title = $3
+ORDER BY created_at ASC
+LIMIT 1
+`
+
+type GetProjectLibraryIssueParams struct {
+	ProjectID   pgtype.UUID `json:"project_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Title       string      `json:"title"`
+}
+
+// The top-level issue that holds files uploaded straight to a project. Found
+// by its fixed title in any status, so closing it does not spawn a second one.
+func (q *Queries) GetProjectLibraryIssue(ctx context.Context, arg GetProjectLibraryIssueParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, getProjectLibraryIssue, arg.ProjectID, arg.WorkspaceID, arg.Title)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.AssigneeType,
+		&i.AssigneeID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.Stage,
+		&i.Properties,
+		&i.Revision,
+		&i.LastActivityAt,
+		&i.TriageState,
+		&i.DuplicateOfIssueID,
 	)
 	return i, err
 }
@@ -979,6 +1067,84 @@ func (q *Queries) ListAttachmentsBySourceContext(ctx context.Context, arg ListAt
 			&i.ChatMessageID,
 			&i.TaskID,
 			&i.SourceContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectAttachments = `-- name: ListProjectAttachments :many
+SELECT a.id, a.workspace_id, a.issue_id, a.comment_id, a.uploader_type, a.uploader_id, a.filename, a.url, a.content_type, a.size_bytes, a.created_at, a.chat_session_id, a.chat_message_id, a.task_id, a.source_context_id, i.number AS issue_number, i.title AS issue_title
+FROM attachment a
+JOIN issue i ON i.id = a.issue_id AND i.workspace_id = a.workspace_id
+LEFT JOIN comment c ON c.id = a.comment_id
+WHERE i.project_id = $1
+  AND i.workspace_id = $2
+  AND a.source_context_id IS NULL
+  AND c.deleted_at IS NULL
+  AND ($3::text IS NULL OR a.uploader_type = $3::text)
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListProjectAttachmentsParams struct {
+	ProjectID    pgtype.UUID `json:"project_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	UploaderType pgtype.Text `json:"uploader_type"`
+	PageOffset   int32       `json:"page_offset"`
+	PageLimit    int32       `json:"page_limit"`
+}
+
+type ListProjectAttachmentsRow struct {
+	Attachment  Attachment `json:"attachment"`
+	IssueNumber int32      `json:"issue_number"`
+	IssueTitle  string     `json:"issue_title"`
+}
+
+// The project library: every attachment of every issue in the project. A
+// comment attachment keeps its issue_id (it is bound with issue_id = the
+// comment's issue), so joining on attachment.issue_id alone reaches issue-
+// and comment-owned rows exactly once. Source-context snapshot copies are
+// excluded (they duplicate the original rows), as are attachments whose
+// comment became a tombstone.
+func (q *Queries) ListProjectAttachments(ctx context.Context, arg ListProjectAttachmentsParams) ([]ListProjectAttachmentsRow, error) {
+	rows, err := q.db.Query(ctx, listProjectAttachments,
+		arg.ProjectID,
+		arg.WorkspaceID,
+		arg.UploaderType,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectAttachmentsRow{}
+	for rows.Next() {
+		var i ListProjectAttachmentsRow
+		if err := rows.Scan(
+			&i.Attachment.ID,
+			&i.Attachment.WorkspaceID,
+			&i.Attachment.IssueID,
+			&i.Attachment.CommentID,
+			&i.Attachment.UploaderType,
+			&i.Attachment.UploaderID,
+			&i.Attachment.Filename,
+			&i.Attachment.Url,
+			&i.Attachment.ContentType,
+			&i.Attachment.SizeBytes,
+			&i.Attachment.CreatedAt,
+			&i.Attachment.ChatSessionID,
+			&i.Attachment.ChatMessageID,
+			&i.Attachment.TaskID,
+			&i.Attachment.SourceContextID,
+			&i.IssueNumber,
+			&i.IssueTitle,
 		); err != nil {
 			return nil, err
 		}
