@@ -1,0 +1,1 @@
+ALTER TABLE registry_install_report DROP CONSTRAINT IF EXISTS registry_install_report_pkey;

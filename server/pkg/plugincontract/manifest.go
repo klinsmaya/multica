@@ -448,6 +448,11 @@ func (m Manifest) Validate() error {
 
 func (m Manifest) validateScopes() error {
 	if len(m.Scopes) == 0 {
+		// A plugin that only ships skills runs no code and reaches nothing, so
+		// it has nothing to ask consent for.
+		if len(m.Contributes.Surfaces) == 0 && len(m.Contributes.Hooks) == 0 {
+			return nil
+		}
 		return fmt.Errorf("scopes must not be empty")
 	}
 	if len(m.Scopes) > 64 {

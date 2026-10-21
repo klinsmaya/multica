@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS registry_install_report_pkey_uidx;

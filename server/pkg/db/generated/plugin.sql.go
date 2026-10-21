@@ -225,7 +225,7 @@ func (q *Queries) CreatePluginInvocation(ctx context.Context, arg CreatePluginIn
 const createPluginPackage = `-- name: CreatePluginPackage :one
 INSERT INTO plugin_package (workspace_id, plugin_key, name, created_by)
 VALUES ($1, $2, $3, $4)
-RETURNING id, workspace_id, plugin_key, name, created_by, created_at, updated_at
+RETURNING id, workspace_id, plugin_key, name, created_by, created_at, updated_at, registry_listing_id
 `
 
 type CreatePluginPackageParams struct {
@@ -251,6 +251,7 @@ func (q *Queries) CreatePluginPackage(ctx context.Context, arg CreatePluginPacka
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistryListingID,
 	)
 	return i, err
 }
@@ -283,7 +284,7 @@ const createPluginPackageVersion = `-- name: CreatePluginPackageVersion :one
 INSERT INTO plugin_package_version (
     package_id, workspace_id, version, manifest, digest, size_bytes, published_by
 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at
+RETURNING id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at, registry_version_id
 `
 
 type CreatePluginPackageVersionParams struct {
@@ -320,6 +321,7 @@ func (q *Queries) CreatePluginPackageVersion(ctx context.Context, arg CreatePlug
 		&i.SizeBytes,
 		&i.PublishedBy,
 		&i.CreatedAt,
+		&i.RegistryVersionID,
 	)
 	return i, err
 }
@@ -761,7 +763,7 @@ func (q *Queries) GetWorkspacePluginInstallationByKey(ctx context.Context, arg G
 }
 
 const getWorkspacePluginPackage = `-- name: GetWorkspacePluginPackage :one
-SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at FROM plugin_package
+SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at, registry_listing_id FROM plugin_package
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -781,12 +783,13 @@ func (q *Queries) GetWorkspacePluginPackage(ctx context.Context, arg GetWorkspac
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistryListingID,
 	)
 	return i, err
 }
 
 const getWorkspacePluginPackageByKey = `-- name: GetWorkspacePluginPackageByKey :one
-SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at FROM plugin_package
+SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at, registry_listing_id FROM plugin_package
 WHERE workspace_id = $1 AND plugin_key = $2
 `
 
@@ -806,12 +809,13 @@ func (q *Queries) GetWorkspacePluginPackageByKey(ctx context.Context, arg GetWor
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistryListingID,
 	)
 	return i, err
 }
 
 const getWorkspacePluginPackageVersion = `-- name: GetWorkspacePluginPackageVersion :one
-SELECT id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at FROM plugin_package_version
+SELECT id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at, registry_version_id FROM plugin_package_version
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -833,6 +837,7 @@ func (q *Queries) GetWorkspacePluginPackageVersion(ctx context.Context, arg GetW
 		&i.SizeBytes,
 		&i.PublishedBy,
 		&i.CreatedAt,
+		&i.RegistryVersionID,
 	)
 	return i, err
 }
@@ -997,7 +1002,7 @@ func (q *Queries) ListPluginPackageFilePaths(ctx context.Context, versionID pgty
 }
 
 const listPluginPackageVersions = `-- name: ListPluginPackageVersions :many
-SELECT id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at FROM plugin_package_version
+SELECT id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at, registry_version_id FROM plugin_package_version
 WHERE package_id = $1
 ORDER BY created_at DESC
 `
@@ -1021,6 +1026,7 @@ func (q *Queries) ListPluginPackageVersions(ctx context.Context, packageID pgtyp
 			&i.SizeBytes,
 			&i.PublishedBy,
 			&i.CreatedAt,
+			&i.RegistryVersionID,
 		); err != nil {
 			return nil, err
 		}
@@ -1182,11 +1188,13 @@ func (q *Queries) ListWorkspacePluginInstallations(ctx context.Context, workspac
 }
 
 const listWorkspacePluginPackages = `-- name: ListWorkspacePluginPackages :many
-SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at FROM plugin_package
-WHERE workspace_id = $1
+SELECT id, workspace_id, plugin_key, name, created_by, created_at, updated_at, registry_listing_id FROM plugin_package
+WHERE workspace_id = $1 AND registry_listing_id IS NULL
 ORDER BY name ASC
 `
 
+// What the workspace published itself. Registry copies are listed by the
+// template marketplace section instead, from the registry listing they came from.
 func (q *Queries) ListWorkspacePluginPackages(ctx context.Context, workspaceID pgtype.UUID) ([]PluginPackage, error) {
 	rows, err := q.db.Query(ctx, listWorkspacePluginPackages, workspaceID)
 	if err != nil {
@@ -1204,6 +1212,7 @@ func (q *Queries) ListWorkspacePluginPackages(ctx context.Context, workspaceID p
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RegistryListingID,
 		); err != nil {
 			return nil, err
 		}
@@ -1526,7 +1535,7 @@ UPDATE plugin_package
 SET name = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, plugin_key, name, created_by, created_at, updated_at
+RETURNING id, workspace_id, plugin_key, name, created_by, created_at, updated_at, registry_listing_id
 `
 
 type UpdatePluginPackageNameParams struct {
@@ -1547,6 +1556,7 @@ func (q *Queries) UpdatePluginPackageName(ctx context.Context, arg UpdatePluginP
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RegistryListingID,
 	)
 	return i, err
 }

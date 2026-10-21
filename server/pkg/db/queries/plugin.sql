@@ -35,8 +35,10 @@ SELECT * FROM plugin_package
 WHERE workspace_id = $1 AND id = $2;
 
 -- name: ListWorkspacePluginPackages :many
+-- What the workspace published itself. Registry copies are listed by the
+-- template marketplace section instead, from the registry listing they came from.
 SELECT * FROM plugin_package
-WHERE workspace_id = $1
+WHERE workspace_id = $1 AND registry_listing_id IS NULL
 ORDER BY name ASC;
 
 -- name: DeletePluginPackage :exec

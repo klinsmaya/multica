@@ -1,0 +1,10 @@
+ALTER TABLE plugin_package_version DROP COLUMN IF EXISTS registry_version_id;
+ALTER TABLE plugin_package DROP COLUMN IF EXISTS registry_listing_id;
+DROP TABLE IF EXISTS registry_install_report;
+DROP TABLE IF EXISTS registry_targeting;
+DROP TABLE IF EXISTS registry_listing;
+DROP TABLE IF EXISTS registry_package_file;
+DROP TABLE IF EXISTS registry_package_version;
+DROP TABLE IF EXISTS registry_package;
+DROP TABLE IF EXISTS registry_source;
+DROP TABLE IF EXISTS registry_consumer;
