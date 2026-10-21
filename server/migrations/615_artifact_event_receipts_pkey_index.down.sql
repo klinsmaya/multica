@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS artifact_event_receipts_pkey_uidx;

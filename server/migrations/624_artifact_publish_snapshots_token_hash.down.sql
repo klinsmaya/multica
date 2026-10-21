@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS artifact_publish_snapshots_token_hash_uidx;

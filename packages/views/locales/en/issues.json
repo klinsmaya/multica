@@ -1484,6 +1484,26 @@
     "overview_empty": "No deliverables of this type.",
     "group_comment_by": "Comment by {{name}}"
   },
+  "artifacts": {
+    "section_title": "Artifacts",
+    "revision": "v{{version}}",
+    "download": "Download",
+    "preview_failed": "Preview is not available for this file.",
+    "office_pending": "Preparing a read-only preview.",
+    "office_failed": "Preview failed.",
+    "edit": "Edit",
+    "save_draft": "Save draft",
+    "save_revision": "Save revision",
+    "draft_saved": "Draft saved",
+    "conflict": "This file changed. Your draft is still here.",
+    "read_only": "Read only",
+    "lease_expired": "The edit lock expired. This file is read only.",
+    "docx_blocked": "This file stays read only. Macros, comments, or tracked changes are not edited.",
+    "docx_dropped": "Save blocked. The new file would drop part of the original.",
+    "local_candidate": "Local candidate file",
+    "local_candidate_hint": "This path cannot be read.",
+    "cancel": "Cancel"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "Every status, no handoffs",

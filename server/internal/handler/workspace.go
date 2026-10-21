@@ -1126,6 +1126,7 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	qtx := h.Queries.WithTx(tx)
 	var sourceContextAttachmentURLs []string
 	var sourceContextIntentURLs []string
+	var artifactStorageKeys []string
 
 	// SET LOCAL is transaction-scoped, so pgxpool hands this connection back
 	// out with the default (unbounded) lock_timeout after COMMIT / ROLLBACK.
@@ -1227,6 +1228,20 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			// data statement and the separate whole-workspace task delete.
 			name: "delete tasks",
 			run:  func() error { return deleteWorkspaceTasks(ctx, qtx, requester.WorkspaceID) },
+		},
+		{
+			// Artifact rows have no foreign keys. Capture object keys first,
+			// delete the metadata here, and delete the bytes after commit.
+			name: "list artifact objects",
+			run: func() error {
+				var listErr error
+				artifactStorageKeys, listErr = qtx.ListArtifactStorageKeysByWorkspace(ctx, requester.WorkspaceID)
+				return listErr
+			},
+		},
+		{
+			name: "delete artifacts",
+			run:  func() error { return qtx.DeleteWorkspaceArtifacts(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete leaf data",
@@ -1361,6 +1376,9 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		h.NotifyRuntimeGone(uuidToString(runtimeID))
 	}
 	h.deleteS3Objects(r.Context(), append(sourceContextAttachmentURLs, sourceContextIntentURLs...))
+	if h.Storage != nil && len(artifactStorageKeys) > 0 {
+		h.Storage.DeleteKeys(r.Context(), artifactStorageKeys)
+	}
 
 	slog.Info("workspace deleted", append(logger.RequestAttrs(r), "workspace_id", workspaceID)...)
 	h.publish(protocol.EventWorkspaceDeleted, workspaceID, "member", requestUserID(r), map[string]any{

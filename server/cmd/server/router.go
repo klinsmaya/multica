@@ -21,6 +21,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/multica-ai/multica/server/internal/artifact"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/cloudruntime"
 	"github.com/multica-ai/multica/server/internal/daemonws"
@@ -455,6 +456,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.InvitationRateLimiters = handler.NewMemoryInvitationRateLimiters(invitationRateLimits)
 	h.Metrics = opts.BusinessMetrics
 	h.FeatureFlags = opts.FeatureFlags
+	h.ArtifactBridge = artifact.LocalBridgeFromEnv()
 	h.TaskService.FeatureFlags = opts.FeatureFlags
 	h.TaskService.Metrics = opts.BusinessMetrics
 	h.IssueService.Metrics = opts.BusinessMetrics
@@ -1610,6 +1612,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 		r.Post("/runtimes/{runtimeId}/recover-orphans", h.RecoverOrphanedTasks)
 		r.Post("/tasks/{taskId}/session", h.PinTaskSession)
+
+		// Optional local artifact bridge. Off unless MULTICA_ARTIFACT_BRIDGE=on.
+		// These routes sit on the daemon channel. A disabled bridge answers 404
+		// and does not read a local path. Cloud artifact routes are unchanged.
+		r.Post("/artifact-bridge/candidates", h.DiscoverLocalCandidates)
+		r.Post("/artifact-bridge/submit", h.SubmitLocalCandidate)
+		r.Post("/artifact-bridge/local-delete", h.KeepCloudOnLocalDelete)
 	})
 
 	// Public Plugin Action API. This is the stable, globally versioned contract
@@ -1640,6 +1649,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		})
 	})
 
+	// Share token reads. Outside the session cookie group so a main-app
+	// cookie is not a credential. Off while artifacts_v1 is off.
+	handler.MountArtifactShareRoutes(r, h)
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(queries, patCache, cloudPATVerifier, cfSigner))
 		r.Use(middleware.RefreshCloudFrontCookies(cfSigner))
@@ -1664,6 +1677,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// middleware.Auth and never call this (MUL-7436).
 		r.Post("/api/auth/refresh", h.RefreshSession)
 		r.Post("/api/upload-file", h.UploadFile)
+		// Artifact read, task-scoped submit, text edit-session, restore,
+		// static HTML/SVG preview, read-only Office preview, and share
+		// publish/revoke mount only while artifacts_v1 is on. Attachment
+		// routes above and below are not part of that group. Token reads
+		// are mounted outside this cookie group.
+		handler.MountArtifactRoutes(r, h)
 		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)
 

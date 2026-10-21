@@ -446,6 +446,9 @@ func TestGetConfigExposesFrontendFeatureFlags(t *testing.T) {
 	if cfg.FeatureFlags["plugins_v1"] {
 		t.Fatalf("plugins_v1: want false by default, got true")
 	}
+	if cfg.FeatureFlags["artifacts_v1"] {
+		t.Fatalf("artifacts_v1: want false by default, got true")
+	}
 	for _, retired := range []string{"private_plugins_v1", "remote_mcp_plugins_v1"} {
 		if _, published := cfg.FeatureFlags[retired]; published {
 			t.Fatalf("retired Plugin sub-flag %q must not be published", retired)

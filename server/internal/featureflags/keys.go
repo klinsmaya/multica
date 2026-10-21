@@ -41,6 +41,20 @@ const (
 	// makes those endpoints answer 404, so clients stop syncing and search
 	// through the server again without a client release.
 	LocalSearchIndex = "local_search_index"
+	// ArtifactsV1 is the choke point for the artifact authority HTTP API and
+	// the issue-detail Artifacts section. It is off unless FF_ARTIFACTS_V1
+	// is set. While it is off, no artifact route is mounted. Turning it on
+	// mounts the read routes (list, metadata, revisions, content, preview),
+	// the task-scoped submit routes the CLI calls, the text edit-session
+	// routes, history restore, static HTML/SVG preview, and read-only
+	// Office preview. Events are written only when those routes run.
+	// The CLI does not read this flag; a disabled server answers 404. Attachment upload,
+	// download, and `multica attachment` are not gated by this flag.
+	ArtifactsV1 = "artifacts_v1"
+	// ArtifactExternalShare is the open product decision for external invitees
+	// and public links. It defaults off. Workspace-member and named-member
+	// snapshots do not read this flag. Do not enable it in this repository.
+	ArtifactExternalShare = "artifact_external_share"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
 	// entry on this config decision receive the permanently enabled behavior.
@@ -63,6 +77,7 @@ var frontendPublicFlags = []string{
 	ComposioMCPApps,
 	PluginsV1,
 	ProjectWorkflowsV1,
+	ArtifactsV1,
 }
 
 func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featureflag.Service) bool {
@@ -83,6 +98,14 @@ func TriageV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 
 func LocalSearchIndexEnabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, LocalSearchIndex, true)
+}
+
+func ArtifactsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, ArtifactsV1, false)
+}
+
+func ArtifactExternalShareEnabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, ArtifactExternalShare, false)
 }
 
 func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service) map[string]bool {

@@ -1,0 +1,1 @@
+ALTER TABLE artifact_audit_events ADD CONSTRAINT artifact_audit_events_pkey PRIMARY KEY USING INDEX artifact_audit_events_pkey_uidx;

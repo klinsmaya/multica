@@ -1,0 +1,1 @@
+ALTER TABLE artifact_share_grants ADD CONSTRAINT artifact_share_grants_pkey PRIMARY KEY USING INDEX artifact_share_grants_pkey_uidx;

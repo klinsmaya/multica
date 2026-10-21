@@ -1,0 +1,1 @@
+ALTER TABLE artifact_edit_sessions DROP CONSTRAINT IF EXISTS artifact_edit_sessions_pkey;

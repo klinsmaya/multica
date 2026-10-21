@@ -1,4 +1,12 @@
 import type { ZodType } from "zod";
+import type {
+  ArtifactCommitResult,
+  ArtifactEditSession,
+  ArtifactList,
+  ArtifactPreview,
+  ArtifactRevisionList,
+  ArtifactSummary,
+} from "../types/artifact";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
 import { WorkspaceWakeupPageSchema, IssueWakeupSchema, IssueWakeupSummaryRowSchema, PausedWakeupSchema, SystemWakeupSchema, WakeupRunSchema, WorkspaceSystemWakeupSchema } from "./schemas";
@@ -254,6 +262,20 @@ import { type Logger, noopLogger } from "../logger";
 import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
+import {
+  ArtifactCommitResultSchema,
+  ArtifactEditSessionSchema,
+  ArtifactListSchema,
+  ArtifactPreviewSchema,
+  ArtifactRevisionListSchema,
+  ArtifactSummaryResponseSchema,
+  EMPTY_ARTIFACT_COMMIT,
+  EMPTY_ARTIFACT_EDIT_SESSION,
+  EMPTY_ARTIFACT_LIST,
+  EMPTY_ARTIFACT_PREVIEW,
+  EMPTY_ARTIFACT_REVISIONS,
+  EMPTY_ARTIFACT_SUMMARY,
+} from "./schemas";
 import {
   RuntimeProfileSchema,
   RuntimeProfileListSchema,
@@ -4045,6 +4067,163 @@ export class ApiClient {
     return res.blob();
   }
 
+  async listArtifacts(params: {
+    ownerScope: string;
+    ownerId: string;
+  }): Promise<ArtifactList> {
+    const search = new URLSearchParams({
+      owner_scope: params.ownerScope,
+      owner_id: params.ownerId,
+    });
+    const raw = await this.fetch<unknown>(`/api/artifacts?${search}`);
+    return parseWithFallback(raw, ArtifactListSchema, EMPTY_ARTIFACT_LIST, {
+      endpoint: "GET /api/artifacts",
+    });
+  }
+
+  async getArtifact(id: string): Promise<ArtifactSummary> {
+    const raw = await this.fetch<unknown>(`/api/artifacts/${encodeURIComponent(id)}`);
+    return parseWithFallback(raw, ArtifactSummaryResponseSchema, EMPTY_ARTIFACT_SUMMARY, {
+      endpoint: "GET /api/artifacts/{id}",
+    });
+  }
+
+  async listArtifactRevisions(id: string): Promise<ArtifactRevisionList> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifacts/${encodeURIComponent(id)}/revisions`,
+    );
+    return parseWithFallback(raw, ArtifactRevisionListSchema, EMPTY_ARTIFACT_REVISIONS, {
+      endpoint: "GET /api/artifacts/{id}/revisions",
+    });
+  }
+
+  async getArtifactPreview(artifactId: string, revisionId: string): Promise<ArtifactPreview> {
+    const raw = await this.fetch<unknown>(artifactRevisionPath(artifactId, revisionId, "preview"));
+    return parseWithFallback(raw, ArtifactPreviewSchema, EMPTY_ARTIFACT_PREVIEW, {
+      endpoint: "GET /api/artifacts/{id}/revisions/{rid}/preview",
+    });
+  }
+
+  async getArtifactStaticPreview(path: string): Promise<string> {
+    if (!path.startsWith("/api/artifacts/") || !path.endsWith("/static-preview") || path.includes("..")) {
+      throw new Error("invalid static preview path");
+    }
+    const res = await this.fetchRaw(path);
+    if (!res.ok) {
+      throw new Error("static preview failed");
+    }
+    return res.text();
+  }
+
+  async getArtifactOfficePreview(path: string): Promise<string> {
+    if (!path.startsWith("/api/artifacts/") || !path.endsWith("/office-preview") || path.includes("..")) {
+      throw new Error("invalid office preview path");
+    }
+    const res = await this.fetchRaw(path);
+    if (!res.ok) {
+      throw new Error("office preview failed");
+    }
+    return res.text();
+  }
+
+  async getArtifactRevisionText(artifactId: string, revisionId: string): Promise<string> {
+    const res = await this.fetchRaw(artifactRevisionPath(artifactId, revisionId, "content"));
+    return res.text();
+  }
+
+  async getArtifactRevisionBlob(artifactId: string, revisionId: string): Promise<Blob> {
+    const res = await this.fetchRaw(artifactRevisionPath(artifactId, revisionId, "content"));
+    return res.blob();
+  }
+
+  async createArtifactEditSession(artifactId: string): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifacts/${encodeURIComponent(artifactId)}/edit-sessions`,
+      { method: "POST" },
+    );
+    return parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+      endpoint: "POST /api/artifacts/{id}/edit-sessions",
+    });
+  }
+
+  async heartbeatArtifactEditSession(input: {
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+  }): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifact-edit-sessions/${encodeURIComponent(input.editSessionId)}/heartbeat`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lease_token: input.leaseToken,
+          fencing_token: input.fencingToken,
+        }),
+      },
+    );
+    return keepLeaseToken(
+      parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+        endpoint: "POST /api/artifact-edit-sessions/{id}/heartbeat",
+      }),
+      input.leaseToken,
+    );
+  }
+
+  async saveArtifactDraft(input: {
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+    content: string;
+  }): Promise<ArtifactEditSession> {
+    const raw = await this.fetch<unknown>(
+      `/api/artifact-edit-sessions/${encodeURIComponent(input.editSessionId)}/draft`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          lease_token: input.leaseToken,
+          fencing_token: input.fencingToken,
+          content: input.content,
+        }),
+      },
+    );
+    return keepLeaseToken(
+      parseWithFallback(raw, ArtifactEditSessionSchema, EMPTY_ARTIFACT_EDIT_SESSION, {
+        endpoint: "PUT /api/artifact-edit-sessions/{id}/draft",
+      }),
+      input.leaseToken,
+    );
+  }
+
+  // Formal save. The browser sets the multipart boundary. If-Match is the
+  // session base. The lease is not a second commit API.
+  async commitArtifactRevision(input: {
+    artifactId: string;
+    baseRevisionId: string;
+    filename: string;
+    content: BlobPart;
+    editSessionId: string;
+    leaseToken: string;
+    fencingToken: number;
+  }): Promise<ArtifactCommitResult> {
+    const form = new FormData();
+    form.append("base_revision_id", input.baseRevisionId);
+    form.append("edit_session_id", input.editSessionId);
+    form.append("fencing_token", String(input.fencingToken));
+    form.append("lease_token", input.leaseToken);
+    form.append("file", new Blob([input.content]), input.filename || "artifact.txt");
+    const res = await this.fetchRaw(
+      `/api/artifacts/${encodeURIComponent(input.artifactId)}/revisions`,
+      {
+        method: "POST",
+        body: form,
+        headers: { "If-Match": `"${input.baseRevisionId}"` },
+      },
+    );
+    return parseWithFallback(await res.json(), ArtifactCommitResultSchema, EMPTY_ARTIFACT_COMMIT, {
+      endpoint: "POST /api/artifacts/{id}/revisions",
+    });
+  }
+
   // Projects
   async listProjects(params?: { status?: string }): Promise<ListProjectsResponse> {
     const search = new URLSearchParams();
@@ -5395,4 +5574,17 @@ export class ApiClient {
       { endpoint: "POST /api/telegram/binding/redeem" },
     );
   }
+}
+
+function keepLeaseToken(session: ArtifactEditSession, token: string): ArtifactEditSession {
+  if (session.lease_token || token === "") return session;
+  return { ...session, lease_token: token };
+}
+
+function artifactRevisionPath(
+  artifactId: string,
+  revisionId: string,
+  leaf: "content" | "preview",
+): string {
+  return `/api/artifacts/${encodeURIComponent(artifactId)}/revisions/${encodeURIComponent(revisionId)}/${leaf}`;
 }

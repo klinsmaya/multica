@@ -22,6 +22,7 @@ export {
   COMPOSIO_MCP_APPS_FLAG,
   PLUGINS_V1_FLAG,
   PROJECT_WORKFLOWS_V1_FLAG,
+  ARTIFACTS_V1_FLAG,
 } from "./keys";
 export {
   FeatureFlagsProvider,

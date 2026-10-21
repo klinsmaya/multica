@@ -1484,6 +1484,26 @@
     "overview_empty": "Aucun livrable de ce type.",
     "group_comment_by": "Commentaire de {{name}}"
   },
+  "artifacts": {
+    "section_title": "Artefacts",
+    "revision": "v{{version}}",
+    "download": "Télécharger",
+    "preview_failed": "Aperçu indisponible pour ce fichier.",
+    "office_pending": "Préparation de l'aperçu en lecture seule.",
+    "office_failed": "Échec de l'aperçu.",
+    "edit": "Modifier",
+    "save_draft": "Enregistrer le brouillon",
+    "save_revision": "Enregistrer comme nouvelle version",
+    "draft_saved": "Brouillon enregistré",
+    "conflict": "Ce fichier a changé. Votre brouillon est toujours là.",
+    "read_only": "Lecture seule",
+    "lease_expired": "Le verrou d'édition a expiré. Ce fichier est en lecture seule.",
+    "docx_blocked": "Ce fichier reste en lecture seule. Les macros, commentaires et modifications suivies ne sont pas édités.",
+    "docx_dropped": "Enregistrement bloqué. Le nouveau fichier omettrait une partie de l'original.",
+    "local_candidate": "Fichier candidat local",
+    "local_candidate_hint": "Ce chemin ne peut pas être lu.",
+    "cancel": "Annuler"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "Tous les états, sans passage de relais",

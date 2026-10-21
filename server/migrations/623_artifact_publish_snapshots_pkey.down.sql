@@ -1,0 +1,1 @@
+ALTER TABLE artifact_publish_snapshots DROP CONSTRAINT IF EXISTS artifact_publish_snapshots_pkey;

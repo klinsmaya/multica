@@ -1434,6 +1434,26 @@
     "overview_empty": "没有这类产物。",
     "group_comment_by": "{{name}} 的评论"
   },
+  "artifacts": {
+    "section_title": "版本产物",
+    "revision": "v{{version}}",
+    "download": "下载",
+    "preview_failed": "这个文件暂时不能预览。",
+    "office_pending": "正在准备只读预览。",
+    "office_failed": "预览失败。",
+    "edit": "编辑",
+    "save_draft": "保存草稿",
+    "save_revision": "保存为新版本",
+    "draft_saved": "草稿已保存",
+    "conflict": "文件已有新版本。草稿还在。",
+    "read_only": "只读",
+    "lease_expired": "编辑锁已过期。现在只能查看。",
+    "docx_blocked": "此文件保持只读。宏、批注和修订不在这里编辑。",
+    "docx_dropped": "已阻止保存。新文件会丢掉原文件的一部分。",
+    "local_candidate": "本地候选文件",
+    "local_candidate_hint": "这个路径不能读取。",
+    "cancel": "取消"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "全部状态，不自动交接",

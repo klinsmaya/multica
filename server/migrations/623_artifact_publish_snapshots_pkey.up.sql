@@ -1,0 +1,1 @@
+ALTER TABLE artifact_publish_snapshots ADD CONSTRAINT artifact_publish_snapshots_pkey PRIMARY KEY USING INDEX artifact_publish_snapshots_pkey_uidx;

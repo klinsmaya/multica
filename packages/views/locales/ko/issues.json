@@ -1434,6 +1434,26 @@
     "overview_empty": "이 유형의 산출물이 없습니다.",
     "group_comment_by": "{{name}}의 댓글"
   },
+  "artifacts": {
+    "section_title": "아티팩트",
+    "revision": "v{{version}}",
+    "download": "다운로드",
+    "preview_failed": "이 파일은 미리 볼 수 없습니다.",
+    "office_pending": "읽기 전용 미리보기를 준비하는 중입니다.",
+    "office_failed": "미리보기에 실패했습니다.",
+    "edit": "편집",
+    "save_draft": "초안 저장",
+    "save_revision": "새 버전으로 저장",
+    "draft_saved": "초안을 저장했습니다",
+    "conflict": "파일이 바뀌었습니다. 초안은 그대로입니다.",
+    "read_only": "읽기 전용",
+    "lease_expired": "편집 잠금이 만료되었습니다. 지금은 읽기만 됩니다.",
+    "docx_blocked": "이 파일은 읽기 전용입니다. 매크로, 메모, 변경 내용은 편집하지 않습니다.",
+    "docx_dropped": "저장을 막았습니다. 새 파일에 원본의 일부가 없습니다.",
+    "local_candidate": "로컬 후보 파일",
+    "local_candidate_hint": "이 경로는 읽을 수 없습니다.",
+    "cancel": "취소"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "모든 상태, 인계 없음",

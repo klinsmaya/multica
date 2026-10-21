@@ -1434,6 +1434,26 @@
     "overview_empty": "この種類の成果物はありません。",
     "group_comment_by": "{{name}} のコメント"
   },
+  "artifacts": {
+    "section_title": "アーティファクト",
+    "revision": "v{{version}}",
+    "download": "ダウンロード",
+    "preview_failed": "このファイルはプレビューできません。",
+    "office_pending": "読み取り専用プレビューを準備しています。",
+    "office_failed": "プレビューに失敗しました。",
+    "edit": "編集",
+    "save_draft": "下書きを保存",
+    "save_revision": "新しい版として保存",
+    "draft_saved": "下書きを保存しました",
+    "conflict": "ファイルが更新されました。下書きは残っています。",
+    "read_only": "読み取り専用",
+    "lease_expired": "編集ロックの期限が切れました。今は閲覧のみです。",
+    "docx_blocked": "このファイルは読み取り専用のままです。マクロ、コメント、変更履歴は編集しません。",
+    "docx_dropped": "保存を止めました。新しいファイルは元の一部を欠きます。",
+    "local_candidate": "ローカル候補ファイル",
+    "local_candidate_hint": "このパスは読み取れません。",
+    "cancel": "キャンセル"
+  },
   "workflows": {
     "default_name": "Default",
     "default_summary": "すべてのステータス、引き継ぎなし",

@@ -10,6 +10,12 @@ import type {
   AgentBuilderSession,
   AgentBuilderSessionSummary,
   Attachment,
+  ArtifactCommitResult,
+  ArtifactEditSession,
+  ArtifactList,
+  ArtifactPreview,
+  ArtifactRevisionList,
+  ArtifactSummary,
   AutopilotRun,
   BillingBalance,
   BillingBatchesPage,
@@ -3826,3 +3832,146 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+const ArtifactSummarySchema = z
+  .object({
+    id: z.string(),
+    workspace_id: z.string().catch(""),
+    owner_scope: z.string().catch(""),
+    owner_id: z.string().catch(""),
+    title: z.string().catch(""),
+    kind: z.string().catch("file"),
+    status: z.string().catch("active"),
+    head_revision_id: z.string().nullish().catch(undefined),
+    revision_no: z.number().nullish().catch(undefined),
+    media_type: z.string().nullish().catch(undefined),
+    filename: z.string().nullish().catch(undefined),
+    size_bytes: z.number().nullish().catch(undefined),
+    updated_by: z.string().nullish().catch(undefined),
+    created_at: z.string().catch(""),
+    updated_at: z.string().catch(""),
+    row_version: z.number().catch(0),
+  })
+  .loose();
+
+export const ArtifactListSchema = z
+  .object({
+    artifacts: z.array(ArtifactSummarySchema).catch([]),
+  })
+  .loose();
+
+export const ArtifactSummaryResponseSchema = ArtifactSummarySchema;
+
+const ArtifactRevisionSchema = z
+  .object({
+    id: z.string(),
+    artifact_id: z.string().catch(""),
+    revision_no: z.number().catch(0),
+    media_type: z.string().catch(""),
+    filename: z.string().catch(""),
+    size_bytes: z.number().catch(0),
+    source: z.string().catch(""),
+    actor_id: z.string().catch(""),
+    created_at: z.string().catch(""),
+  })
+  .loose();
+
+export const ArtifactRevisionListSchema = z
+  .object({
+    revisions: z.array(ArtifactRevisionSchema).catch([]),
+  })
+  .loose();
+
+export const ArtifactPreviewSchema = z
+  .object({
+    artifact_id: z.string().catch(""),
+    revision_id: z.string().catch(""),
+    filename: z.string().catch(""),
+    media_type: z.string().catch(""),
+    size_bytes: z.number().catch(0),
+    revision_no: z.number().catch(0),
+    preview_kind: z.string().catch("download"),
+    content_path: z.string().catch(""),
+    content_disposition: z.string().catch("attachment"),
+    static_preview_path: z.string().optional().catch(""),
+    office_status: z.string().optional().catch(""),
+    office_error: z.string().optional().catch(""),
+    office_preview_path: z.string().optional().catch(""),
+    page_count: z.number().optional().catch(0),
+    sheet_names: z.array(z.string()).optional().catch([]),
+    slide_count: z.number().optional().catch(0),
+    active_content: z.boolean().catch(false),
+  })
+  .loose();
+
+export const EMPTY_ARTIFACT_LIST: ArtifactList = { artifacts: [] };
+export const EMPTY_ARTIFACT_SUMMARY: ArtifactSummary = {
+  id: "",
+  workspace_id: "",
+  owner_scope: "",
+  owner_id: "",
+  title: "",
+  kind: "file",
+  status: "active",
+  created_at: "",
+  updated_at: "",
+  row_version: 0,
+};
+export const EMPTY_ARTIFACT_REVISIONS: ArtifactRevisionList = { revisions: [] };
+export const EMPTY_ARTIFACT_PREVIEW: ArtifactPreview = {
+  artifact_id: "",
+  revision_id: "",
+  filename: "",
+  media_type: "",
+  size_bytes: 0,
+  revision_no: 0,
+  preview_kind: "download",
+  content_path: "",
+  content_disposition: "attachment",
+  active_content: false,
+};
+
+export const ArtifactEditSessionSchema = z
+  .object({
+    edit_session_id: z.string().catch(""),
+    artifact_id: z.string().catch(""),
+    base_revision_id: z.string().catch(""),
+    fencing_token: z.number().catch(0),
+    lease_token: z.string().nullish().catch(undefined),
+    lease_expires_at: z.string().catch(""),
+    editor_type: z.string().catch(""),
+    state: z.string().catch(""),
+    editable: z.boolean().catch(false),
+    draft_content: z.string().nullish().catch(undefined),
+  })
+  .loose();
+
+export const ArtifactCommitResultSchema = z
+  .object({
+    artifact_id: z.string().catch(""),
+    revision_id: z.string().catch(""),
+    operation_id: z.string().catch(""),
+    state: z.string().catch(""),
+    title: z.string().nullish().catch(undefined),
+    filename: z.string().nullish().catch(undefined),
+    revision_no: z.number().nullish().catch(undefined),
+  })
+  .loose();
+
+export const EMPTY_ARTIFACT_EDIT_SESSION: ArtifactEditSession = {
+  edit_session_id: "",
+  artifact_id: "",
+  base_revision_id: "",
+  fencing_token: 0,
+  lease_expires_at: "",
+  editor_type: "",
+  state: "",
+  editable: false,
+};
+
+export const EMPTY_ARTIFACT_COMMIT: ArtifactCommitResult = {
+  artifact_id: "",
+  revision_id: "",
+  operation_id: "",
+  state: "",
+};
