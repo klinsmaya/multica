@@ -7,6 +7,7 @@ import { ApiError, type ApiClient } from "../api/client";
 import type {
   Issue,
   IssueTableRowsRequest,
+  IssueThreadSummary,
   IssueTableRowsResponse,
   ListIssuesCache,
   ListIssuesParams,
@@ -18,17 +19,26 @@ import {
   ISSUE_PAGE_SIZE,
   PROJECT_GANTT_MAX_ISSUES,
   PROJECT_GANTT_PAGE_LIMIT,
+  THREAD_SUMMARIES_CHUNK_SIZE,
   childrenByParentsOptions,
   childIssuesOptions,
+  findIssueInListCache,
   flattenIssueBuckets,
   issueIdentifierOptions,
   issueKeys,
   issueListOptions,
   issueTableRowPageOptions,
+  issueTimelineInfiniteOptions,
+  issueTimelineOptions,
   projectGanttIssuesOptions,
   sourceContextPreviewOptions,
+  threadSummariesOptions,
+  childIssueProgressOptions,
+  childIssueProgressForParentsOptions,
+  CHILD_PROGRESS_PARENTS_CHUNK_SIZE,
 } from "./queries";
 import { onIssueUpdated } from "./ws-updaters";
+import { TIMELINE_PAGE_SIZE } from "./timeline-pages";
 
 const WS_ID = "ws-1";
 const PROJECT_ID = "project-1";
@@ -88,7 +98,10 @@ function installFakeChildrenApi(
 }
 
 function installFakeChildApi(
-  listChildIssues: (parentId: string) => Promise<{ issues: Issue[] }>,
+  listChildIssues: (
+    parentId: string,
+    page?: { limit: number; offset: number },
+  ) => Promise<{ issues: Issue[] }>,
 ) {
   setApiInstance({ listChildIssues } as unknown as ApiClient);
 }
@@ -100,32 +113,54 @@ function installFakeIssueApi(
 }
 
 describe("childIssuesOptions", () => {
-  it("refetches a cached snapshot when the parent issue is opened again", async () => {
+  it("fetches the full list without a page and keeps it apart from page caches", async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
     const parentId = "parent-1";
-    const oldChild = makeIssue(1, { parent_issue_id: parentId });
-    const newChild = makeIssue(2, { parent_issue_id: parentId });
-    const listChildIssues = vi.fn().mockResolvedValue({
-      issues: [oldChild, newChild],
-    });
+    const child = makeIssue(1, { parent_issue_id: parentId });
+    const listChildIssues = vi.fn().mockResolvedValue({ issues: [child] });
     installFakeChildApi(listChildIssues);
-    qc.setQueryData(issueKeys.children(WS_ID, parentId), [oldChild]);
 
-    const observer = new QueryObserver(
-      qc,
-      childIssuesOptions(WS_ID, parentId),
-    );
-    const unsubscribe = observer.subscribe(() => {});
+    await qc.fetchQuery(childIssuesOptions(WS_ID, parentId));
 
-    await vi.waitFor(() => {
-      expect(listChildIssues).toHaveBeenCalledWith(parentId);
-      expect(observer.getCurrentResult().data).toEqual([oldChild, newChild]);
+    expect(listChildIssues).toHaveBeenCalledWith(parentId);
+    expect(qc.getQueryData(issueKeys.children(WS_ID, parentId))).toEqual([child]);
+    expect(
+      qc.getQueryData(issueKeys.childrenPage(WS_ID, parentId, { limit: 50, offset: 0 })),
+    ).toBeUndefined();
+  });
+
+  it("fetches one page under its own key without touching the full-list cache", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
+    const parentId = "parent-1";
+    const page = { limit: 50, offset: 50 };
+    const child = makeIssue(51, { parent_issue_id: parentId });
+    const listChildIssues = vi.fn().mockResolvedValue({ issues: [child] });
+    installFakeChildApi(listChildIssues);
 
-    unsubscribe();
-    qc.clear();
+    await qc.fetchQuery(childIssuesOptions(WS_ID, parentId, page));
+
+    expect(listChildIssues).toHaveBeenCalledWith(parentId, page);
+    expect(qc.getQueryData(issueKeys.childrenPage(WS_ID, parentId, page))).toEqual([child]);
+    expect(qc.getQueryData(issueKeys.children(WS_ID, parentId))).toBeUndefined();
+  });
+
+  it("is invalidated together with the full list by the per-parent children key", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const parentId = "parent-1";
+    const page = { limit: 50, offset: 0 };
+    qc.setQueryData(issueKeys.childrenPage(WS_ID, parentId, page), []);
+
+    await qc.invalidateQueries({ queryKey: issueKeys.children(WS_ID, parentId) });
+
+    expect(
+      qc.getQueryState(issueKeys.childrenPage(WS_ID, parentId, page))?.isInvalidated,
+    ).toBe(true);
   });
 });
 
@@ -693,5 +728,270 @@ describe("issueIdentifierOptions", () => {
       "identifier",
       "MUL-7",
     ]);
+  });
+});
+
+describe("findIssueInListCache", () => {
+  const todoIssue = makeIssue(1, { status: "todo", status_category: "unstarted" });
+  const startedIssue = makeIssue(2, { status: "in_progress", status_category: "started" });
+
+  it("finds an issue in a cached sorted-list entry", async () => {
+    const qc = new QueryClient();
+    const listIssues = vi
+      .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
+      .mockResolvedValue({ issues: [todoIssue, startedIssue], total: 2 });
+    installFakeApi(listIssues);
+    await qc.fetchQuery(issueListOptions(WS_ID, { sort_by: "position" }));
+    listIssues.mockClear();
+
+    expect(findIssueInListCache(qc, WS_ID, startedIssue.id)).toEqual(startedIssue);
+    expect(listIssues).not.toHaveBeenCalled();
+    qc.clear();
+  });
+
+  it("returns undefined without fetching when the issue is not cached", () => {
+    const qc = new QueryClient();
+    const listIssues = vi.fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>();
+    installFakeApi(listIssues);
+    qc.setQueryData<ListIssuesCache>(issueKeys.listSorted(WS_ID), {
+      byStatus: { unstarted: { issues: [todoIssue], total: 1 } },
+    });
+
+    expect(findIssueInListCache(qc, WS_ID, "missing")).toBeUndefined();
+    expect(findIssueInListCache(qc, "ws-other", todoIssue.id)).toBeUndefined();
+    expect(findIssueInListCache(new QueryClient(), WS_ID, todoIssue.id)).toBeUndefined();
+    expect(listIssues).not.toHaveBeenCalled();
+    qc.clear();
+  });
+});
+
+describe("threadSummariesOptions", () => {
+  let qc: QueryClient;
+
+  function installFakeThreadApi(
+    listThreadSummaries: (ids: string[]) => Promise<{ summaries: IssueThreadSummary[] }>,
+  ) {
+    setApiInstance({ listThreadSummaries } as unknown as ApiClient);
+  }
+
+  function summary(issueId: string, replyCount = 2): IssueThreadSummary {
+    return {
+      issue_id: issueId,
+      reply_count: replyCount,
+      last_reply_at: null,
+      last_reply_excerpt: null,
+      open_thread_count: 0,
+      participants: [],
+      last_read_at: null,
+      awaiting_me: [],
+      latest_progress: null,
+      pull_requests: [],
+      deliverable_count: 0,
+      last_deliverable_at: null,
+    };
+  }
+
+  beforeEach(() => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  afterEach(() => {
+    qc.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("chunks ids at the server cap and fetches the chunks in parallel", async () => {
+    const ids = Array.from(
+      { length: THREAD_SUMMARIES_CHUNK_SIZE * 2 + 5 },
+      (_, i) => `i-${String(i).padStart(4, "0")}`,
+    );
+    const calls: string[][] = [];
+    installFakeThreadApi(async (chunk) => {
+      calls.push(chunk);
+      return { summaries: [] };
+    });
+
+    await qc.fetchQuery(threadSummariesOptions(WS_ID, ids));
+
+    expect(calls.map((c) => c.length)).toEqual([100, 100, 5]);
+    expect(calls.flat()).toEqual(ids);
+  });
+
+  it("sorts and dedupes ids so the cache key is stable", async () => {
+    const listThreadSummaries = vi
+      .fn<(ids: string[]) => Promise<{ summaries: IssueThreadSummary[] }>>()
+      .mockResolvedValue({ summaries: [] });
+    installFakeThreadApi(listThreadSummaries);
+
+    await qc.fetchQuery(threadSummariesOptions(WS_ID, ["b", "a", "b"]));
+
+    expect(listThreadSummaries).toHaveBeenCalledWith(["a", "b"]);
+    expect(threadSummariesOptions(WS_ID, ["b", "a"]).queryKey).toEqual(
+      threadSummariesOptions(WS_ID, ["a", "b", "a"]).queryKey,
+    );
+  });
+
+  it("selects a map keyed by issue id and leaves rows-less ids absent", async () => {
+    installFakeThreadApi(async () => ({ summaries: [summary("a", 3)] }));
+
+    const observer = new QueryObserver(qc, threadSummariesOptions(WS_ID, ["a", "b"]));
+    const result = await observer.refetch();
+    const map = result.data!;
+
+    expect(map.get("a")?.reply_count).toBe(3);
+    expect(map.has("b")).toBe(false);
+  });
+
+  it("is disabled when there are no ids", () => {
+    expect(threadSummariesOptions(WS_ID, []).enabled).toBe(false);
+  });
+});
+
+describe("childIssueProgressForParentsOptions", () => {
+  let qc: QueryClient;
+
+  type ProgressResponse = {
+    progress: { parent_issue_id: string; total: number; done: number }[];
+  };
+
+  function installFakeProgressApi(
+    getChildIssueProgress: (ids?: string[]) => Promise<ProgressResponse>,
+  ) {
+    setApiInstance({ getChildIssueProgress } as unknown as ApiClient);
+  }
+
+  beforeEach(() => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  afterEach(() => {
+    qc.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("nests its key under the workspace-wide prefix so existing invalidations reach it", async () => {
+    installFakeProgressApi(async () => ({ progress: [] }));
+    await qc.fetchQuery(childIssueProgressForParentsOptions(WS_ID, ["a"]));
+
+    const key = childIssueProgressForParentsOptions(WS_ID, ["a"]).queryKey;
+    expect(key.slice(0, issueKeys.childProgress(WS_ID).length)).toEqual(
+      issueKeys.childProgress(WS_ID),
+    );
+
+    await qc.invalidateQueries({ queryKey: issueKeys.childProgress(WS_ID) });
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it("does not share a cache entry with the workspace-wide query", () => {
+    expect(childIssueProgressForParentsOptions(WS_ID, ["a"]).queryKey).not.toEqual(
+      childIssueProgressOptions(WS_ID).queryKey,
+    );
+  });
+
+  it("sorts and dedupes ids so the cache key is stable", async () => {
+    const getChildIssueProgress = vi
+      .fn<(ids?: string[]) => Promise<ProgressResponse>>()
+      .mockResolvedValue({ progress: [] });
+    installFakeProgressApi(getChildIssueProgress);
+
+    await qc.fetchQuery(childIssueProgressForParentsOptions(WS_ID, ["b", "a", "b"]));
+
+    expect(getChildIssueProgress).toHaveBeenCalledWith(["a", "b"]);
+    expect(childIssueProgressForParentsOptions(WS_ID, ["b", "a"]).queryKey).toEqual(
+      childIssueProgressForParentsOptions(WS_ID, ["a", "b", "a"]).queryKey,
+    );
+  });
+
+  it("chunks ids at the server cap and merges the chunks", async () => {
+    const ids = Array.from(
+      { length: CHILD_PROGRESS_PARENTS_CHUNK_SIZE * 2 + 5 },
+      (_, i) => `p-${String(i).padStart(4, "0")}`,
+    );
+    const calls: string[][] = [];
+    installFakeProgressApi(async (chunk) => {
+      calls.push(chunk ?? []);
+      return {
+        progress: (chunk ?? []).map((id) => ({ parent_issue_id: id, total: 2, done: 1 })),
+      };
+    });
+
+    const observer = new QueryObserver(qc, childIssueProgressForParentsOptions(WS_ID, ids));
+    const result = await observer.refetch();
+
+    expect(calls.map((c) => c.length)).toEqual([100, 100, 5]);
+    expect(calls.flat()).toEqual(ids);
+    expect(result.data!.size).toBe(ids.length);
+  });
+
+  it("selects the same map shape as the workspace-wide query", async () => {
+    installFakeProgressApi(async () => ({
+      progress: [{ parent_issue_id: "a", total: 3, done: 2 }],
+    }));
+
+    const observer = new QueryObserver(qc, childIssueProgressForParentsOptions(WS_ID, ["a", "b"]));
+    const map = (await observer.refetch()).data!;
+
+    expect(map.get("a")).toEqual({ done: 2, total: 3 });
+    expect(map.has("b")).toBe(false);
+  });
+
+  it("is disabled when there are no ids", () => {
+    expect(childIssueProgressForParentsOptions(WS_ID, []).enabled).toBe(false);
+  });
+});
+
+describe("issueTimelineInfiniteOptions", () => {
+  function timelinePage(overrides: Record<string, unknown> = {}) {
+    return {
+      entries: [],
+      has_more_before: false,
+      has_more_after: false,
+      next_before: null,
+      next_before_id: null,
+      ...overrides,
+    };
+  }
+
+  it("lives under the issue's timeline prefix but apart from the unpaged cache", () => {
+    const paged = issueTimelineInfiniteOptions("issue-1").queryKey;
+    const unpaged = issueTimelineOptions("issue-1").queryKey;
+    expect(paged.slice(0, unpaged.length)).toEqual([...unpaged]);
+    expect(paged).not.toEqual(unpaged);
+  });
+
+  it("loads the newest page first, then walks older pages by cursor", async () => {
+    const listTimeline = vi
+      .fn()
+      .mockResolvedValueOnce(
+        timelinePage({ has_more_before: true, next_before: "2026-01-01T00:00:00.5Z", next_before_id: "root-9" }),
+      )
+      .mockResolvedValueOnce(timelinePage());
+    setApiInstance({ listTimeline } as unknown as ApiClient);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const options = issueTimelineInfiniteOptions("issue-1");
+
+    const data = await qc.fetchInfiniteQuery({ ...options, pages: 2 });
+    expect(listTimeline).toHaveBeenNthCalledWith(1, "issue-1", { limit: TIMELINE_PAGE_SIZE });
+    expect(listTimeline).toHaveBeenNthCalledWith(2, "issue-1", {
+      limit: TIMELINE_PAGE_SIZE,
+      before: "2026-01-01T00:00:00.5Z",
+      beforeId: "root-9",
+    });
+    expect(data.pages).toHaveLength(2);
+    qc.clear();
+  });
+
+  it("stops at a page without a usable cursor", async () => {
+    const listTimeline = vi
+      .fn()
+      // has_more_before without a cursor: a server that cannot be walked.
+      .mockResolvedValue(timelinePage({ has_more_before: true }));
+    setApiInstance({ listTimeline } as unknown as ApiClient);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const data = await qc.fetchInfiniteQuery({ ...issueTimelineInfiniteOptions("issue-1"), pages: 3 });
+    expect(data.pages).toHaveLength(1);
+    expect(listTimeline).toHaveBeenCalledTimes(1);
+    qc.clear();
   });
 });

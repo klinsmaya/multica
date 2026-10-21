@@ -24,6 +24,77 @@ SELECT * FROM (
 ) AS recent
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListCommentRootsForIssueBefore :many
+-- Top-level comments (parent_id IS NULL) of an issue, newest first, strictly
+-- older than the (@before_at, @before_id) cursor when @has_cursor is TRUE.
+--
+-- Powers the root-paged timeline: a page is a set of whole threads, so the page
+-- boundary can never split a reply thread (the reason time-based paging was
+-- removed earlier). Tombstoned roots (deleted_at set) stay in the page like
+-- ListCommentsForIssue returns them, because their replies still render under
+-- them. Callers pass limit + 1 to probe for an older page.
+SELECT * FROM comment
+WHERE issue_id = @issue_id
+  AND workspace_id = @workspace_id
+  AND parent_id IS NULL
+  AND (
+      @has_cursor::boolean = FALSE
+      OR (created_at, id) < (@before_at::timestamptz, @before_id::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT @row_limit;
+
+-- name: ListCommentRepliesForRoots :many
+-- Every descendant of the given root comments, at any reply depth, each labelled
+-- with its thread root. Roots themselves are not returned.
+--
+-- Rows come back grouped by root in the same order the roots page uses
+-- ((created_at, id) DESC) and chronologically inside a root, so a LIMIT cuts
+-- through at most one thread and a chronological prefix of a thread is closed
+-- under "parent of" (a reply is never older than its parent). The caller probes
+-- with limit + 1 and drops the trailing partial thread.
+--
+-- Both tenant predicates apply at every level of the walk, and @root_ids only
+-- matches top-level comments of this issue, so an id from elsewhere expands to
+-- nothing.
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id, c.created_at AS root_created_at
+    FROM comment c
+    WHERE c.id = ANY(@root_ids::uuid[])
+      AND c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+      AND c.parent_id IS NULL
+),
+membership(id, root_id, root_created_at) AS (
+    SELECT c.id, r.root_id, r.root_created_at
+    FROM comment c
+    JOIN roots r ON c.parent_id = r.root_id
+    WHERE c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+    UNION ALL
+    SELECT c.id, m.root_id, m.root_created_at
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+)
+SELECT sqlc.embed(c), m.root_id
+FROM membership m
+JOIN comment c ON c.id = m.id
+ORDER BY m.root_created_at DESC, m.root_id DESC, c.created_at ASC, c.id ASC
+LIMIT @row_limit;
+
+-- name: ExistsCommentRootAfterForIssue :one
+-- Whether the issue has a top-level comment strictly newer than the
+-- (@after_at, @after_id) pair. Backs has_more_after on an `around` timeline page.
+SELECT EXISTS (
+    SELECT 1 FROM comment
+    WHERE issue_id = @issue_id
+      AND workspace_id = @workspace_id
+      AND parent_id IS NULL
+      AND (created_at, id) > (@after_at::timestamptz, @after_id::uuid)
+);
+
 -- name: ListCommentsByIDsForIssue :many
 -- The subset of @ids that exists within this issue and workspace.
 --
@@ -879,3 +950,242 @@ FROM comment c
 JOIN ancestor_ids path ON path.id = c.id
 ORDER BY c.id
 FOR UPDATE OF c;
+
+-- name: ListIssueThreadSummaries :many
+-- Per-issue comment rollup for the project feed. System rows (platform
+-- notices) and soft-deleted comments are not conversation, so they are not
+-- counted. A thread is open when its root comment is unresolved. The newest
+-- counted comment's body is returned (capped) for the caller to flatten into
+-- a one-line excerpt.
+SELECT s.issue_id,
+       s.reply_count,
+       s.last_reply_at,
+       s.open_thread_count,
+       l.content AS last_reply_content
+FROM (
+    SELECT cm.issue_id,
+           COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at)::timestamptz AS last_reply_at,
+           COUNT(*) FILTER (WHERE cm.parent_id IS NULL AND cm.resolved_at IS NULL)::bigint AS open_thread_count
+    FROM comment cm
+    WHERE cm.workspace_id = sqlc.arg('workspace_id')
+      AND cm.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+    GROUP BY cm.issue_id
+) s
+CROSS JOIN LATERAL (
+    SELECT LEFT(c.content, 2000)::text AS content
+    FROM comment c
+    WHERE c.issue_id = s.issue_id
+      AND c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY c.created_at DESC, c.id DESC
+    LIMIT 1
+) l;
+
+-- name: ListIssueThreadParticipants :many
+-- Distinct commenters per issue, most recently active first; the caller keeps
+-- the first few per issue.
+SELECT issue_id, author_type, author_id, MAX(created_at)::timestamptz AS last_at
+FROM comment
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+  AND deleted_at IS NULL
+  AND author_type <> 'system'
+GROUP BY issue_id, author_type, author_id
+ORDER BY issue_id, last_at DESC;
+
+-- name: ListIssueThreadPullRequests :many
+-- The newest linked GitHub PRs for a batch of issues, at most pr_limit per
+-- issue, for the project feed's output strip. Same snapshot and check-run
+-- aggregation as ListPullRequestsByIssue (current snapshot head only), but
+-- narrowed to the ranked PR ids first so check rows are read for those PRs
+-- alone. Rows arrive ordered by issue, then newest PR first.
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_pull_request ipr
+    JOIN github_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND i.workspace_id = sqlc.arg('workspace_id')
+      AND pr.workspace_id = sqlc.arg('workspace_id')
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= sqlc.arg('pr_limit')::int
+),
+checks AS (
+    SELECT
+        cr.pr_id,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('failure','cancelled','timed_out','action_required','startup_failure','stale','error')
+            THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('success','neutral','skipped')
+            THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cr.status <> 'completed' OR cr.conclusion IS NULL
+            THEN 1 ELSE 0 END)::bigint AS running
+    FROM github_pull_request_check_run cr
+    JOIN github_pull_request pr ON pr.id = cr.pr_id
+    WHERE cr.pr_id IN (SELECT pr_id FROM top)
+      AND pr.snapshot_head_sha <> ''
+      AND cr.head_sha = pr.snapshot_head_sha
+    GROUP BY cr.pr_id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    pr.head_sha, pr.snapshot_head_sha, pr.snapshot_fetched_at, pr.checks_rollup_state,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.running, 0)::bigint AS checks_running
+FROM top
+JOIN github_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC;
+
+-- name: ListIssueThreadVCSPullRequests :many
+-- ListIssueThreadPullRequests for token-based providers (Forgejo / Gitea /
+-- GitLab): commit statuses for the PR's current head sha, folded into
+-- passed/failed/pending counts like ListVCSPullRequestsByIssue.
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_vcs_pull_request ipr
+    JOIN vcs_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND i.workspace_id = sqlc.arg('workspace_id')
+      AND pr.workspace_id = sqlc.arg('workspace_id')
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= sqlc.arg('pr_limit')::int
+),
+checks AS (
+    SELECT
+        pr.id AS pr_id,
+        COUNT(*)::bigint AS total,
+        SUM(CASE WHEN cs.state = 'failed'  THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cs.state = 'passed'  THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cs.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
+    FROM vcs_pull_request pr
+    JOIN vcs_commit_status cs
+        ON cs.connection_id = pr.connection_id
+       AND cs.sha = pr.head_sha
+    WHERE pr.id IN (SELECT pr_id FROM top)
+      AND pr.head_sha <> ''
+    GROUP BY pr.id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    COALESCE(c.total, 0)::bigint   AS checks_total,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.pending, 0)::bigint AS checks_pending
+FROM top
+JOIN vcs_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC;
+
+-- name: ListIssueDeliverableSummaries :many
+-- Per-issue deliverable rollup for the project feed's output strip. A
+-- deliverable is a file uploaded in a live comment; description attachments
+-- are inputs, not output. Uploads with the same media type (parameters
+-- dropped, case-insensitive) and filename are versions of ONE file, so each
+-- group counts once and the group's newest upload dates it. This is the SQL
+-- twin of deliverableKey / collectDeliverableFiles in
+-- packages/core/attachments/deliverables.ts.
+WITH files AS (
+    SELECT c.issue_id,
+           lower(btrim(split_part(a.content_type, ';', 1))) AS media_type,
+           btrim(a.filename) AS file_name,
+           MAX(a.created_at) AS latest_at
+    FROM attachment a
+    JOIN comment c ON c.id = a.comment_id
+    WHERE c.workspace_id = sqlc.arg('workspace_id')
+      AND a.workspace_id = sqlc.arg('workspace_id')
+      AND c.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND c.deleted_at IS NULL
+    GROUP BY c.issue_id, 2, 3
+)
+SELECT issue_id,
+       COUNT(*)::bigint AS deliverable_count,
+       MAX(latest_at)::timestamptz AS last_deliverable_at
+FROM files
+GROUP BY issue_id;
+
+-- name: ListAgentQuestionsForIssues :many
+-- Threads whose latest word is an agent @-mentioning the caller: the reader's
+-- turn to answer. A thread is a top-level comment plus every descendant (same
+-- notion of root as ListCommentRepliesForRoots); only unresolved, non-deleted
+-- roots qualify. The latest comment is picked by (created_at, id) among
+-- non-deleted, non-system rows, so a deleted tail hands the decision back to the
+-- comment before it and platform notices never mask a pending question.
+--
+-- The mention test runs only on one row per thread, after the latest comment is
+-- chosen. Mentions serialize as [@Label](mention://member/<user-id>); ILIKE
+-- tolerates an upper-case UUID written by an agent.
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id
+    FROM comment c
+    WHERE c.workspace_id = sqlc.arg('workspace_id')
+      AND c.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND c.parent_id IS NULL
+      AND c.resolved_at IS NULL
+      AND c.deleted_at IS NULL
+),
+membership(id, root_id) AS (
+    SELECT r.root_id, r.root_id
+    FROM roots r
+    UNION ALL
+    SELECT c.id, m.root_id
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.workspace_id = sqlc.arg('workspace_id')
+      AND c.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+),
+latest AS (
+    SELECT DISTINCT ON (m.root_id)
+           c.id, c.issue_id, c.author_type, c.author_id, c.content, c.created_at
+    FROM membership m
+    JOIN comment c ON c.id = m.id
+    WHERE c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY m.root_id, c.created_at DESC, c.id DESC
+)
+SELECT l.issue_id,
+       l.id AS comment_id,
+       l.author_id,
+       l.content,
+       l.created_at
+FROM latest l
+WHERE l.author_type = 'agent'
+  AND l.content ILIKE '%](mention://member/' || sqlc.arg('caller_id')::uuid::text || ')%'
+ORDER BY l.issue_id, l.created_at DESC, l.id DESC;
+
+-- name: ListLatestProgressCommentsForIssues :many
+-- The newest agent progress report per issue: a non-deleted progress_update
+-- comment whose body holds a Markdown task list (a "- [ ]" / "- [x]" item,
+-- any bullet marker and indentation). Reports without a checklist are not
+-- progress the feed can render, so they never shadow an older checklist.
+SELECT DISTINCT ON (issue_id) issue_id, id AS comment_id, content, created_at
+FROM comment
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+  AND deleted_at IS NULL
+  AND type = 'progress_update'
+  AND author_type = 'agent'
+  AND content ~ '(^|\n)[ \t]*[-*+][ \t]+\[[ xX]\]'
+ORDER BY issue_id, created_at DESC, id DESC;

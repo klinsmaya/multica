@@ -23,6 +23,7 @@ import type { ApiClient } from "../api/client";
 import type { IssueTableQuerySpec } from "../types";
 import { getCurrentWsId } from "../platform/workspace-storage";
 import { forgetLocalSearchIndex } from "../search-index/instance";
+import { projectPullRequestKeys } from "../projects/queries";
 import { useRealtimeSync, type RealtimeSyncStores } from "./use-realtime-sync";
 
 vi.mock("../search-index/instance", () => ({
@@ -187,6 +188,24 @@ describe("useRealtimeSync — ws instance change", () => {
 
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: issueWorkflowKeys.all("ws-1") });
       expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: issueWorkflowKeys.all("ws-2") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("invalidates every project PR list after pull_request:updated", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = createMockWs();
+      renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+      const onAny = vi.mocked(ws.onAny).mock.calls[0]![0];
+      invalidateSpy.mockClear();
+
+      onAny({ type: "pull_request:updated", payload: {} } as never);
+      vi.advanceTimersByTime(100);
+
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: projectPullRequestKeys.all("ws-1") });
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: projectPullRequestKeys.all("ws-2") });
     } finally {
       vi.useRealTimers();
     }

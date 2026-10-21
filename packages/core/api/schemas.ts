@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { normalizeIssueStatusCategory } from "../issues/config/status";
 import type {
+  ListProjectAttachmentsResponse,
+  ProjectLibraryIssue,
+} from "../types/project-library";
+import type {
   WorkflowHandoffPreview,
   IssueWorkflow,
   IssueWorkflowDryRunResponse,
@@ -52,6 +56,7 @@ import type {
   GroupedIssuesResponse,
   GitHubConnectResponse,
   IssuePullRequestsResponse,
+  ProjectPullRequestsResponse,
   InboxItem,
   InboxWorkspaceUnread,
   Label,
@@ -90,6 +95,7 @@ import type {
   SkillSummary,
   Squad,
   TimelineEntry,
+  TimelinePage,
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
@@ -452,6 +458,45 @@ export const IssuePullRequestsResponseSchema = z.object({
 export const EMPTY_ISSUE_PULL_REQUESTS_RESPONSE: IssuePullRequestsResponse = {
   pull_requests: [],
   auto_complete: null,
+};
+
+// Project pull-requests tab (GET /api/projects/:id/pull-requests): the issue PR
+// row plus the project issues it is linked to. `counts` carries every group's
+// size whatever `state` was requested, so collapsed groups can show a count
+// without being fetched.
+export const ProjectPullRequestSchema = GitHubPullRequestSchema.extend({
+  issues: z
+    .array(
+      z
+        .object({
+          id: z.string(),
+          identifier: z.string().optional().default(""),
+          title: z.string().optional().default(""),
+        })
+        .loose(),
+    )
+    .optional()
+    .default([]),
+});
+
+export const ProjectPullRequestsResponseSchema = z.object({
+  pull_requests: z.array(ProjectPullRequestSchema).default([]),
+  total: z.number().optional().default(0),
+  counts: z
+    .object({
+      open: z.number().optional().default(0),
+      merged: z.number().optional().default(0),
+      closed: z.number().optional().default(0),
+    })
+    .loose()
+    .optional()
+    .default({ open: 0, merged: 0, closed: 0 }),
+}).loose();
+
+export const EMPTY_PROJECT_PULL_REQUESTS_RESPONSE: ProjectPullRequestsResponse = {
+  pull_requests: [],
+  total: 0,
+  counts: { open: 0, merged: 0, closed: 0 },
 };
 
 // Label responses are consumed by settings tables and resource pickers. Keep
@@ -1090,6 +1135,45 @@ export const TimelineEntriesSchema = z.array(TimelineEntrySchema);
 
 export const EMPTY_TIMELINE_ENTRIES: TimelineEntry[] = [];
 
+// Root-paged timeline (`?limit=`): a wrapper object, newest entries first. Every
+// field but `entries` is optional on the wire, so a server that predates paging
+// (whole timeline, no cursor) or drops a field still parses; with no cursor the
+// client simply has no older page to ask for.
+const NullableStringSchema = z.preprocess(
+  (value) => (typeof value === "string" && value !== "" ? value : null),
+  z.string().nullable(),
+);
+
+const TimelinePageObjectSchema = z.object({
+  entries: z.array(TimelineEntrySchema).default([]),
+  has_more_before: z.preprocess(
+    (value) => (typeof value === "boolean" ? value : undefined),
+    z.boolean().default(false),
+  ),
+  has_more_after: z.preprocess(
+    (value) => (typeof value === "boolean" ? value : undefined),
+    z.boolean().default(false),
+  ),
+  next_before: NullableStringSchema,
+  next_before_id: NullableStringSchema,
+  target_index: z.number().int().nonnegative().optional().catch(undefined),
+}).loose();
+
+// A server that predates the wrapper answers `?limit=` with its bare timeline
+// array; that is one complete page with nothing older.
+export const TimelinePageSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? { entries: value } : value),
+  TimelinePageObjectSchema,
+);
+
+export const EMPTY_TIMELINE_PAGE: TimelinePage = {
+  entries: [],
+  has_more_before: false,
+  has_more_after: false,
+  next_before: null,
+  next_before_id: null,
+};
+
 const OptionalStringSchema = z.preprocess(
   (value) => (typeof value === "string" ? value : undefined),
   z.string().optional(),
@@ -1477,6 +1561,10 @@ export const IssueSchema = z.object({
   // Detail-only and potentially large. A malformed additive field must not
   // erase an otherwise usable issue returned by a mixed-version server.
   source_context: IssueSourceContextSchema.optional().catch(undefined),
+  // Detail-only sub-issue progress. A malformed value degrades to "absent" so
+  // consumers take the list-based fallback instead of losing the whole issue.
+  child_count: z.number().int().nonnegative().optional().catch(undefined),
+  child_done_count: z.number().int().nonnegative().optional().catch(undefined),
 }).loose();
 
 export const ListIssuesResponseSchema = z.object({
@@ -1747,6 +1835,51 @@ export const SubscribersListSchema = z.array(SubscriberSchema);
 
 export const ChildIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
+}).loose();
+
+export const ThreadSummariesResponseSchema = z.object({
+  summaries: z.array(z.object({
+    issue_id: z.string(),
+    reply_count: z.number().default(0),
+    last_reply_at: z.string().nullable().default(null),
+    // Older servers do not send the newest comment's excerpt.
+    last_reply_excerpt: z.string().nullable().optional().default(null),
+    open_thread_count: z.number().default(0),
+    participants: z.array(z.object({
+      type: z.string(),
+      id: z.string(),
+    }).loose()).default([]),
+    // Older servers omit the caller's read cursor.
+    last_read_at: z.string().nullable().optional().default(null),
+    // Older servers do not list the caller's open agent questions.
+    awaiting_me: z.array(z.object({
+      comment_id: z.string(),
+      actor_id: z.string(),
+      excerpt: z.string().default(""),
+      created_at: z.string().default(""),
+    }).loose()).default([]),
+    // Older servers do not report agent progress.
+    latest_progress: z.object({
+      comment_id: z.string(),
+      content: z.string().default(""),
+      created_at: z.string().default(""),
+    }).loose().nullable().optional().default(null),
+    // Older servers do not send the output strip fields.
+    pull_requests: z.array(z.object({
+      id: z.string(),
+      number: z.number().default(0),
+      title: z.string().default(""),
+      url: z.string().default(""),
+      // Unknown states pass through; the strip draws a generic PR icon.
+      state: z.string().default("open"),
+      additions: z.number().default(0),
+      deletions: z.number().default(0),
+      // An unfamiliar verdict from a newer server reads as "no CI claim".
+      checks_state: z.enum(["passed", "failed", "pending", "none"]).catch("none"),
+    }).loose()).default([]),
+    deliverable_count: z.number().default(0),
+    last_deliverable_at: z.string().nullable().optional().default(null),
+  }).loose()).default([]),
 }).loose();
 
 export const IssueDuplicatesResponseSchema = z.object({
@@ -3826,3 +3959,58 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+// --- Project library (GET /api/projects/{id}/attachments, POST .../library-issue) ---
+
+// A row without an id or its issue cannot be opened, so it is dropped on its
+// own instead of failing the whole page. Every other field defaults, so an
+// older or newer server never blanks the library.
+const ProjectAttachmentSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  issue_id: z.string().nullable().default(null),
+  comment_id: z.string().nullable().default(null),
+  chat_session_id: z.string().nullable().default(null),
+  chat_message_id: z.string().nullable().default(null),
+  uploader_type: z.string().default(""),
+  uploader_id: z.string().default(""),
+  filename: z.string().default(""),
+  url: z.string().default(""),
+  download_url: z.string().default(""),
+  attachment_download_url: z.string().optional(),
+  markdown_url: z.string().default(""),
+  content_type: z.string().default(""),
+  size_bytes: z.number().default(0),
+  created_at: z.string().default(""),
+  issue: z.object({
+    id: z.string(),
+    identifier: z.string().default(""),
+    title: z.string().default(""),
+  }).loose(),
+}).loose();
+
+export const ProjectAttachmentsResponseSchema = z.object({
+  attachments: z.array(z.unknown()).default([]).transform((rows) =>
+    rows.flatMap((row) => {
+      const parsed = ProjectAttachmentSchema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  ),
+  total: z.number().default(0),
+  deliverable_total: z.number().default(0),
+  upload_total: z.number().default(0),
+}).loose();
+
+export const EMPTY_PROJECT_ATTACHMENTS_RESPONSE: ListProjectAttachmentsResponse = {
+  attachments: [],
+  total: 0,
+  deliverable_total: 0,
+  upload_total: 0,
+};
+
+export const ProjectLibraryIssueSchema = z.object({
+  id: z.string(),
+  identifier: z.string().default(""),
+}).loose();
+
+export const EMPTY_PROJECT_LIBRARY_ISSUE: ProjectLibraryIssue = { id: "", identifier: "" };

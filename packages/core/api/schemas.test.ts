@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
+  ProjectPullRequestsResponseSchema,
+  EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
   WecomInstallationSchema,
   ListWecomInstallationsResponseSchema,
   RedeemWecomBindingTokenResponseSchema,
@@ -197,6 +199,28 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
     const parsed = ListIssuesResponseSchema.parse({ issues: [withoutName], total: 1 });
     expect(parsed.issues[0]?.id).toBe(baseIssue.id);
     expect(parsed.issues[0]?.status_name).toBeUndefined();
+  });
+  it("keeps sub-issue counts when present and leaves them undefined for older servers", () => {
+    const withCounts = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, child_count: 3, child_done_count: 1 }],
+      total: 1,
+    });
+    expect(withCounts.issues[0]?.child_count).toBe(3);
+    expect(withCounts.issues[0]?.child_done_count).toBe(1);
+    const without = ListIssuesResponseSchema.parse({ issues: [baseIssue], total: 1 });
+    expect(without.issues[0]?.child_count).toBeUndefined();
+    expect(without.issues[0]?.child_done_count).toBeUndefined();
+  });
+  it("drops malformed sub-issue counts without losing the issue", () => {
+    for (const bad of ["3", -1, 1.5, null, {}]) {
+      const parsed = ListIssuesResponseSchema.parse({
+        issues: [{ ...baseIssue, child_count: bad, child_done_count: bad }],
+        total: 1,
+      });
+      expect(parsed.issues).toHaveLength(1);
+      expect(parsed.issues[0]?.child_count).toBeUndefined();
+      expect(parsed.issues[0]?.child_done_count).toBeUndefined();
+    }
   });
   it("keeps the issue while independently dropping a malformed source context", () => {
     const parsed = ListIssuesResponseSchema.parse({
@@ -2353,5 +2377,77 @@ describe("AgentActivityBucketListSchema duration", () => {
     expect(parsed[0]?.task_count).toBe(201);
     expect(parsed[0]?.duration_ms).toBeUndefined();
     expect(parsed[0]?.duration_count).toBeUndefined();
+  });
+});
+
+describe("ProjectPullRequestsResponseSchema", () => {
+  const pr = {
+    id: "pr-1",
+    workspace_id: "ws-1",
+    repo_owner: "multica-ai",
+    repo_name: "multica",
+    number: 7,
+    title: "Add the PR tab",
+    state: "open",
+    html_url: "https://github.com/multica-ai/multica/pull/7",
+    branch: null,
+    author_login: null,
+    author_avatar_url: null,
+    merged_at: null,
+    closed_at: null,
+    pr_created_at: "2026-10-01T00:00:00Z",
+    pr_updated_at: "2026-10-02T00:00:00Z",
+  };
+
+  it("defaults the fields an older or partial server omits", () => {
+    const parsed = ProjectPullRequestsResponseSchema.parse({ pull_requests: [pr] });
+    expect(parsed.total).toBe(0);
+    expect(parsed.counts).toEqual({ open: 0, merged: 0, closed: 0 });
+    expect(parsed.pull_requests[0]).toMatchObject({
+      provider: "github",
+      issues: [],
+      additions: 0,
+      deletions: 0,
+      checks_failed: 0,
+    });
+  });
+
+  it("keeps issue chips and tolerates unknown fields and states", () => {
+    const parsed = ProjectPullRequestsResponseSchema.parse({
+      pull_requests: [
+        {
+          ...pr,
+          state: "queued",
+          future_field: true,
+          issues: [{ id: "i-1", identifier: "MUL-1", title: "Tab" }, { id: "i-2" }],
+        },
+      ],
+      total: 1,
+      counts: { open: 1, merged: 0, closed: 0, queued: 3 },
+    });
+    expect(parsed.pull_requests[0]?.state).toBe("queued");
+    expect(parsed.pull_requests[0]?.issues).toEqual([
+      { id: "i-1", identifier: "MUL-1", title: "Tab" },
+      { id: "i-2", identifier: "", title: "" },
+    ]);
+    expect(parsed.counts.open).toBe(1);
+  });
+
+  it("falls back to an empty list when the response is malformed", () => {
+    for (const raw of [
+      { pull_requests: "nope" },
+      { pull_requests: [{ ...pr, number: "seven" }] },
+      { pull_requests: [pr], total: "many" },
+      null,
+    ]) {
+      expect(
+        parseWithFallback(
+          raw,
+          ProjectPullRequestsResponseSchema,
+          EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
+          { endpoint: "GET /api/projects/:id/pull-requests" },
+        ),
+      ).toEqual(EMPTY_PROJECT_PULL_REQUESTS_RESPONSE);
+    }
   });
 });

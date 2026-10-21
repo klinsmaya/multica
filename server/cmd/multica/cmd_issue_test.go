@@ -561,6 +561,7 @@ func newIssueCommentAddTestCmd() *cobra.Command {
 	cmd.Flags().Bool("allow-external-file", false, "")
 	cmd.Flags().StringSlice("attachment", nil, "")
 	cmd.Flags().String("parent", "", "")
+	cmd.Flags().String("type", "", "")
 	cmd.Flags().String("output", "json", "")
 	return cmd
 }
@@ -825,6 +826,47 @@ func TestRunIssueCommentAddRejectsExternalAttachmentWithZeroUploads(t *testing.T
 	}
 	if comments != 0 {
 		t.Errorf("expected no comment to be posted, got %d", comments)
+	}
+}
+
+// `comment add --type progress_update` forwards the type so the feed can show
+// the body as the issue's checklist; an unknown type is rejected before any
+// request.
+func TestRunIssueCommentAddForwardsType(t *testing.T) {
+	const issueID = "11111111-1111-4111-8111-111111111111"
+	var posted map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/issues/"+issueID:
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": issueID, "identifier": "TST-1"})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/issues/"+issueID+"/comments":
+			_ = json.NewDecoder(r.Body).Decode(&posted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "comment-1"})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	setCLITestServerEnv(t, srv.URL)
+	t.Setenv("MULTICA_TOKEN", "mat_test-token")
+
+	cmd := newIssueCommentAddTestCmd()
+	_ = cmd.Flags().Set("content", "- [ ] step")
+	_ = cmd.Flags().Set("type", "progress_update")
+	_ = cmd.Flags().Set("output", "table")
+	if err := runIssueCommentAdd(cmd, []string{issueID}); err != nil {
+		t.Fatalf("runIssueCommentAdd: %v", err)
+	}
+	if posted["type"] != "progress_update" {
+		t.Errorf("posted type = %v, want progress_update", posted["type"])
+	}
+
+	bad := newIssueCommentAddTestCmd()
+	_ = bad.Flags().Set("content", "x")
+	_ = bad.Flags().Set("type", "status_change")
+	if err := runIssueCommentAdd(bad, []string{issueID}); err == nil || !strings.Contains(err.Error(), "--type") {
+		t.Errorf("err = %v, want --type rejection", err)
 	}
 }
 

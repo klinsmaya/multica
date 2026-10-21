@@ -242,12 +242,14 @@
     "tooltip_table": "表格视图",
     "tooltip_gantt": "甘特图",
     "tooltip_swimlane": "泳道视图",
+    "tooltip_feed": "信息流视图",
     "section": "视图",
     "board": "看板",
     "list": "列表",
     "table": "表格",
     "gantt": "甘特图",
-    "swimlane": "泳道"
+    "swimlane": "泳道",
+    "feed": "信息流"
   },
   "table": {
     "select_all": "选择所有可见任务",
@@ -389,6 +391,7 @@
     "sub_issues_label": "子任务",
     "sub_issue_of": "属于父任务",
     "add_sub_issues": "添加子任务",
+    "load_more_sub_issues": "加载更多子任务",
     "add_sub_issue_tooltip": "添加子任务",
     "add_sub_issue_aria": "添加子任务",
     "select_all_sub_issues_aria": "全选子任务",
@@ -487,7 +490,8 @@
     "pull_requests_empty_title": "暂无关联 PR。"
   },
   "timeline": {
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "load_earlier": "加载更早的评论"
   },
   "activity": {
     "created": "创建了这个任务",
@@ -638,6 +642,7 @@
     "recipient_count_other": "{{count}} 个智能体会收到",
     "steer_attachment_notice": "插话只支持文字，带附件的消息会在本轮结束后处理。",
     "restart_send": "停止并发送",
+    "reply_context_remove": "回复中不再引用 {{name}}",
     "restart_failed": "没能停止当前运行，消息还没有发送。"
   },
   "reply": {
@@ -646,6 +651,7 @@
       "confirm_add": "添加批注",
       "save": "保存批注",
       "add_comment": "加入评论",
+      "add_document": "批注",
       "add": "加入回复",
       "note_label": "批注",
       "count_other": "{{count}} 条批注",
@@ -674,6 +680,62 @@
     "chip_agents_working_other": "{{count}} 个智能体工作中",
     "issues_count_other": "{{count}} 个任务",
     "chip_agents_working_unknown": "工作中的智能体：—"
+  },
+  "feed": {
+    "reply_count_other": "{{count}} 条回复",
+    "last_reply": "最后回复 {{time}}",
+    "open_threads_other": "{{count}} 个未解决讨论",
+    "open_thread": "打开讨论",
+    "unread": "未读",
+    "awaiting_reply": "等你回复",
+    "decision": {
+      "title": "等你决定",
+      "open_thread": "查看讨论串",
+      "reply_here": "回复到这里"
+    },
+    "progress": {
+      "label": "最新进度",
+      "count": "{{done}}/{{total}} 完成",
+      "more": "还有 {{number}} 项",
+      "item_done": "已完成：",
+      "item_open": "待办："
+    },
+    "empty": "信息流中没有任务",
+    "quick": {
+      "continue": "继续最近的工作",
+      "plan": "制定计划",
+      "plan_title": "制定计划",
+      "new": "新建任务"
+    },
+    "sort": {
+      "created": "按创建时间",
+      "activity": "按最近活跃"
+    },
+    "new_messages": "有新消息",
+    "output": {
+      "pull_request": "PR #{{number}}，{{state}}",
+      "state_open": "Open",
+      "checks_failed": "检查失败",
+      "checks_pending": "检查进行中",
+      "deliverables_other": "{{count}} 个产物",
+      "deliverables_updated": "最后更新 {{time}}"
+    },
+    "composer": {
+      "placeholder": "发消息，首行是标题，@ 可指派",
+      "send": "发送",
+      "sending": "发送中...",
+      "failed": "无法发送",
+      "retry": "重试",
+      "reply_to_other": "回复到 {{count}} 个讨论串",
+      "reply_placeholder_other": "回复到 {{count}} 个讨论串，每个讨论串发一条评论",
+      "reply_clear": "全部清除",
+      "reply_remove": "移除 {{identifier}}",
+      "reply_marker": "来自项目对话 · {{name}}"
+    },
+    "forward": {
+      "title_other": "已发到 {{count}} 个讨论串",
+      "dismiss": "关闭"
+    }
   },
   "filtered_empty": {
     "title": "没有符合筛选条件的任务",
@@ -1432,7 +1494,31 @@
     "overview_summary_with_size_other": "{{count}} 个产物 · 共 {{size}}",
     "overview_close": "关闭",
     "overview_empty": "没有这类产物。",
-    "group_comment_by": "{{name}} 的评论"
+    "group_comment_by": "{{name}} 的评论",
+    "open_focus": "全屏打开",
+    "open_focus_named": "全屏打开 {{name}}",
+    "focus_comments": "评论",
+    "focus_unavailable": "该产物已不可用。",
+    "progressive": {
+      "pending": "待写",
+      "changed_label": "Claude",
+      "writing": "正在写 · {{done}}/{{total}} 段",
+      "unfinished": "未完成 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "适应全部",
+      "prototypes": "原型",
+      "play": "演示",
+      "play_named": "演示 {{name}}",
+      "back": "返回画布",
+      "save_layout": "保存布局",
+      "saving": "保存中…",
+      "save_failed": "无法保存布局",
+      "file_not_found": "找不到文件：{{name}}",
+      "load_failed": "无法加载 {{name}}",
+      "invalid": "无法读取此画布",
+      "page": "页面"
+    }
   },
   "workflows": {
     "default_name": "Default",

@@ -147,6 +147,8 @@ export interface EditorExtensionsOptions {
   placeholder?: string | (() => string);
   queryClient?: import("@tanstack/react-query").QueryClient;
   onSubmitRef?: RefObject<(() => void) | undefined>;
+  /** When true, plain Enter submits and Shift+Enter keeps the newline. */
+  submitOnEnterRef?: RefObject<boolean | undefined>;
   onUploadFileRef?: RefObject<
     ((file: File, uploadId: string) => Promise<UploadResult | null>) | undefined
   >;
@@ -309,7 +311,7 @@ export function createEditorExtensions(
       if (!fn) return false;
       fn();
       return true;
-    }),
+    }, { plainEnter: () => options.submitOnEnterRef?.current === true }),
     createBlurShortcutExtension(),
     createFileUploadExtension(options.onUploadFileRef!, options.pasteAsFileThresholdRef),
   ];

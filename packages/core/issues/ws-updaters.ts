@@ -21,12 +21,17 @@ import {
   patchIssueInBuckets,
 } from "./cache-helpers";
 import { cleanupDeletedIssueCaches } from "./delete-cache";
+import { parseMentions } from "./comment-trigger-outcomes";
+import { commentExcerpt } from "./comment-excerpt";
+import { parseProgressChecklist } from "./progress-checklist";
 import type {
+  Comment,
   Issue,
   IssueLabelsResponse,
   IssueMetadata,
   IssuePropertyValues,
   IssueTableRowsResponse,
+  IssueThreadSummary,
   Label,
 } from "../types";
 import type { ListIssuesCache } from "../types";
@@ -409,6 +414,8 @@ export function onIssueCreated(
   qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });
   if (issue.parent_issue_id) {
     qc.invalidateQueries({ queryKey: issueKeys.children(wsId, issue.parent_issue_id) });
+    // The parent's detail carries child_count / child_done_count.
+    qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issue.parent_issue_id) });
     qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
   }
 }
@@ -509,16 +516,23 @@ export function onIssueUpdated(
     if (parentChanged) {
       qc.invalidateQueries({ queryKey: issueKeys.children(wsId, oldParentId) });
     } else {
-      qc.setQueryData<Issue[]>(issueKeys.children(wsId, oldParentId), (old) =>
-        old?.map((c) =>
-          c.id === issue.id &&
-          (issue.revision === undefined ||
-            c.revision === undefined ||
-            issue.revision > c.revision)
-            ? { ...c, ...issue }
-            : c,
-        ),
-      );
+      // The prefix covers the full list and any loaded child pages.
+      for (const [key, children] of issueArrayEntries(
+        qc,
+        issueKeys.children(wsId, oldParentId),
+      )) {
+        qc.setQueryData<Issue[]>(
+          key,
+          children.map((c) =>
+            c.id === issue.id &&
+            (issue.revision === undefined ||
+              c.revision === undefined ||
+              issue.revision > c.revision)
+              ? { ...c, ...issue }
+              : c,
+          ),
+        );
+      }
     }
   }
   // Invalidate new parent's children (issue was added to it)
@@ -528,6 +542,15 @@ export function onIssueUpdated(
   if (oldParentId || newParentId) {
     if (issue.status !== undefined || issue.parent_issue_id !== undefined) {
       qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
+    }
+    // Parent details carry child_count / child_done_count, which only a
+    // status change or a re-parent can move.
+    if (changed.status || parentChanged) {
+      for (const parentId of new Set([oldParentId, newParentId])) {
+        if (parentId) {
+          qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, parentId) });
+        }
+      }
     }
     qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   }
@@ -781,4 +804,194 @@ export function onIssueDeleted(
   qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+}
+
+// Mirrors the server rollup (ListIssueThreadSummaries): deleted comments and
+// platform-authored rows are not conversation. `type === "system"` is skipped
+// too so a platform notice never inflates the counters between refetches.
+function isCountedThreadComment(comment: Comment): boolean {
+  if (comment.deleted_at) return false;
+  return comment.author_type !== "system" && comment.type !== "system";
+}
+
+const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
+
+// Matches the server's last_reply_excerpt length.
+const THREAD_SUMMARY_EXCERPT_CHARS = 80;
+
+// A new agent progress report with a checklist replaces the stored one when it
+// is not older; anything else leaves the server's value in place.
+function nextLatestProgress(
+  comment: Comment,
+  existing: IssueThreadSummary["latest_progress"],
+): IssueThreadSummary["latest_progress"] {
+  if (comment.type !== "progress_update" || comment.author_type !== "agent") return existing;
+  if (parseProgressChecklist(comment.content ?? "").total === 0) return existing;
+  if (existing && Date.parse(comment.created_at) < Date.parse(existing.created_at)) return existing;
+  return { comment_id: comment.id, content: comment.content, created_at: comment.created_at };
+}
+
+function applyCommentToThreadSummary(
+  existing: IssueThreadSummary | undefined,
+  comment: Comment,
+  clearAwaitingMe: boolean,
+): IssueThreadSummary {
+  const openRoot = comment.parent_id == null && comment.resolved_at == null;
+  const author = { type: comment.author_type, id: comment.author_id };
+  const participants = [
+    author,
+    ...(existing?.participants ?? []).filter(
+      (p) => !(p.type === author.type && p.id === author.id),
+    ),
+  ].slice(0, THREAD_SUMMARY_PARTICIPANT_LIMIT);
+
+  const prevAt = existing?.last_reply_at ?? null;
+  const lastReplyAt =
+    prevAt == null || Date.parse(comment.created_at) >= Date.parse(prevAt)
+      ? comment.created_at
+      : prevAt;
+
+  return {
+    issue_id: comment.issue_id,
+    reply_count: (existing?.reply_count ?? 0) + 1,
+    last_reply_at: lastReplyAt,
+    last_reply_excerpt:
+      lastReplyAt === comment.created_at
+        ? commentExcerpt(comment.content ?? "", THREAD_SUMMARY_EXCERPT_CHARS) || null
+        : (existing?.last_reply_excerpt ?? null),
+    open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
+    participants,
+    last_read_at: existing?.last_read_at ?? null,
+    awaiting_me: clearAwaitingMe ? [] : (existing?.awaiting_me ?? []),
+    latest_progress: nextLatestProgress(comment, existing?.latest_progress ?? null),
+    // Output fields are owned by the server; a comment leaves them as loaded.
+    pull_requests: existing?.pull_requests ?? [],
+    deliverable_count: existing?.deliverable_count ?? 0,
+    last_deliverable_at: existing?.last_deliverable_at ?? null,
+  };
+}
+
+// The caller's own member comment may have answered an agent question, but the
+// payload does not say which thread it replied into, so the issue's whole list
+// is dropped until the server weighs in.
+function isOwnMemberComment(comment: Comment, selfUserId: string | null | undefined): boolean {
+  return (
+    comment.author_type === "member" &&
+    selfUserId != null &&
+    comment.author_id === selfUserId
+  );
+}
+
+// An agent comment that may be a new question for the caller. With the caller
+// unknown, any agent comment might be.
+function mayAskCaller(comment: Comment, selfUserId: string | null | undefined): boolean {
+  if (comment.author_type !== "agent") return false;
+  if (selfUserId == null) return true;
+  return parseMentions(comment.content ?? "").some(
+    (m) => m.type === "member" && m.id.toLowerCase() === selfUserId.toLowerCase(),
+  );
+}
+
+/**
+ * Patches the feed's thread-summary caches for a new comment. Only caches that
+ * were asked for the comment's issue (their ids key contains it) are touched;
+ * an issue without a row yet gets one there. A cache that is mid-fetch may or
+ * may not already include the comment, so it is refetched instead of patched.
+ *
+ * `awaiting_me` is owned by the server. The patch clears it when the caller's
+ * own member comment lands (the question was most likely just answered), and
+ * refetches the cache whenever the comment could change which questions are
+ * pending: the issue already lists some, or an agent may be asking the caller.
+ * It also refetches when the comment carries files, since the server folds
+ * uploads into `deliverable_count`.
+ */
+export function onCommentCreatedPatchThreadSummaries(
+  qc: QueryClient,
+  wsId: string,
+  comment: Comment,
+  selfUserId?: string | null,
+) {
+  if (!comment.issue_id || !isCountedThreadComment(comment)) return;
+
+  const ownMemberComment = isOwnMemberComment(comment, selfUserId);
+  const askingCaller = mayAskCaller(comment, selfUserId);
+
+  const caches = qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  });
+  for (const [key, data] of caches) {
+    const idsKey = key[key.length - 1];
+    if (typeof idsKey !== "string") continue;
+    if (!idsKey.split(",").includes(comment.issue_id)) continue;
+    if (!data) continue;
+
+    if (qc.getQueryState(key)?.fetchStatus === "fetching") {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+      continue;
+    }
+
+    const index = data.findIndex((s) => s.issue_id === comment.issue_id);
+    const hadQuestions = (data[index]?.awaiting_me.length ?? 0) > 0;
+    const patched = applyCommentToThreadSummary(data[index], comment, ownMemberComment);
+    qc.setQueryData<IssueThreadSummary[]>(
+      key,
+      index === -1
+        ? [...data, patched]
+        : data.map((s, i) => (i === index ? patched : s)),
+    );
+    // Uploads change the deliverable count, which only the server can fold
+    // (same name and type is one file).
+    const addsFiles = (comment.attachments?.length ?? 0) > 0;
+    if (hadQuestions || addsFiles || (!ownMemberComment && askingCaller)) {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+    }
+  }
+}
+
+/**
+ * Stamps the caller's read cursor onto every loaded thread-summary cache that
+ * includes the issue, so the feed's unread dot clears without a refetch. The
+ * server already holds the cursor; this only mirrors it. Caches without a row
+ * for the issue are left alone: no row means no counted comment to be unread.
+ * The cursor never moves backwards, matching the server, and is lifted to the
+ * row's own last_reply_at so a client clock behind the server's cannot leave a
+ * just-read issue looking unread until the next refetch.
+ */
+export function patchThreadSummariesLastRead(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+  lastReadAt: string,
+) {
+  const caches = qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  });
+  for (const [key, data] of caches) {
+    const idsKey = key[key.length - 1];
+    if (typeof idsKey !== "string") continue;
+    if (!idsKey.split(",").includes(issueId)) continue;
+    if (!data) continue;
+
+    const index = data.findIndex((s) => s.issue_id === issueId);
+    if (index === -1) continue;
+    const row = data[index]!;
+    const next =
+      row.last_reply_at != null && Date.parse(row.last_reply_at) > Date.parse(lastReadAt)
+        ? row.last_reply_at
+        : lastReadAt;
+    if (row.last_read_at != null && Date.parse(row.last_read_at) >= Date.parse(next)) continue;
+    qc.setQueryData<IssueThreadSummary[]>(
+      key,
+      data.map((s, i) => (i === index ? { ...s, last_read_at: next } : s)),
+    );
+  }
+}
+
+/**
+ * comment:deleted / resolved / unresolved change the counters in ways a client
+ * cannot derive from the payload (which thread a deleted reply belonged to,
+ * whether the root was already counted), so every summary cache is refetched.
+ */
+export function invalidateThreadSummaries(qc: QueryClient, wsId: string) {
+  qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
 }

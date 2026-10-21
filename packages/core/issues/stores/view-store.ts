@@ -9,7 +9,11 @@ import { PROJECT_STATUS_ORDER } from "../../projects/config";
 import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "../../platform/workspace-storage";
 import { defaultStorage } from "../../platform/storage";
 
-export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane";
+export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane" | "feed";
+
+/** Feed message order: by creation time, or by the latest thread activity. */
+export type FeedSort = "created" | "activity";
+const FEED_SORTS: readonly FeedSort[] = ["created", "activity"];
 export type GanttZoom = "day" | "week" | "month";
 /**
  * Board grouping. Besides the three built-ins, a select-type custom property
@@ -202,7 +206,7 @@ export function defaultSortDirection(field: SortField): SortDirection {
 
 /** Only expose card controls that the active renderer can honor. */
 export function cardPropertyOptionsForView(viewMode: ViewMode) {
-  if (viewMode === "table" || viewMode === "gantt") return [];
+  if (viewMode === "table" || viewMode === "gantt" || viewMode === "feed") return [];
   if (viewMode === "list") {
     return CARD_PROPERTY_OPTIONS.filter((option) => option.key !== "description");
   }
@@ -238,6 +242,7 @@ export function normalizeSortForGrouping(
 
 export interface IssueViewState {
   viewMode: ViewMode;
+  feedSort: FeedSort;
   grouping: IssueGrouping;
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
@@ -312,6 +317,7 @@ export interface IssueViewState {
   tableHierarchy: boolean;
   tableCalculation: TableCalculation;
   setViewMode: (mode: ViewMode) => void;
+  setFeedSort: (sort: FeedSort) => void;
   setGanttZoom: (zoom: GanttZoom) => void;
   toggleGanttShowCompleted: () => void;
   setGrouping: (grouping: IssueGrouping) => void;
@@ -363,6 +369,7 @@ export interface IssueViewState {
 
 export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): IssueViewState => ({
   viewMode: "board",
+  feedSort: "created",
   grouping: "status",
   statusFilters: [],
   priorityFilters: [],
@@ -405,6 +412,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
         state.sortDirection,
       ),
     })),
+  setFeedSort: (feedSort) => set({ feedSort }),
   setGanttZoom: (zoom) => set({ ganttZoom: zoom }),
   toggleGanttShowCompleted: () =>
     set((state) => ({ ganttShowCompleted: !state.ganttShowCompleted })),
@@ -666,6 +674,7 @@ export const viewStorePersistOptions = (name: string) => ({
     // `dateFilter` is also intentionally not persisted: relative presets such
     // as Today would otherwise become stale after a calendar-day rollover.
     viewMode: state.viewMode,
+    feedSort: state.feedSort,
     grouping: state.grouping,
     statusFilters: state.statusFilters,
     priorityFilters: state.priorityFilters,
@@ -778,6 +787,11 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
     collapsedSwimlanes: isRecord(p.collapsedSwimlanes)
       ? { ...current.collapsedSwimlanes, ...p.collapsedSwimlanes }
       : current.collapsedSwimlanes,
+    // Saved views and snapshots written before the feed sort existed (or
+    // carrying a value this client does not know) keep the creation order.
+    feedSort: FEED_SORTS.includes(p.feedSort as FeedSort)
+      ? (p.feedSort as FeedSort)
+      : current.feedSort,
     tableColumns: [
       persistedTitle ?? current.tableColumns[0] ?? { key: "title" },
       ...dedupedTableColumns,

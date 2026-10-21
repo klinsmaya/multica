@@ -387,7 +387,7 @@ const DRAG = { WebkitAppRegion: "drag" } as CSSProperties;
 
 // A focused player or field owns its arrow keys (seek, caret) — the sequence
 // only takes them when nothing else would.
-function ownsArrowKeys(target: EventTarget | null): boolean {
+export function ownsArrowKeys(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return target.closest("input, textarea, select, video, audio") !== null;
@@ -672,7 +672,11 @@ function PreviewPanel({
   info,
   locate,
   onOpenOverview,
+  extraActions,
+  annotationSource,
+  stage,
   renderHtmlFrame = renderViewerHtmlFrame,
+  renderMarkdown,
   initialHtmlAddress = "",
   onHtmlAddressChange,
 }: {
@@ -690,7 +694,14 @@ function PreviewPanel({
   info?: PreviewInfoPanel;
   locate?: PreviewLocateAction;
   onOpenOverview?: () => void;
+  /** Host controls at the end of the top bar, before the close button. */
+  extraActions?: ReactNode;
+  /** Marks a Markdown or text body as a quotable source (`data-comment-content`). */
+  annotationSource?: string;
+  /** Replaces the stage's body; the top bar and sequence buttons stay. */
+  stage?: ReactNode;
   renderHtmlFrame?: HtmlFrameRenderer;
+  renderMarkdown?: MarkdownRenderer;
   /** Query and fragment an HTML file opens at. */
   initialHtmlAddress?: string;
   /** Reports an HTML file's address as the reader or the document moves it. */
@@ -731,6 +742,7 @@ function PreviewPanel({
     structuredParse,
     renderHtmlFrame,
     htmlLocation,
+    renderMarkdown,
   };
 
   // Gallery navigation hands this panel an attachment the reader never
@@ -999,6 +1011,7 @@ function PreviewPanel({
               <PanelRight className="size-4" />
             </ChromeButton>
           )}
+          {extraActions}
           {onClose && (
             <>
               <ChromeDivider />
@@ -1028,7 +1041,9 @@ function PreviewPanel({
             },
           }}
         >
-          {kind === "image" ? (
+          {stage ? (
+            stage
+          ) : kind === "image" ? (
             <ImagePreview
               state={state}
               mediaUrl={mediaUrl}
@@ -1043,6 +1058,7 @@ function PreviewPanel({
               source={source}
               state={state}
               view={view}
+              annotationSource={annotationSource}
               onDownload={onDownload}
               onBackdropClick={closeOnBackdrop}
             />
@@ -1081,7 +1097,7 @@ function PreviewPanel({
 
 // Top-bar icon button. Sits inside the `dark` header, so the semantic tokens
 // resolve to the dark set whatever the app theme is.
-function ChromeButton({
+export function ChromeButton({
   label,
   shortcut,
   pressed,
@@ -1163,7 +1179,7 @@ function ChromeSegmented<T extends string>({
   );
 }
 
-function ChromeDivider() {
+export function ChromeDivider() {
   return <span className="mx-1.5 h-4 w-px bg-input" aria-hidden />;
 }
 
@@ -1279,6 +1295,12 @@ function ImagePreview({
 
 // Dispatch
 
+/** Draws a Markdown file's body; `className` and `attachments` are the defaults. */
+export type MarkdownRenderer = (
+  text: string,
+  context: { className: string; attachments: Attachment[] },
+) => ReactNode;
+
 // What the top bar decided about how the file shows — see PreviewPanel.
 interface StageView {
   wrap: boolean;
@@ -1289,6 +1311,7 @@ interface StageView {
   structuredParse: ReturnType<typeof parseStructured> | null;
   renderHtmlFrame: HtmlFrameRenderer;
   htmlLocation: HtmlPreviewLocation;
+  renderMarkdown?: MarkdownRenderer;
 }
 
 const TEXT_BACKED_KINDS: ReadonlySet<PreviewKind> = new Set<PreviewKind>([
@@ -1312,6 +1335,7 @@ function PreviewContent({
   source,
   state,
   view,
+  annotationSource,
   onDownload,
   onBackdropClick,
 }: {
@@ -1319,6 +1343,7 @@ function PreviewContent({
   source: PreviewSource;
   state: PreviewState;
   view: StageView;
+  annotationSource?: string;
   onDownload: () => void;
   onBackdropClick: (e: React.MouseEvent) => void;
 }) {
@@ -1347,8 +1372,11 @@ function PreviewContent({
     );
   }
 
-  const code = (text: string, language: string | undefined) => (
-    <DocumentSheet width="code" onBackdropClick={onBackdropClick}>
+  const quotable = (body: ReactNode) =>
+    annotationSource ? <div data-comment-content={annotationSource}>{body}</div> : body;
+
+  const code = (text: string, language: string | undefined, quote = false) => {
+    const block = (
       <CodeBlockStatic
         language={language}
         body={text}
@@ -1356,8 +1384,13 @@ function PreviewContent({
         wrap={view.wrap}
         className="min-h-full"
       />
-    </DocumentSheet>
-  );
+    );
+    return (
+      <DocumentSheet width="code" onBackdropClick={onBackdropClick}>
+        {quote ? quotable(block) : block}
+      </DocumentSheet>
+    );
+  };
 
   switch (kind) {
     case "pdf":
@@ -1391,15 +1424,24 @@ function PreviewContent({
         <TextBackedPreview
           attachmentId={state.attachmentId!}
           onDownload={onDownload}
-          render={(text) => (
-            <DocumentSheet width="prose" onBackdropClick={onBackdropClick}>
-              <ReadonlyContent
-                content={text}
-                className="px-10 py-8"
-                attachments={source.kind === "full" ? [source.attachment] : []}
-              />
-            </DocumentSheet>
-          )}
+          render={(text) => {
+            const attachments = source.kind === "full" ? [source.attachment] : [];
+            return (
+              <DocumentSheet width="prose" onBackdropClick={onBackdropClick}>
+                {quotable(
+                  view.renderMarkdown ? (
+                    view.renderMarkdown(text, { className: "px-10 py-8", attachments })
+                  ) : (
+                    <ReadonlyContent
+                      content={text}
+                      className="px-10 py-8"
+                      attachments={attachments}
+                    />
+                  ),
+                )}
+              </DocumentSheet>
+            );
+          }}
         />
       );
     case "html":
@@ -1477,7 +1519,7 @@ function PreviewContent({
         <TextBackedPreview
           attachmentId={state.attachmentId!}
           onDownload={onDownload}
-          render={(text) => code(text, extensionToLanguage(state.filename))}
+          render={(text) => code(text, extensionToLanguage(state.filename), true)}
         />
       );
   }
@@ -1634,6 +1676,63 @@ export function AttachmentPreviewStandalone({
         onHtmlAddressChange={handleHtmlAddressChange}
       />
     </div>
+  );
+}
+
+// Panel — the viewer's top bar and stage inside a host's own layout
+
+/**
+ * One attachment's top bar and stage, to be placed in a layout the host owns
+ * (the deliverable focus puts the issue's discussion beside it). Same panel
+ * as the viewer overlay: kind dispatch, zoom, view toggles and the sequence
+ * controls; the host supplies the frame, the dark ground and the keyboard.
+ */
+export function AttachmentPreviewPanel({
+  attachment,
+  sequence,
+  titleAccessory,
+  extraActions,
+  annotationSource,
+  stage,
+  renderMarkdown,
+  onClose,
+}: {
+  attachment: Attachment;
+  sequence?: PreviewSequence;
+  titleAccessory?: ReactNode;
+  extraActions?: ReactNode;
+  /** See PreviewPanel: lets the host quote Markdown and text bodies. */
+  annotationSource?: string;
+  /** A host-drawn stage for this file (e.g. a prototype canvas) in place of the kind's own. */
+  stage?: ReactNode;
+  /** Replaces the Markdown body's renderer, e.g. to mark placeholders. */
+  renderMarkdown?: MarkdownRenderer;
+  onClose: () => void;
+}) {
+  const download = useDownloadAttachment();
+  const shouldReduceMotion = useReducedMotion() ?? false;
+  const source = useMemo<PreviewSource>(
+    () => ({ kind: "full", attachment }),
+    [attachment],
+  );
+  const state = normalize(source);
+  return (
+    <PreviewPanel
+      surface="viewer"
+      // A host stage replaces the kind's own body, so its view controls go too.
+      kind={stage ? null : state.kind}
+      source={source}
+      state={state}
+      onClose={onClose}
+      onDownload={() => download(attachment.id)}
+      stage={stage}
+      sequence={sequence}
+      reduceMotion={shouldReduceMotion}
+      titleAccessory={titleAccessory}
+      extraActions={extraActions}
+      annotationSource={annotationSource}
+      renderMarkdown={renderMarkdown}
+    />
   );
 }
 

@@ -18,7 +18,7 @@ export type IssueCreateDefaults = Partial<
 
 export type IssueSurfaceMode = Extract<
   ViewMode,
-  "board" | "list" | "table" | "swimlane" | "gantt"
+  "board" | "list" | "table" | "swimlane" | "gantt" | "feed"
 >;
 
 export interface IssueSurfaceProps {
@@ -28,4 +28,6 @@ export interface IssueSurfaceProps {
   createDefaults?: IssueCreateDefaults;
   /** Server-owned membership search shared by non-Table issue surfaces. */
   search?: string;
+  /** Reports the active view mode, so a host can adapt what sits beside the surface. */
+  onViewModeChange?: (mode: IssueSurfaceMode) => void;
 }

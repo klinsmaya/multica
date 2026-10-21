@@ -1,5 +1,11 @@
 export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction, SourceContextAttachment, SourceContextAuthor, SourceContextIssueSnapshot, SourceContextCommentSnapshot, SourceContextSnapshot, SourceContextLimitUsage, SourceContextPreview, SourceContextAuthorState, IssueSourceContext,
   IssueDuplicateOf,
+  IssueAwaitingMe,
+  IssueLatestProgress,
+  IssueThreadParticipant,
+  IssueThreadPullRequest,
+  IssueThreadPullRequestChecksState,
+  IssueThreadSummary,
 } from "./issue";
 export type {
   IssueStatusCategory,
@@ -156,12 +162,22 @@ export {
 } from "./quick-action";
 export type {
   TimelineEntry,
+  TimelinePage,
+  TimelinePageCursor,
   AssigneeFrequencyEntry,
 } from "./activity";
 export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
 export type * from "./api";
 export type { Attachment } from "./attachment";
+export type {
+  ProjectAttachment,
+  ProjectAttachmentIssue,
+  ProjectAttachmentSource,
+  ProjectAttachmentsParams,
+  ListProjectAttachmentsResponse,
+  ProjectLibraryIssue,
+} from "./project-library";
 export {
   attachmentDownloadPath,
   attachmentIdFromDownloadURL,
@@ -219,6 +235,10 @@ export type {
   GitHubPullRequestMergeStateStatus,
   GitHubPullRequestState,
   IssuePullRequestsResponse,
+  ProjectPullRequest,
+  ProjectPullRequestIssue,
+  ProjectPullRequestState,
+  ProjectPullRequestsResponse,
   PRAutoComplete,
   PRAutoCompleteState,
   PullRequestLinkSource,

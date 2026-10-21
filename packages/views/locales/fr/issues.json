@@ -246,12 +246,14 @@
     "tooltip_table": "Vue grille",
     "tooltip_gantt": "Vue Gantt",
     "tooltip_swimlane": "Vue couloirs",
+    "tooltip_feed": "Vue flux",
     "section": "Vue",
     "board": "Tableau",
     "list": "Liste",
     "table": "Grille",
     "gantt": "Gantt",
-    "swimlane": "Couloirs"
+    "swimlane": "Couloirs",
+    "feed": "Flux"
   },
   "table": {
     "select_all": "Sélectionner toutes les tâches visibles",
@@ -393,6 +395,7 @@
     "sub_issues_label": "Sous-tâches",
     "sub_issue_of": "Sous-tâche de",
     "add_sub_issues": "Ajouter des sous-tâches",
+    "load_more_sub_issues": "Afficher plus de sous-tâches",
     "add_sub_issue_tooltip": "Ajouter une sous-tâche",
     "add_sub_issue_aria": "Ajouter une sous-tâche",
     "select_all_sub_issues_aria": "Sélectionner toutes les sous-tâches",
@@ -493,7 +496,8 @@
     "pull_requests_empty_title": "Aucune pull request associée."
   },
   "timeline": {
-    "loading": "Chargement..."
+    "loading": "Chargement...",
+    "load_earlier": "Afficher les commentaires précédents"
   },
   "activity": {
     "created": "a créé cette tâche",
@@ -658,6 +662,7 @@
     "recipient_count_other": "{{count}} agents recevront ce message",
     "steer_attachment_notice": "Seul du texte peut rejoindre une exécution en cours : un message avec des fichiers sera traité après.",
     "restart_send": "Arrêter et envoyer",
+    "reply_context_remove": "Retirer {{name}} de cette réponse",
     "restart_failed": "Impossible d'arrêter l'exécution en cours. Votre message n'a pas été envoyé."
   },
   "reply": {
@@ -666,6 +671,7 @@
       "confirm_add": "Ajouter une annotation",
       "save": "Enregistrer l'annotation",
       "add_comment": "Ajouter au commentaire",
+      "add_document": "Annoter",
       "add": "Ajouter à la réponse",
       "note_label": "Commenter",
       "count_one": "{{count}} annotation",
@@ -701,6 +707,68 @@
     "issues_count_one": "{{count}} tâche",
     "issues_count_other": "{{count}} tâches",
     "chip_agents_working_unknown": "Agents au travail : —"
+  },
+  "feed": {
+    "reply_count_one": "{{count}} réponse",
+    "reply_count_other": "{{count}} réponses",
+    "last_reply": "Dernière réponse {{time}}",
+    "open_threads_one": "{{count}} fil ouvert",
+    "open_threads_other": "{{count}} fils ouverts",
+    "open_thread": "Ouvrir le fil",
+    "unread": "Non lu",
+    "awaiting_reply": "En attente de votre réponse",
+    "decision": {
+      "title": "En attente de votre décision",
+      "open_thread": "Voir le fil",
+      "reply_here": "Répondre ici"
+    },
+    "progress": {
+      "label": "Dernière progression",
+      "count": "{{done}}/{{total}} terminé",
+      "more": "+{{number}} de plus",
+      "item_done": "Terminé :",
+      "item_open": "À faire :"
+    },
+    "empty": "Aucune tâche dans ce flux",
+    "quick": {
+      "continue": "Reprendre le dernier travail",
+      "plan": "Établir un plan",
+      "plan_title": "Établir un plan",
+      "new": "Nouvelle tâche"
+    },
+    "sort": {
+      "created": "Par création",
+      "activity": "Par activité récente"
+    },
+    "new_messages": "Nouveaux messages",
+    "output": {
+      "pull_request": "Pull request #{{number}}, {{state}}",
+      "state_open": "Ouverte",
+      "checks_failed": "Vérifications en échec",
+      "checks_pending": "Vérifications en cours",
+      "deliverables_one": "{{count}} livrable",
+      "deliverables_other": "{{count}} livrables",
+      "deliverables_updated": "Dernière mise à jour {{time}}"
+    },
+    "composer": {
+      "placeholder": "Écrire un message : la première ligne est le titre, @ pour assigner",
+      "send": "Envoyer",
+      "sending": "Envoi…",
+      "failed": "Échec de l'envoi",
+      "retry": "Réessayer",
+      "reply_to_one": "Répondre à {{count}} fil",
+      "reply_to_other": "Répondre à {{count}} fils",
+      "reply_placeholder_one": "Répondre à {{count}} fil : un commentaire y sera publié",
+      "reply_placeholder_other": "Répondre à {{count}} fils : un commentaire sera publié dans chacun",
+      "reply_clear": "Tout effacer",
+      "reply_remove": "Retirer {{identifier}}",
+      "reply_marker": "Depuis la conversation du projet · {{name}}"
+    },
+    "forward": {
+      "title_one": "Envoyé à {{count}} fil",
+      "title_other": "Envoyé à {{count}} fils",
+      "dismiss": "Fermer"
+    }
   },
   "filtered_empty": {
     "title": "Aucune tâche ne correspond à ces filtres",
@@ -1482,7 +1550,31 @@
     "overview_summary_with_size_other": "{{count}} livrables · {{size}} au total",
     "overview_close": "Fermer",
     "overview_empty": "Aucun livrable de ce type.",
-    "group_comment_by": "Commentaire de {{name}}"
+    "group_comment_by": "Commentaire de {{name}}",
+    "open_focus": "Ouvrir en plein écran",
+    "open_focus_named": "Ouvrir {{name}} en plein écran",
+    "focus_comments": "Commentaires",
+    "focus_unavailable": "Ce livrable n'est plus disponible.",
+    "progressive": {
+      "pending": "À rédiger",
+      "changed_label": "Claude",
+      "writing": "Rédaction · {{done}}/{{total}} sections",
+      "unfinished": "Inachevé · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "Tout afficher",
+      "prototypes": "Prototypes",
+      "play": "Lancer",
+      "play_named": "Lancer {{name}}",
+      "back": "Retour au canevas",
+      "save_layout": "Enregistrer la disposition",
+      "saving": "Enregistrement…",
+      "save_failed": "Impossible d'enregistrer la disposition",
+      "file_not_found": "Fichier introuvable : {{name}}",
+      "load_failed": "Impossible de charger {{name}}",
+      "invalid": "Ce canevas est illisible",
+      "page": "Page"
+    }
   },
   "workflows": {
     "default_name": "Default",

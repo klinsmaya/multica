@@ -151,6 +151,16 @@
     "ref_default_label": "默认分支",
     "ref_default_tooltip": "未设置分支 —— 任务使用仓库当时的默认分支。"
   },
+  "pull_requests": {
+    "group_open": "打开",
+    "group_merged": "已合并",
+    "group_closed": "已关闭",
+    "empty": "暂无 PR",
+    "load_more": "加载更多",
+    "loading": "加载中…",
+    "load_failed": "无法加载 PR",
+    "retry": "重试"
+  },
   "delete_dialog": {
     "title": "删除项目",
     "description": "将删除这个项目。任务不会被删除，只会从项目中解除关联。",
@@ -180,5 +190,49 @@
     "direction_desc": "降序",
     "section_columns": "列",
     "view": "视图"
+  },
+  "sidebar": {
+    "tab_properties": "属性",
+    "tab_overview": "概览",
+    "tab_autopilots": "自动化",
+    "tab_library": "库",
+    "tab_pull_requests": "PR",
+    "tabs_label": "项目面板"
+  },
+  "automations": {
+    "new": "新建",
+    "empty": "此项目还没有自动化",
+    "next_run": "下次 {{time}}",
+    "last_run": "上次运行 {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "等你处理",
+    "group_running": "进行中",
+    "group_idle": "空闲",
+    "group_resolved": "已解决",
+    "empty_needs_you": "没有等你处理的任务",
+    "empty_running": "没有智能体在工作",
+    "empty_idle": "没有空闲的任务",
+    "empty_resolved": "还没有已解决的任务",
+    "empty_project": "该项目还没有任务",
+    "load_failed": "无法加载任务",
+    "truncated": "仅显示最近活跃的 {{limit}} 个任务",
+    "sub_issue_progress": "子任务已完成 {{done}}/{{total}}",
+    "deliverables": "文件：{{count}}"
+  },
+  "library": {
+    "add": "添加",
+    "add_failed": "文件上传失败",
+    "deliverables": "产出",
+    "files": "文件",
+    "view_list": "列表视图",
+    "view_grid": "网格视图",
+    "filter_label": "按类型筛选",
+    "load_more": "加载更多",
+    "empty": "还没有文件",
+    "empty_filtered": "没有符合筛选条件的文件",
+    "load_failed": "文件加载失败",
+    "retry": "重试",
+    "open_issue": "打开任务 {{identifier}}"
   }
 }

@@ -159,6 +159,7 @@ describe("issue view defaults", () => {
       cardPropertyOptionsForView("list").map((option) => option.key),
     ).not.toContain("description");
     expect(cardPropertyOptionsForView("gantt")).toEqual([]);
+    expect(cardPropertyOptionsForView("feed")).toEqual([]);
     expect(
       sortOptionsForView("board", "assignee").map((option) => option.value),
     ).not.toContain("position");

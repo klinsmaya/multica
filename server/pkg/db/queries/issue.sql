@@ -668,6 +668,17 @@ SELECT * FROM issue
 WHERE parent_issue_id = $1
 ORDER BY number ASC;
 
+-- name: ListChildIssuesPage :many
+-- Paged variant of ListChildIssues with the same sibling-stable ordering.
+SELECT * FROM issue
+WHERE parent_issue_id = $1
+ORDER BY number ASC
+LIMIT $2 OFFSET $3;
+
+-- name: CountChildIssues :one
+SELECT COUNT(*)::bigint AS total FROM issue
+WHERE parent_issue_id = $1;
+
 -- name: ListChildrenByParents :many
 -- Batched variant of ListChildIssues: returns all children for the given
 -- parent set in one round trip. Used by Swimlane to avoid an N+1 fan-out
@@ -715,6 +726,26 @@ FROM issue
 WHERE workspace_id = $1
   AND parent_issue_id IS NOT NULL
 GROUP BY parent_issue_id;
+
+-- name: ChildIssueProgressForParents :many
+-- ChildIssueProgress narrowed to the given parents. A parent without children
+-- (or outside the workspace) yields no row.
+SELECT parent_issue_id,
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
+GROUP BY parent_issue_id;
+
+-- name: ChildIssueProgressForParent :one
+-- Single-parent variant of ChildIssueProgress for the issue detail response.
+-- Always returns one row; a parent without children yields 0/0.
+SELECT COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = $2;
 
 -- SearchIssues: moved to handler (dynamic SQL for multi-word search support).
 

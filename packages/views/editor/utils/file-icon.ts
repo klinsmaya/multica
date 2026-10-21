@@ -12,8 +12,10 @@ import {
   FileText,
   FileVideo,
   ImageIcon,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
+import { isCanvasFilename } from "@multica/core/attachments/prototype-canvas";
 import { getPreviewKind } from "./preview";
 
 function extensionOf(filename: string): string {
@@ -42,6 +44,7 @@ export function isDocumentFile(contentType: string, filename: string): boolean {
 
 export function fileIcon(contentType: string, filename: string): LucideIcon {
   const ext = extensionOf(filename);
+  if (isCanvasFilename(filename)) return LayoutDashboard;
   if (SPREADSHEET_EXTENSIONS.has(ext)) return FileSpreadsheet;
   if (ARCHIVE_EXTENSIONS.has(ext)) return FileArchive;
   switch (getPreviewKind(contentType, filename)) {

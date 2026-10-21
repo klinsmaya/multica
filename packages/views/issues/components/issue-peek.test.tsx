@@ -21,26 +21,45 @@ vi.mock("./issue-detail", () => ({
     variant,
     leadingAction,
     trailingActions,
+    belowHeader,
     onDelete,
+    highlightCommentId,
+    highlightRequestToken,
   }: {
     issueId: string;
     variant: string;
     leadingAction: ReactNode;
     trailingActions: ReactNode;
+    belowHeader: ReactNode;
     onDelete: () => void;
+    highlightCommentId?: string;
+    highlightRequestToken?: number;
   }) => {
     if (issueId === "boom") throw new Error("Could not render this issue");
     return (
-    <div data-testid="detail" data-variant={variant}>
+    <div
+      data-testid="detail"
+      data-variant={variant}
+      data-highlight={highlightCommentId}
+      data-token={highlightRequestToken}
+    >
       {issueId}
       {leadingAction}
       {trailingActions}
+      {belowHeader}
       <button type="button" onClick={onDelete}>
         delete
       </button>
     </div>
     );
   },
+}));
+
+// The strip reads its own query; its tests live beside it.
+vi.mock("./issue-peek-output-strip", () => ({
+  IssuePeekOutputStrip: ({ issueId }: { issueId: string }) => (
+    <div data-testid="peek-output-strip">{`strip ${issueId}`}</div>
+  ),
 }));
 
 const navigation: NavigationAdapter = {
@@ -122,6 +141,49 @@ describe("IssuePeekHost", () => {
     expect(screen.getByTestId("detail")).toHaveTextContent("i-2");
     expect(screen.getByText("card i-2")).toHaveAttribute("data-peeked");
     expect(screen.getByText("card i-1")).not.toHaveAttribute("data-peeked");
+  });
+
+  it("puts the output strip for the peeked issue under the detail's header", () => {
+    renderHost();
+    openCard("i-2");
+    expect(screen.getByTestId("detail")).toContainElement(screen.getByTestId("peek-output-strip"));
+    expect(screen.getByTestId("peek-output-strip")).toHaveTextContent("strip i-2");
+
+    openCard("i-3");
+    expect(screen.getByTestId("peek-output-strip")).toHaveTextContent("strip i-3");
+  });
+
+  it("hands the comment to land on to the peeked detail, replaying a repeat open", () => {
+    function OpenAtComment() {
+      const peek = useIssuePeekActions();
+      return (
+        <>
+          <button type="button" onClick={() => peek?.open("i-2", { commentId: "c-1" })}>
+            open at comment
+          </button>
+          <button type="button" onClick={() => peek?.open("i-2")}>
+            open plain
+          </button>
+        </>
+      );
+    }
+    renderWithI18n(
+      <NavigationProvider value={navigation}>
+        <IssuePeekHost>
+          <OpenAtComment />
+        </IssuePeekHost>
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByText("open at comment"));
+    expect(screen.getByTestId("detail")).toHaveAttribute("data-highlight", "c-1");
+    const firstToken = screen.getByTestId("detail").getAttribute("data-token");
+
+    fireEvent.click(screen.getByText("open at comment"));
+    expect(screen.getByTestId("detail").getAttribute("data-token")).not.toBe(firstToken);
+
+    fireEvent.click(screen.getByText("open plain"));
+    expect(screen.getByTestId("detail")).not.toHaveAttribute("data-highlight");
   });
 
   it("switches to another card, and closes when the peeked card is toggled again", async () => {

@@ -46,13 +46,15 @@ import type {
   MoveIssueRequest,
   UpdateIssueRequest,
 } from "../types";
-import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
+import type { Comment, TimelineEntry, IssueSubscriber, Reaction } from "../types";
 import { sortTimelineEntriesAsc } from "./timeline-sort";
+import { updateTimelinePages, type TimelinePagesCache } from "./timeline-pages";
 import { applyCommentDeletion, removeCommentSubtree } from "./comment-deletion";
 import { configStore } from "../config";
 import {
   onIssueAuxiliaryRevision,
   invalidateIssueOwnerProjections,
+  patchThreadSummariesLastRead,
   reconcileIssueFullSnapshotRevision,
 } from "./ws-updaters";
 
@@ -511,6 +513,23 @@ interface BatchUpdateSnapshots {
   prevChildren?: Iterable<readonly [string, unknown]>;
 }
 
+/**
+ * Records that the caller opened an issue: the server stamps the cursor, and on
+ * success the loaded thread-summary caches are patched so the feed's unread
+ * dot clears without a refetch. Failures are silent — an unrecorded read only
+ * leaves a dot on, and the next open records it.
+ */
+export function useMarkIssueRead() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (issueId: string) => api.markIssueRead(issueId),
+    onSuccess: (_data, issueId) => {
+      patchThreadSummariesLastRead(qc, wsId, issueId, new Date().toISOString());
+    },
+  });
+}
+
 export function useBatchUpdateIssues() {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
@@ -819,7 +838,67 @@ export function useBatchDeleteIssues() {
 
 // Comments / Timeline
 
-type TimelineCache = TimelineEntry[];
+type TimelineCache = TimelinePagesCache;
+
+type CommentCreateVars = {
+  content: string;
+  type?: string;
+  parentId?: string;
+  attachmentIds?: string[];
+  suppressAgentIds?: string[];
+  /** Running turns this comment goes into instead of a follow-up run. */
+  steerTaskIds?: string[];
+};
+
+/** Cache bookkeeping once the server has created a comment on `issueId`. */
+function applyCommentCreated(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+  comment: Comment,
+) {
+  if (comment.issue_revision) {
+    onIssueAuxiliaryRevision(qc, wsId, issueId, comment.issue_revision);
+  } else {
+    invalidateIssueOwnerProjections(qc, wsId, issueId);
+  }
+  invalidateLastActivitySortedIssueLists(qc, wsId);
+  const entry: TimelineEntry = {
+    type: "comment",
+    id: comment.id,
+    actor_type: comment.author_type,
+    actor_id: comment.author_id,
+    content: comment.content,
+    parent_id: comment.parent_id,
+    comment_type: comment.type,
+    reactions: comment.reactions ?? [],
+    attachments: comment.attachments ?? [],
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    supplements: comment.supplements,
+  };
+  const steered = !!comment.supplements?.length;
+  // Dedupe by id: the `comment:created` WS event may have already added
+  // this entry from the broadcast path before this onSuccess fires. Skip
+  // the append if the entry is already in the cache — but keep the
+  // steering receipts, which that broadcast predates.
+  qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+    updateTimelinePages(old, (entries) => {
+      if (entries.some((e) => e.id === entry.id)) {
+        return steered
+          ? entries.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
+          : entries;
+      }
+      return sortTimelineEntriesAsc([...entries, entry]);
+    }),
+  );
+  // A steered turn now lists this comment among its inputs.
+  if (steered) qc.invalidateQueries({ queryKey: issueKeys.tasks(issueId) });
+  // Posting a comment changes the trigger answer itself (the enqueued
+  // task now dedupes follow-up triggers), so cached previews for this
+  // issue are stale the moment the create lands.
+  qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreview(issueId) });
+}
 
 export function useCreateComment(issueId: string) {
   const qc = useQueryClient();
@@ -832,57 +911,9 @@ export function useCreateComment(issueId: string) {
       attachmentIds,
       suppressAgentIds,
       steerTaskIds,
-    }: {
-      content: string;
-      type?: string;
-      parentId?: string;
-      attachmentIds?: string[];
-      suppressAgentIds?: string[];
-      /** Running turns this comment goes into instead of a follow-up run. */
-      steerTaskIds?: string[];
-    }) => api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
-    onSuccess: (comment) => {
-      if (comment.issue_revision) {
-        onIssueAuxiliaryRevision(qc, wsId, issueId, comment.issue_revision);
-      } else {
-        invalidateIssueOwnerProjections(qc, wsId, issueId);
-      }
-      invalidateLastActivitySortedIssueLists(qc, wsId);
-      const entry: TimelineEntry = {
-        type: "comment",
-        id: comment.id,
-        actor_type: comment.author_type,
-        actor_id: comment.author_id,
-        content: comment.content,
-        parent_id: comment.parent_id,
-        comment_type: comment.type,
-        reactions: comment.reactions ?? [],
-        attachments: comment.attachments ?? [],
-        created_at: comment.created_at,
-        updated_at: comment.updated_at,
-        supplements: comment.supplements,
-      };
-      const steered = !!comment.supplements?.length;
-      // Dedupe by id: the `comment:created` WS event may have already added
-      // this entry from the broadcast path before this onSuccess fires. Skip
-      // the append if the entry is already in the cache — but keep the
-      // steering receipts, which that broadcast predates.
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return [entry];
-        if (old.some((e) => e.id === entry.id)) {
-          return steered
-            ? old.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
-            : old;
-        }
-        return sortTimelineEntriesAsc([...old, entry]);
-      });
-      // A steered turn now lists this comment among its inputs.
-      if (steered) qc.invalidateQueries({ queryKey: issueKeys.tasks(issueId) });
-      // Posting a comment changes the trigger answer itself (the enqueued
-      // task now dedupes follow-up triggers), so cached previews for this
-      // issue are stale the moment the create lands.
-      qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreview(issueId) });
-    },
+    }: CommentCreateVars) =>
+      api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
+    onSuccess: (comment) => applyCommentCreated(qc, wsId, issueId, comment),
     // No onSettled invalidate. The `comment:created` WS broadcast keeps
     // the timeline cache fresh after a successful create, and reconnect
     // recovery in useIssueTimeline already invalidates if the connection
@@ -890,6 +921,28 @@ export function useCreateComment(issueId: string) {
     // reference, which forces every memoized CommentCard subtree to
     // re-render (visible as a flash across sibling threads during AI
     // streaming).
+  });
+}
+
+/**
+ * `useCreateComment` for callers that post to several issues from one place
+ * (the feed composer), where the issue is part of the call instead of the hook.
+ */
+export function useCreateCommentOnIssue() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({
+      issueId,
+      content,
+      type,
+      parentId,
+      attachmentIds,
+      suppressAgentIds,
+      steerTaskIds,
+    }: CommentCreateVars & { issueId: string }) =>
+      api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
+    onSuccess: (comment, { issueId }) => applyCommentCreated(qc, wsId, issueId, comment),
   });
 }
 
@@ -913,21 +966,23 @@ export function useUpdateComment(issueId: string) {
       expectedRevision?: number;
     }) => api.updateComment(commentId, content, attachmentIds, suppressAgentIds, contentBase, expectedRevision),
     onMutate: async ({ commentId, content, attachmentIds }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
-      const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
+      await qc.cancelQueries({ queryKey: issueKeys.timelinePages(issueId) });
+      const prev = qc.getQueryData<TimelineCache>(issueKeys.timelinePages(issueId));
       const kept = new Set(attachmentIds);
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) =>
-        old?.map((e) =>
-          e.id === commentId
-            ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
-            : e,
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) =>
+          entries.map((e) =>
+            e.id === commentId
+              ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
+              : e,
+          ),
         ),
       );
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev !== undefined) {
-        qc.setQueryData(issueKeys.timeline(issueId), ctx.prev);
+        qc.setQueryData(issueKeys.timelinePages(issueId), ctx.prev);
       }
     },
     onSuccess: (comment) => {
@@ -962,12 +1017,13 @@ export function useDeleteComment(issueId: string) {
     // confirms, mirror its outcome; realtime events and the settle refetch
     // reconcile the rest.
     onSuccess: (keptReplies, commentId) => {
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return old;
-        return keptReplies
-          ? applyCommentDeletion(old, commentId, new Date().toISOString())
-          : removeCommentSubtree(old, commentId);
-      });
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) =>
+          keptReplies
+            ? applyCommentDeletion(entries, commentId, new Date().toISOString())
+            : removeCommentSubtree(entries, commentId),
+        ),
+      );
       // The endpoint remains 204 for compatibility, so the local caller has
       // no body carrying issue_revision. The realtime event will narrow this
       // with its revision when connected; this is the no-WS safety net.
@@ -986,7 +1042,7 @@ export function useDeleteComment(issueId: string) {
 // resolutions exactly as the backend will, instead of briefly showing two
 // resolutions until the refetch settles.
 function collectThreadCommentIds(
-  entries: TimelineCache,
+  entries: TimelineEntry[],
   commentId: string,
 ): Set<string> {
   const byId = new Map<string, TimelineEntry>();
@@ -1031,36 +1087,37 @@ export function useResolveComment(issueId: string) {
     mutationFn: ({ commentId, resolved }: { commentId: string; resolved: boolean }) =>
       resolved ? api.resolveComment(commentId) : api.unresolveComment(commentId),
     onMutate: async ({ commentId, resolved }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
-      const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return old;
-        // Resolving makes this comment the sole resolution in its thread, so
-        // mirror the server (ClearOtherThreadResolutions) and clear every other
-        // resolution in the same thread. Without this the cache shows two
-        // resolutions until the settle refetch, which is exactly the flash the
-        // single-resolution fix removes. Unresolve only clears its own row.
-        const threadIds = resolved ? collectThreadCommentIds(old, commentId) : null;
-        return old.map((e) => {
-          if (e.id === commentId) {
-            return {
-              ...e,
-              resolved_at: resolved ? new Date().toISOString() : null,
-              resolved_by_type: resolved ? e.resolved_by_type ?? null : null,
-              resolved_by_id: resolved ? e.resolved_by_id ?? null : null,
-            };
-          }
-          if (resolved && e.resolved_at && threadIds?.has(e.id)) {
-            return { ...e, resolved_at: null, resolved_by_type: null, resolved_by_id: null };
-          }
-          return e;
-        });
-      });
+      await qc.cancelQueries({ queryKey: issueKeys.timelinePages(issueId) });
+      const prev = qc.getQueryData<TimelineCache>(issueKeys.timelinePages(issueId));
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) => {
+          // Resolving makes this comment the sole resolution in its thread, so
+          // mirror the server (ClearOtherThreadResolutions) and clear every other
+          // resolution in the same thread. Without this the cache shows two
+          // resolutions until the settle refetch, which is exactly the flash the
+          // single-resolution fix removes. Unresolve only clears its own row.
+          const threadIds = resolved ? collectThreadCommentIds(entries, commentId) : null;
+          return entries.map((e) => {
+            if (e.id === commentId) {
+              return {
+                ...e,
+                resolved_at: resolved ? new Date().toISOString() : null,
+                resolved_by_type: resolved ? e.resolved_by_type ?? null : null,
+                resolved_by_id: resolved ? e.resolved_by_id ?? null : null,
+              };
+            }
+            if (resolved && e.resolved_at && threadIds?.has(e.id)) {
+              return { ...e, resolved_at: null, resolved_by_type: null, resolved_by_id: null };
+            }
+            return e;
+          });
+        }),
+      );
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev !== undefined) {
-        qc.setQueryData(issueKeys.timeline(issueId), ctx.prev);
+        qc.setQueryData(issueKeys.timelinePages(issueId), ctx.prev);
       }
     },
     onSettled: () => {

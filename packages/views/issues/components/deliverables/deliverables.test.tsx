@@ -110,9 +110,19 @@ function withQuery(children: ReactNode) {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
-function renderSection(files: ReadonlyArray<DeliverableFile>, onOpenOverview = vi.fn()) {
+function renderSection(
+  files: ReadonlyArray<DeliverableFile>,
+  onOpenOverview = vi.fn(),
+  onOpenFocus?: (attachmentId: string) => void,
+) {
   return renderWithI18n(
-    withQuery(<DeliverablesSection files={files} onOpenOverview={onOpenOverview} />),
+    withQuery(
+      <DeliverablesSection
+        files={files}
+        onOpenOverview={onOpenOverview}
+        onOpenFocus={onOpenFocus}
+      />,
+    ),
   );
 }
 
@@ -142,6 +152,22 @@ describe("DeliverablesSection", () => {
     renderSection(FILES);
     fireEvent.click(screen.getByRole("button", { name: "report.md, version 2" }));
     expect(openAtMock).toHaveBeenCalledWith("report-2");
+  });
+
+  it("opens a file's latest version full screen from its row and its thumbnail", () => {
+    const onOpenFocus = vi.fn();
+    renderSection(FILES, vi.fn(), onOpenFocus);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open report.md full screen" }));
+    expect(onOpenFocus).toHaveBeenLastCalledWith("report-2");
+    fireEvent.click(screen.getByRole("button", { name: "Open settings.png full screen" }));
+    expect(onOpenFocus).toHaveBeenLastCalledWith("shot");
+    expect(openAtMock).not.toHaveBeenCalled();
+  });
+
+  it("offers no full-screen action where the host gave none", () => {
+    renderSection(FILES);
+    expect(screen.queryByRole("button", { name: /full screen/ })).toBeNull();
   });
 
   it("downloads a file neither the sequence nor the viewer can open", () => {
@@ -276,6 +302,27 @@ describe("DeliverablesOverview focus", () => {
 });
 
 describe("useDeliverableDetails", () => {
+  it("hands a file to the full-screen view after closing the viewer", () => {
+    const calls: string[] = [];
+    const close = vi.fn(() => calls.push("close"));
+    const onOpenFocus = vi.fn((id: string) => calls.push(`focus:${id}`));
+
+    function Harness() {
+      const describe = useDeliverableDetails({
+        files: FILES,
+        commentById: new Map(TIMELINE.map((entry) => [entry.id, entry])),
+        onLocate: vi.fn(),
+        onOpenFocus,
+      });
+      const item = { key: "csv", url: CSV.url, filename: CSV.filename, attachment: CSV, imageByConstruction: false, blockId: "c-2" };
+      return <>{describe(item, { items: [item], goTo: () => true, close }).info}</>;
+    }
+    renderWithI18n(withQuery(<Harness />));
+
+    fireEvent.click(screen.getByRole("button", { name: "Open full screen" }));
+    expect(calls).toEqual(["close", "focus:csv"]);
+  });
+
   // The viewer covers the page, so "Show in comments" in the info panel has
   // to close it first, exactly like the same action in the top bar.
   it("closes the viewer before locating, from the info panel and the top bar", () => {

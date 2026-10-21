@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { MessageSquare, X } from "lucide-react";
+import { FileText, MessageSquare, X } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@multica/ui/components/ui/popover";
 import { useCommentDraftStore, type CommentDraftKey } from "@multica/core/issues/stores";
@@ -48,6 +48,9 @@ export function ReplyAnnotations({ draftKey, annotations, disabled, onEditAnnota
                   }
                   else setUnavailable(annotation.id);
                 }}>
+                {annotation.source?.type === "attachment" && <span className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
+                  <FileText className="size-3 shrink-0" /><span className="min-w-0 truncate">{annotation.source.filename}</span>
+                </span>}
                 <blockquote className="max-h-28 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-border pl-2 text-muted-foreground">
                   {annotation.quote}
                 </blockquote>

@@ -715,6 +715,7 @@ func init() {
 	issueCommentAddCmd.Flags().Bool("allow-external-file", false, "Allow --content-file / --attachment to read a path outside the current working directory. Off by default so a stale file from another run/environment can't be picked up (MUL-4252).")
 	issueCommentAddCmd.Flags().String("parent", "", "Parent comment ID to reply under. A comment-triggered agent run must reply under its trigger comment; omitting --parent to post a top-level comment is rejected")
 	issueCommentAddCmd.Flags().StringSlice("attachment", nil, "File path(s) to attach (can be specified multiple times). Non-image files, HTML included, show as file cards that open in the viewer; to render a chart inside the comment, put a ```html or ```mermaid block in the content instead")
+	issueCommentAddCmd.Flags().String("type", "", "Comment type: comment (default) or progress_update, a progress report whose body is a Markdown task list (- [ ] / - [x]) that the feed shows as the issue's checklist")
 	issueCommentAddCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// issue comment update
@@ -2512,6 +2513,12 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 		"Deliver the file itself with `multica issue comment add <issue-id> --attachment <path>` (repeatable) and drop the link."); err != nil {
 		return err
 	}
+	commentType, _ := cmd.Flags().GetString("type")
+	switch commentType {
+	case "", "comment", "progress_update":
+	default:
+		return fmt.Errorf("invalid --type %q: want comment or progress_update", commentType)
+	}
 
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -2559,6 +2566,9 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 	}
 	if len(attachmentIDs) > 0 {
 		body["attachment_ids"] = attachmentIDs
+	}
+	if commentType != "" {
+		body["type"] = commentType
 	}
 	var result map[string]any
 	if err := client.PostJSON(ctx, "/api/issues/"+issueID+"/comments", body, &result); err != nil {

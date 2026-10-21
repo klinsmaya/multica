@@ -249,8 +249,8 @@ vi.mock("@multica/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
-  issueTimelineOptions: (id: string) => ({
-    queryKey: ["issues", "timeline", id],
+  issueTimelineInfiniteOptions: (id: string) => ({
+    queryKey: ["issues", "timeline", id, "pages"],
   }),
 }));
 
@@ -305,9 +305,9 @@ vi.mock("@tanstack/react-query", () => ({
   useQueries: (opts: { queries: Array<{ queryKey: readonly unknown[] }> }) =>
     opts.queries.map((q) => ({ data: resolveIssue(q.queryKey) })),
   useQueryClient: () => ({
-    ensureQueryData: (opts: { queryKey: readonly unknown[] }) =>
+    ensureInfiniteQueryData: (opts: { queryKey: readonly unknown[] }) =>
       opts.queryKey[1] === "timeline"
-        ? Promise.resolve(mockTimeline.current)
+        ? Promise.resolve({ pages: [{ entries: mockTimeline.current }], pageParams: [null] })
         : Promise.reject(new Error(`unexpected key ${String(opts.queryKey)}`)),
   }),
 }));
