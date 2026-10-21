@@ -247,6 +247,15 @@ export type {
   ComposioConnectInitResponse,
 } from "./composio";
 export type {
+  OpenConnectorApp,
+  OpenConnectorAuthType,
+  OpenConnectorConnectionStatus,
+  OpenConnectorConnection,
+  OpenConnectorConnectInitResponse,
+  OpenConnectorConnectApiKeyRequest,
+  UpdateOpenConnectorConnectionRequest,
+} from "./connector";
+export type {
   SlackInstallation,
   ListSlackInstallationsResponse,
   RegisterSlackBYORequest,

@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS connector_oauth_state_pending_idx;

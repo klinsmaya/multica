@@ -93,6 +93,9 @@ import type {
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
+  OpenConnectorApp,
+  OpenConnectorConnection,
+  OpenConnectorConnectInitResponse,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -3826,3 +3829,49 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+// open-connector (user-owned app connections). `auth_type` and `status` fall
+// back to "unknown" for values a newer server may add, so the UI never treats
+// an unrecognised state as active. A connection without an id cannot be acted
+// on, so id/service stay required and a malformed element fails the list.
+export const OpenConnectorAppSchema = z.object({
+  service: z.string(),
+  name: z.string().default(""),
+  logo: z.string().optional().catch(undefined),
+  auth_types: z.array(z.string()).catch([]),
+}).loose();
+
+export const OpenConnectorAppListSchema = z.array(OpenConnectorAppSchema);
+
+export const OpenConnectorConnectionSchema = z.object({
+  id: z.string(),
+  service: z.string(),
+  label: z.string().default(""),
+  auth_type: z.string().catch("unknown").transform((v) => (v === "oauth" || v === "api_key" ? v : "unknown")),
+  status: z.string().catch("unknown").transform((v) => (v === "active" || v === "reauth_required" ? v : "unknown")),
+  is_default: z.boolean().catch(false),
+  connected_at: z.string().default(""),
+  last_used_at: z.string().nullable().catch(null).default(null),
+}).loose();
+
+export const OpenConnectorConnectionListSchema = z.array(OpenConnectorConnectionSchema);
+
+export const OpenConnectorConnectInitResponseSchema = z.object({
+  redirect_url: z.string(),
+}).loose();
+
+export const EMPTY_OPEN_CONNECTOR_APP_LIST: OpenConnectorApp[] = [];
+export const EMPTY_OPEN_CONNECTOR_CONNECTION_LIST: OpenConnectorConnection[] = [];
+export const EMPTY_OPEN_CONNECTOR_CONNECTION: OpenConnectorConnection = {
+  id: "",
+  service: "",
+  label: "",
+  auth_type: "unknown",
+  status: "unknown",
+  is_default: false,
+  connected_at: "",
+  last_used_at: null,
+};
+export const EMPTY_OPEN_CONNECTOR_CONNECT_INIT_RESPONSE: OpenConnectorConnectInitResponse = {
+  redirect_url: "",
+};

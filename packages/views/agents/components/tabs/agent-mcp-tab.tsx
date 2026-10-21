@@ -5,13 +5,17 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Lock, Plug } from "lucide-react";
 import { toast } from "sonner";
 import type { Agent, ComposioToolkit } from "@multica/core/types";
-import { useUpdateAgentAllowlist } from "@multica/core/agents";
+import {
+  useUpdateAgentAllowlist,
+  useUpdateAgentConnectorAllowlist,
+} from "@multica/core/agents";
+import { openConnectorConnectionsOptions } from "@multica/core/connectors";
 import { useFeatureEnabled } from "@multica/core/config";
 import {
   composioConnectionsOptions,
   composioToolkitsOptions,
 } from "@multica/core/composio";
-import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
+import { COMPOSIO_MCP_APPS_FLAG, OPEN_CONNECTOR_APPS_FLAG } from "@multica/core/feature-flags";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { ComposioToolkitLogo } from "../../../common/composio-toolkit-logo";
@@ -36,7 +40,7 @@ import { useT } from "../../../i18n";
  * optimistic cache write in `useUpdateAgentAllowlist` flips each box
  * instantly.
  */
-export function AgentMcpTab({ agent }: { agent: Agent }) {
+function ComposioMcpSection({ agent }: { agent: Agent }) {
   const { t } = useT("agents");
   const paths = useWorkspacePaths();
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
@@ -204,6 +208,118 @@ export function AgentMcpTab({ agent }: { agent: Agent }) {
           {t(($) => $.tab_body.composio_mcp.saving)}
         </p>
       )}
+    </div>
+  );
+}
+
+/** The agent owner's open-connector services this agent may use. Mirrors the
+ * Composio section: selectable services are those with an active connection
+ * of the current user (deduped by service). */
+function OpenConnectorMcpSection({ agent }: { agent: Agent }) {
+  const { t } = useT("agents");
+  const enabled = useFeatureEnabled(OPEN_CONNECTOR_APPS_FLAG, false);
+  const update = useUpdateAgentConnectorAllowlist(agent.id);
+  const connectionsQuery = useQuery({ ...openConnectorConnectionsOptions(), enabled });
+
+  const services = useMemo(() => {
+    const seen = new Set<string>();
+    for (const c of connectionsQuery.data ?? []) {
+      if (c.status === "active") seen.add(c.service);
+    }
+    return Array.from(seen);
+  }, [connectionsQuery.data]);
+  const allowlist = useMemo(
+    () => agent.connector_service_allowlist ?? [],
+    [agent.connector_service_allowlist],
+  );
+
+  if (!enabled) return null;
+
+  if (agent.connector_service_allowlist_redacted === true) {
+    return (
+      <div className="space-y-3">
+        <p className="flex items-center gap-2 text-body font-medium">
+          <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+          {t(($) => $.tab_body.open_connector_mcp.redacted_title)}
+        </p>
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.tab_body.open_connector_mcp.redacted_hint)}
+        </p>
+      </div>
+    );
+  }
+
+  const isWorkspacePublic =
+    agent.permission_mode === "public_to" &&
+    (agent.invocation_targets ?? []).some((target) => target.target_type === "workspace");
+  const showSharedWarning =
+    agent.permission_mode !== "private" && (allowlist.length > 0 || services.length > 0);
+
+  const handleToggle = (service: string, checked: boolean) => {
+    const set = new Set(allowlist);
+    if (checked) set.add(service);
+    else set.delete(service);
+    update.mutate(Array.from(set), {
+      onError: () => toast.error(t(($) => $.tab_body.open_connector_mcp.save_failed_toast)),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-body font-medium">{t(($) => $.tab_body.open_connector_mcp.heading)}</p>
+
+      {showSharedWarning && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-caption text-amber-700 dark:text-amber-400"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            {isWorkspacePublic
+              ? t(($) => $.tab_body.open_connector_mcp.workspace_warning)
+              : t(($) => $.tab_body.open_connector_mcp.shared_warning)}
+          </span>
+        </div>
+      )}
+
+      {connectionsQuery.isLoading ? (
+        <p className="text-body text-muted-foreground">
+          {t(($) => $.tab_body.open_connector_mcp.loading)}
+        </p>
+      ) : connectionsQuery.isError ? (
+        <p className="text-body text-destructive">
+          {t(($) => $.tab_body.open_connector_mcp.load_failed)}
+        </p>
+      ) : services.length === 0 ? (
+        <div className="space-y-2 rounded-lg border border-dashed p-6 text-center">
+          <p className="text-body font-medium">
+            {t(($) => $.tab_body.open_connector_mcp.empty_title)}
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y rounded-lg border">
+          {services.map((service) => (
+            <li key={service} className="flex items-center gap-3 p-3">
+              <p className="min-w-0 flex-1 truncate text-body font-medium">{service}</p>
+              <Checkbox
+                checked={allowlist.includes(service)}
+                disabled={update.isPending}
+                onCheckedChange={(value) => handleToggle(service, value === true)}
+                aria-label={t(($) => $.tab_body.open_connector_mcp.toggle_aria, { service })}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export function AgentMcpTab({ agent }: { agent: Agent }) {
+  return (
+    <div className="space-y-8">
+      <ComposioMcpSection agent={agent} />
+      <OpenConnectorMcpSection agent={agent} />
     </div>
   );
 }

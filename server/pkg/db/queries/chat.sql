@@ -1135,7 +1135,7 @@ WHERE id = $1;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, chat_session_id,
     initiator_user_id, originator_user_id, accountable_user_id, force_fresh_session, runtime_mcp_overlay,
-    runtime_connected_apps, originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
+    runtime_connected_apps, runtime_connector_handles, originator_source, trigger_evidence_kind, trigger_evidence_ref_id,
     fire_at, channel_context_revision, id
 )
 SELECT
@@ -1146,7 +1146,7 @@ SELECT
     sqlc.narg(accountable_user_id),
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     sqlc.narg(runtime_mcp_overlay),
-    sqlc.narg(runtime_connected_apps),
+    sqlc.narg(runtime_connected_apps), sqlc.narg(runtime_connector_handles),
     sqlc.narg(originator_source),
     sqlc.narg(trigger_evidence_kind),
     sqlc.narg(trigger_evidence_ref_id),

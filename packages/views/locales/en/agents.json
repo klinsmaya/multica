@@ -759,6 +759,19 @@
       "started_prefix": "Started {{when}}",
       "dispatched_prefix": "Dispatched {{when}}",
       "queued_prefix": "Queued {{when}}"
+    },
+    "open_connector_mcp": {
+      "heading": "Open Connector",
+      "loading": "Loading your connections…",
+      "load_failed": "Couldn't load your connected apps. Try again shortly.",
+      "empty_title": "No connected apps yet",
+      "toggle_aria": "Allow {{service}} for this agent",
+      "saving": "Saving…",
+      "save_failed_toast": "Couldn't save — please try again",
+      "redacted_title": "Configured — hidden from your view",
+      "redacted_hint": "Only the agent's creator can view or change which apps it may use.",
+      "shared_warning": "This agent is shared. People who can run this agent may use the Open Connector apps you enable here.",
+      "workspace_warning": "Public to workspace: any workspace member may use these Open Connector apps through this agent."
     }
   },
   "char_counter": {
@@ -806,7 +819,8 @@
     "public_group": "Public access",
     "owner_only_readonly": "Only the agent owner can change who can run this agent.",
     "members_empty": "No workspace members to choose from",
-    "composio_switch_hint": "Heads up — this agent has Composio apps enabled. Sharing it lets everyone with access use those apps through this agent."
+    "composio_switch_hint": "Heads up — this agent has Composio apps enabled. Sharing it lets everyone with access use those apps through this agent.",
+    "connector_switch_hint": "Heads up — this agent has Open Connector apps enabled. Sharing it lets everyone with access use those apps through this agent."
   },
   "profile_card": {
     "unavailable": "Agent unavailable",

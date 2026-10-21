@@ -1,0 +1,1 @@
+{"success":true,"message":"OK","data":{"connectionRequestId":"c9f25f65-05ee-4b35-98e3-7b3c23745954","service":"github","status":"failed","appId":null,"errorCode":"request_superseded","errorMessage":"A newer authorization request replaced this request.","expiresAt":"2026-10-20T17:14:08.224Z","createdAt":1792515848224,"updatedAt":1792515882360},"meta":{}}

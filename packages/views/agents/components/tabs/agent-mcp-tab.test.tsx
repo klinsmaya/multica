@@ -52,11 +52,16 @@ vi.mock("@multica/core/composio", () => ({
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
+vi.mock("@multica/core/connectors", () => ({
+  openConnectorConnectionsOptions: () => ({ queryKey: ["open-connector", "connections"] }),
+}));
+
 vi.mock("@multica/core/agents", () => ({
   useUpdateAgentAllowlist: () => ({
     mutate: mutateSpy,
     isPending: isPendingRef.current,
   }),
+  useUpdateAgentConnectorAllowlist: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@multica/core/paths", () => ({
@@ -134,8 +139,8 @@ describe("AgentMcpTab", () => {
 
     const { container } = renderTab({ composio_toolkit_allowlist: ["notion"] });
 
-    expect(container.firstChild).toBeNull();
-    expect(queryCallsRef.current).toHaveLength(2);
+    expect(container.firstChild).toBeEmptyDOMElement();
+    expect(queryCallsRef.current).toHaveLength(3);
     expect(queryCallsRef.current.every((call) => call.enabled === false)).toBe(true);
   });
 

@@ -579,6 +579,14 @@ export interface Agent {
    * field; treat `undefined` as false.
    */
   composio_toolkit_allowlist_redacted?: boolean;
+  /**
+   * open-connector counterpart of `composio_toolkit_allowlist`: the service
+   * slugs of the owner's open-connector connections this agent may use at
+   * task dispatch. Owner-only; redacted exactly like the Composio field.
+   */
+  connector_service_allowlist?: string[] | null;
+  /** True when the server stripped `connector_service_allowlist` (non-owner). */
+  connector_service_allowlist_redacted?: boolean;
   visibility: AgentVisibility;
   /**
    * Authoritative invocation permission mode (MUL-3963). The `visibility`
@@ -799,6 +807,8 @@ export interface UpdateAgentRequest {
    * MCP tab.
    */
   composio_toolkit_allowlist?: string[] | null;
+  /** open-connector service allowlist; same tri-state semantics as above. */
+  connector_service_allowlist?: string[] | null;
   visibility?: AgentVisibility;
   /**
    * Invocation permission mode (MUL-3963). When present it is authoritative;

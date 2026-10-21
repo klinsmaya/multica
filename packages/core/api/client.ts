@@ -193,6 +193,11 @@ import type {
   ComposioToolkit,
   ComposioConnection,
   ComposioConnectInitResponse,
+  OpenConnectorApp,
+  OpenConnectorConnection,
+  OpenConnectorConnectInitResponse,
+  OpenConnectorConnectApiKeyRequest,
+  UpdateOpenConnectorConnectionRequest,
   SlackInstallation,
   ListSlackInstallationsResponse,
   RegisterSlackBYORequest,
@@ -383,6 +388,14 @@ import {
   RedeemWecomBindingTokenResponseSchema,
   EMPTY_WECOM_INSTALLATION,
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
+  OpenConnectorAppListSchema,
+  OpenConnectorConnectionListSchema,
+  OpenConnectorConnectionSchema,
+  OpenConnectorConnectInitResponseSchema,
+  EMPTY_OPEN_CONNECTOR_APP_LIST,
+  EMPTY_OPEN_CONNECTOR_CONNECTION_LIST,
+  EMPTY_OPEN_CONNECTOR_CONNECTION,
+  EMPTY_OPEN_CONNECTOR_CONNECT_INIT_RESPONSE,
   EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
   TelegramInstallationSchema,
   ListTelegramInstallationsResponseSchema,
@@ -5128,6 +5141,76 @@ export class ApiClient {
   /** Disconnects a Composio connection the caller owns. */
   async deleteComposioConnection(connectionId: string): Promise<void> {
     await this.fetch(`/api/integrations/composio/connections/${connectionId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // open-connector integration. User-scoped like Composio (no workspaceId).
+  // A deployment without the integration answers 403 `open_connector_not_configured`.
+
+  /** The connectable open-connector services. */
+  async listOpenConnectorApps(): Promise<OpenConnectorApp[]> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/apps`);
+    return parseWithFallback(raw, OpenConnectorAppListSchema, EMPTY_OPEN_CONNECTOR_APP_LIST, {
+      endpoint: "GET /api/integrations/open-connector/apps",
+    });
+  }
+
+  /** The caller's non-revoked open-connector connections. */
+  async listOpenConnectorConnections(): Promise<OpenConnectorConnection[]> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connections`);
+    return parseWithFallback(
+      raw,
+      OpenConnectorConnectionListSchema,
+      EMPTY_OPEN_CONNECTOR_CONNECTION_LIST,
+      { endpoint: "GET /api/integrations/open-connector/connections" },
+    );
+  }
+
+  /** Starts an OAuth connect flow; the browser is sent to `redirect_url`. */
+  async openConnectorConnectInit(service: string): Promise<OpenConnectorConnectInitResponse> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connect/init`, {
+      method: "POST",
+      body: JSON.stringify({ service }),
+    });
+    return parseWithFallback(
+      raw,
+      OpenConnectorConnectInitResponseSchema,
+      EMPTY_OPEN_CONNECTOR_CONNECT_INIT_RESPONSE,
+      { endpoint: "POST /api/integrations/open-connector/connect/init" },
+    );
+  }
+
+  /** Connects with an API key. The key is never echoed back by the server. */
+  async openConnectorConnectApiKey(
+    req: OpenConnectorConnectApiKeyRequest,
+  ): Promise<OpenConnectorConnection> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connect/api-key`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+    return parseWithFallback(raw, OpenConnectorConnectionSchema, EMPTY_OPEN_CONNECTOR_CONNECTION, {
+      endpoint: "POST /api/integrations/open-connector/connect/api-key",
+    });
+  }
+
+  /** Renames a connection and/or makes it the default of its service. */
+  async updateOpenConnectorConnection(
+    id: string,
+    data: UpdateOpenConnectorConnectionRequest,
+  ): Promise<OpenConnectorConnection> {
+    const raw = await this.fetch<unknown>(`/api/integrations/open-connector/connections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, OpenConnectorConnectionSchema, EMPTY_OPEN_CONNECTOR_CONNECTION, {
+      endpoint: "PATCH /api/integrations/open-connector/connections/:id",
+    });
+  }
+
+  /** Disconnects a connection the caller owns. */
+  async deleteOpenConnectorConnection(id: string): Promise<void> {
+    await this.fetch(`/api/integrations/open-connector/connections/${id}`, {
       method: "DELETE",
     });
   }
