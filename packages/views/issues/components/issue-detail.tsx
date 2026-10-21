@@ -75,7 +75,7 @@ import { contentReferencesAttachment } from "@multica/core/types";
 import { isBuiltInIssueStatus } from "@multica/core/issue-statuses";
 import { commentLandingTarget, isDeletedComment } from "@multica/core/issues/comment-deletion";
 import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
-import { useUpdateIssue } from "@multica/core/issues/mutations";
+import { useMarkIssueRead, useUpdateIssue } from "@multica/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@multica/core/api";
 import { StatusIcon } from "./status-icon";
@@ -1300,6 +1300,9 @@ export function IssueDetailSkeleton({
 
 // IssueDetail
 
+/** How long an issue must stay open before it counts as read. */
+const MARK_READ_DELAY_MS = 1500;
+
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions }: IssueDetailProps) {
   const isPeek = variant === "peek";
   const { t } = useT("issues");
@@ -1307,6 +1310,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const timeAgo = useTimeAgo();
   const id = issueId;
   const user = useAuthStore((s) => s.user);
+
+  // Opening an issue records the read cursor, but only once the user has
+  // stayed on it: flicking through issues records nothing. Keyed on the id so
+  // a switch restarts the wait, and the cleanup cancels it on switch/unmount.
+  const { mutate: markIssueRead } = useMarkIssueRead();
+  const markIssueReadRef = useRef(markIssueRead);
+  markIssueReadRef.current = markIssueRead;
+  useEffect(() => {
+    const timer = setTimeout(() => markIssueReadRef.current(id), MARK_READ_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [id]);
   const paths = useWorkspacePaths();
   const openModal = useModalStore((state) => state.open);
 

@@ -8,6 +8,7 @@ import {
   viewStoreSlice,
 } from "@multica/core/issues/stores/view-store";
 import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import { patchThreadSummariesLastRead } from "@multica/core/issues/ws-updaters";
 import type { Issue, IssueThreadSummary } from "@multica/core/types";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { renderWithI18n } from "../../test/i18n";
@@ -30,6 +31,11 @@ vi.mock("@multica/core/api", async (importOriginal) => ({
 
 vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
+}));
+
+vi.mock("@multica/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: "user-me" } }),
 }));
 
 vi.mock("@multica/core/paths", () => ({
@@ -136,6 +142,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     last_reply_at: null,
     open_thread_count: 0,
     participants: [],
+    last_read_at: null,
     ...overrides,
   };
 }
@@ -159,6 +166,7 @@ function renderFeed(issues: Issue[], projectId: string | null = null) {
   const view = renderWithI18n(tree(issues));
   return Object.assign(view, {
     store,
+    queryClient,
     update: (next: Issue[]) => view.rerender(tree(next)),
   });
 }
@@ -295,6 +303,61 @@ describe("FeedView", () => {
     expect(screen.getAllByText("Open thread")).toHaveLength(1);
     expect(screen.getByText("user-9")).toBeInTheDocument();
     expect(screen.getByText("agent-3")).toBeInTheDocument();
+  });
+
+  describe("unread dot", () => {
+    const unread = (overrides: Partial<IssueThreadSummary> = {}) =>
+      summary({
+        issue_id: "issue-1",
+        reply_count: 2,
+        last_reply_at: "2026-10-02T00:00:00Z",
+        participants: [{ type: "agent", id: "agent-3" }],
+        last_read_at: null,
+        ...overrides,
+      });
+
+    it("marks a card unread, with no text, until the read cursor is patched in", async () => {
+      mockListThreadSummaries.mockResolvedValue({
+        summaries: [unread({ participants: [{ type: "member", id: "user-me" }] })],
+      });
+      const { queryClient } = renderFeed([makeIssue({ id: "issue-1", title: "Mine" })]);
+
+      const dot = await screen.findByRole("img", { name: "Unread" });
+      expect(dot).toHaveAttribute("data-read-state", "unread");
+      expect(dot).toBeEmptyDOMElement();
+      expect(screen.queryByRole("img", { name: "Awaiting your reply" })).not.toBeInTheDocument();
+
+      act(() => {
+        patchThreadSummariesLastRead(queryClient, "ws-1", "issue-1", new Date().toISOString());
+      });
+
+      await waitFor(() =>
+        expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument(),
+      );
+    });
+
+    it("uses the awaiting variant when someone else spoke last", async () => {
+      mockListThreadSummaries.mockResolvedValue({ summaries: [unread()] });
+      renderFeed([makeIssue({ id: "issue-1", title: "Theirs" })]);
+
+      const dot = await screen.findByRole("img", { name: "Awaiting your reply" });
+      expect(dot).toHaveAttribute("data-read-state", "awaiting");
+      expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument();
+    });
+
+    it("shows no dot once the cursor is at or after the newest comment, or without comments", async () => {
+      mockListThreadSummaries.mockResolvedValue({
+        summaries: [unread({ last_read_at: "2026-10-02T00:00:00Z" })],
+      });
+      renderFeed([
+        makeIssue({ id: "issue-1", title: "Read", created_at: "2026-10-01T00:00:00Z" }),
+        makeIssue({ id: "issue-2", title: "Quiet", created_at: "2026-10-02T00:00:00Z" }),
+      ]);
+
+      await screen.findByText("2 replies");
+      expect(screen.queryByRole("img", { name: "Unread" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("img", { name: "Awaiting your reply" })).not.toBeInTheDocument();
+    });
   });
 
   it("keeps the cards when the summaries request fails", async () => {

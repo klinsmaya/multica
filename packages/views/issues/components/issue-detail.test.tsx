@@ -337,6 +337,7 @@ const mockApiObj = vi.hoisted(() => ({
   listProperties: vi.fn().mockResolvedValue({ properties: [], total: 0 }),
   listIssues: vi.fn().mockResolvedValue({ issues: [], total: 0 }),
   uploadFile: vi.fn(),
+  markIssueRead: vi.fn().mockResolvedValue(undefined),
   listIssueReactions: vi.fn().mockResolvedValue([]),
   addIssueReaction: vi.fn(),
   removeIssueReaction: vi.fn(),
@@ -3874,6 +3875,103 @@ describe("IssueDetail (shared)", () => {
     const rendered = Array.from(container.querySelectorAll("[id^='comment-']")).map((el) => el.id)
       .filter((id) => ["comment-confirm", "comment-step2", "comment-aside", "comment-step3"].includes(id));
     expect(rendered).toEqual(["comment-confirm", "comment-step2", "comment-aside", "comment-step3"]);
+  });
+
+  describe("read cursor", () => {
+    // Only the timer pair is faked: testing-library's waitFor and react-query
+    // keep their real scheduling, and nothing here waits on the issue loading.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      mockApiObj.markIssueRead.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const advance = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+
+    function renderWithRerender(issueId: string) {
+      const queryClient = createTestQueryClient();
+      const tree = (id: string) => (
+        <I18nProvider locale="en" resources={TEST_RESOURCES}>
+          <QueryClientProvider client={queryClient}>
+            <IssueDetail issueId={id} />
+          </QueryClientProvider>
+        </I18nProvider>
+      );
+      const result = render(tree(issueId));
+      return { ...result, switchTo: (id: string) => result.rerender(tree(id)) };
+    }
+
+    it("marks the issue read once, 1.5 s after it opens", async () => {
+      renderIssueDetail("issue-1");
+
+      await advance(1499);
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+
+      await advance(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-1");
+
+      await advance(10_000);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks the issue read as soon as the user posts a comment", async () => {
+      // Real timers here: the send path is awaited through waitFor, and the
+      // 1.5 s open timer must not be what records the read.
+      vi.useRealTimers();
+      mockApiObj.createComment.mockResolvedValue({
+        id: "comment-new",
+        issue_id: "issue-1",
+        content: "A new update",
+        author_type: "member",
+        author_id: "user-1",
+        parent_id: null,
+        type: "comment",
+        created_at: "2026-08-13T00:00:00Z",
+        updated_at: "2026-08-13T00:00:00Z",
+      });
+      renderIssueDetail("issue-1");
+
+      await screen.findByText("Implement authentication");
+      fireEvent.click(screen.getByTestId("comment-composer-shell"));
+      const editor = await screen.findByPlaceholderText("Leave a comment...");
+      fireEvent.change(editor, { target: { value: "A new update" } });
+      const composer = editor.closest<HTMLElement>("[aria-busy], .relative.flex.flex-col.rounded-lg")!;
+      fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+
+      await waitFor(() => {
+        expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-1");
+      });
+    });
+
+    it("records nothing when the detail closes before the delay", async () => {
+      const { unmount } = renderIssueDetail("issue-1");
+
+      await advance(1000);
+      unmount();
+      await advance(5000);
+
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+    });
+
+    it("restarts the wait when the issue changes, recording only the last one", async () => {
+      const { switchTo } = renderWithRerender("issue-1");
+
+      await advance(1000);
+      switchTo("issue-2");
+      await advance(1000);
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+
+      await advance(500);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-2");
+    });
   });
 
 });

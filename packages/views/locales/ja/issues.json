@@ -684,6 +684,8 @@
     "last_reply": "最終返信 {{time}}",
     "open_threads_other": "未解決のスレッド {{count}} 件",
     "open_thread": "スレッドを開く",
+    "unread": "未読",
+    "awaiting_reply": "返信待ち",
     "empty": "フィードに表示するタスクはありません",
     "quick": {
       "continue": "最近の作業を続ける",

@@ -1294,6 +1294,12 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
+			name: "delete issue read cursors",
+			run: func() error {
+				return qtx.DeleteIssueReadCursorsForWorkspace(ctx, requester.WorkspaceID)
+			},
+		},
+		{
 			// issue_workflow references the status catalog and projects by
 			// value only, so it is swept alongside the catalog. (MUL-7420)
 			name: "delete issue workflows",

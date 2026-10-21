@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown, MessagesSquare } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
+import { useAuthStore } from "@multica/core/auth";
 import { threadSummariesOptions } from "@multica/core/issues/queries";
 import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import type { Issue } from "@multica/core/types";
@@ -13,6 +14,7 @@ import { useT } from "../../i18n";
 import { useIssuePeekActions } from "../surface/peek-context";
 import { FeedComposer, type FeedComposerHandle } from "./feed-composer";
 import { FeedMessageCard } from "./feed-message-card";
+import { getFeedReadState } from "./feed-read-state";
 import { FeedQuickActions } from "./feed-quick-actions";
 import { FeedThreadBar } from "./feed-thread-bar";
 
@@ -54,6 +56,7 @@ export function FeedView({
   // A failed or unsupported summaries request leaves `data` undefined; the
   // cards render without thread details instead of surfacing an error.
   const { data: summaries } = useQuery(threadSummariesOptions(wsId, messageIds));
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   // Whether the reader is parked at the newest message lives in a ref: it only
   // decides what to do when the list grows, so it must not re-render the feed.
@@ -136,7 +139,10 @@ export function FeedView({
             followOutput={false}
             itemContent={(_, issue) => (
               <div className="mx-auto w-full max-w-3xl px-4 py-2">
-                <FeedMessageCard issue={issue} />
+                <FeedMessageCard
+                  issue={issue}
+                  readState={getFeedReadState(summaries?.get(issue.id), currentUserId)}
+                />
                 <FeedThreadBar issue={issue} summary={summaries?.get(issue.id)} />
               </div>
             )}

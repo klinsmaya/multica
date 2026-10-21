@@ -28,6 +28,9 @@ type IssueThreadSummaryResponse struct {
 	LastReplyAt     *string                     `json:"last_reply_at"`
 	OpenThreadCount int64                       `json:"open_thread_count"`
 	Participants    []ThreadParticipantResponse `json:"participants"`
+	// LastReadAt is the caller's own read cursor on the issue; null when the
+	// caller never opened it.
+	LastReadAt *string `json:"last_read_at"`
 }
 
 // ListIssueThreadSummaries returns comment rollups for a batch of issues so a
@@ -37,7 +40,19 @@ type IssueThreadSummaryResponse struct {
 // platform-authored) get a row; callers treat a missing issue as zero.
 // Workspace scope is enforced in the query, so an id from another workspace
 // yields no row rather than an error.
+//
+// Each row also carries the caller's read cursor (last_read_at, null when never
+// opened) so the feed can tell unread cards from read ones; other users'
+// cursors are never exposed.
 func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	userUUID, ok := parseUUIDOrBadRequest(w, userID, "user_id")
+	if !ok {
+		return
+	}
 	workspaceID := h.resolveWorkspaceID(r)
 	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace_id")
 	if !ok {
@@ -90,6 +105,20 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	cursorRows, err := h.Queries.ListIssueReadCursors(r.Context(), db.ListIssueReadCursorsParams{
+		UserID:      userUUID,
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list read cursors")
+		return
+	}
+	lastRead := make(map[string]*string, len(cursorRows))
+	for _, c := range cursorRows {
+		lastRead[uuidToString(c.IssueID)] = timestampToNanoPtr(c.LastReadAt)
+	}
+
 	// Rows arrive ordered by issue then most recent activity, so the first
 	// few per issue are the participants to show.
 	participants := make(map[string][]ThreadParticipantResponse, len(rows))
@@ -117,6 +146,7 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 			LastReplyAt:     timestampToNanoPtr(row.LastReplyAt),
 			OpenThreadCount: row.OpenThreadCount,
 			Participants:    list,
+			LastReadAt:      lastRead[issueID],
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summaries": summaries})

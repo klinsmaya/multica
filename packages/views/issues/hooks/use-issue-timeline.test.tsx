@@ -8,6 +8,7 @@ import { renderHook, act } from "@testing-library/react";
 // in useIssueTimeline — guarding against a regression here means future code
 // can't accidentally pull the whole mutation result into a useCallback dep.
 const stableHandles = vi.hoisted(() => ({
+  markReadMutate: vi.fn(),
   createMutateAsync: vi.fn(async () => ({})),
   updateMutateAsync: vi.fn(async () => ({})),
   deleteMutateAsync: vi.fn(async () => ({})),
@@ -43,6 +44,11 @@ vi.mock("@multica/core/issues/mutations", () => ({
   useToggleCommentReaction: () => ({
     mutateAsync: vi.fn(),
     mutate: stableHandles.toggleMutate,
+    isPending: false,
+  }),
+  useMarkIssueRead: () => ({
+    mutateAsync: vi.fn(),
+    mutate: stableHandles.markReadMutate,
     isPending: false,
   }),
 }));

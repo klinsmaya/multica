@@ -838,6 +838,7 @@ function applyCommentToThreadSummary(
     last_reply_at: lastReplyAt,
     open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
     participants,
+    last_read_at: existing?.last_read_at ?? null,
   };
 }
 
@@ -875,6 +876,45 @@ export function onCommentCreatedPatchThreadSummaries(
       index === -1
         ? [...data, patched]
         : data.map((s, i) => (i === index ? patched : s)),
+    );
+  }
+}
+
+/**
+ * Stamps the caller's read cursor onto every loaded thread-summary cache that
+ * includes the issue, so the feed's unread dot clears without a refetch. The
+ * server already holds the cursor; this only mirrors it. Caches without a row
+ * for the issue are left alone: no row means no counted comment to be unread.
+ * The cursor never moves backwards, matching the server, and is lifted to the
+ * row's own last_reply_at so a client clock behind the server's cannot leave a
+ * just-read issue looking unread until the next refetch.
+ */
+export function patchThreadSummariesLastRead(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+  lastReadAt: string,
+) {
+  const caches = qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  });
+  for (const [key, data] of caches) {
+    const idsKey = key[key.length - 1];
+    if (typeof idsKey !== "string") continue;
+    if (!idsKey.split(",").includes(issueId)) continue;
+    if (!data) continue;
+
+    const index = data.findIndex((s) => s.issue_id === issueId);
+    if (index === -1) continue;
+    const row = data[index]!;
+    const next =
+      row.last_reply_at != null && Date.parse(row.last_reply_at) > Date.parse(lastReadAt)
+        ? row.last_reply_at
+        : lastReadAt;
+    if (row.last_read_at != null && Date.parse(row.last_read_at) >= Date.parse(next)) continue;
+    qc.setQueryData<IssueThreadSummary[]>(
+      key,
+      data.map((s, i) => (i === index ? { ...s, last_read_at: next } : s)),
     );
   }
 }

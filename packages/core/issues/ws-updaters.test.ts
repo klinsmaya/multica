@@ -17,6 +17,7 @@ import {
   onIssueUpdated,
   patchIssueLabels,
   patchIssueProperties,
+  patchThreadSummariesLastRead,
 } from "./ws-updaters";
 import { issueKeys } from "./queries";
 import { labelKeys } from "../labels/queries";
@@ -1244,6 +1245,7 @@ describe("thread summary realtime updates", () => {
       { type: "agent", id: "agent-1" },
       { type: "member", id: "user-2" },
     ],
+    last_read_at: null,
   });
 
   const read = (key: readonly unknown[] = cacheKey) =>
@@ -1270,6 +1272,7 @@ describe("thread summary realtime updates", () => {
         { type: "agent", id: "agent-1" },
         { type: "member", id: "user-2" },
       ],
+      last_read_at: null,
     });
   });
 
@@ -1370,6 +1373,68 @@ describe("thread summary realtime updates", () => {
       last_reply_at: "2026-10-02T00:00:00Z",
       open_thread_count: 1,
       participants: [{ type: "agent", id: "agent-9" }],
+      last_read_at: null,
+    });
+  });
+
+  it("keeps the caller's read cursor when a new comment is counted", () => {
+    qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+      { ...summaryA(), last_read_at: "2026-10-01T12:00:00Z" },
+    ]);
+
+    onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+    expect(rowA()?.last_read_at).toBe("2026-10-01T12:00:00Z");
+    expect(rowA()?.last_reply_at).toBe("2026-10-02T00:00:00Z");
+  });
+
+  describe("patchThreadSummariesLastRead", () => {
+    it("stamps last_read_at on the issue's row in every cache that asked for it", () => {
+      const onlyAKey = issueKeys.threadSummaries(WS_ID, issueA);
+      qc.setQueryData<IssueThreadSummary[]>(onlyAKey, [summaryA()]);
+      qc.setQueryData<IssueThreadSummary[]>(onlyBKey, []);
+
+      patchThreadSummariesLastRead(qc, WS_ID, issueA, "2026-10-03T00:00:00Z");
+
+      expect(rowA()?.last_read_at).toBe("2026-10-03T00:00:00Z");
+      expect(read(onlyAKey)?.[0]?.last_read_at).toBe("2026-10-03T00:00:00Z");
+      expect(read(onlyBKey)).toEqual([]);
+    });
+
+    it("leaves other issues' rows and other workspaces' caches alone", () => {
+      const otherWsKey = issueKeys.threadSummaries("ws-2", issueA);
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        summaryA(),
+        { ...summaryA(), issue_id: issueB },
+      ]);
+      qc.setQueryData<IssueThreadSummary[]>(otherWsKey, [summaryA()]);
+
+      patchThreadSummariesLastRead(qc, WS_ID, issueA, "2026-10-03T00:00:00Z");
+
+      expect(read()?.find((s) => s.issue_id === issueB)?.last_read_at).toBeNull();
+      expect(read(otherWsKey)?.[0]?.last_read_at).toBeNull();
+    });
+
+    it("never moves the cursor backwards", () => {
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        { ...summaryA(), last_read_at: "2026-10-05T00:00:00Z" },
+      ]);
+
+      patchThreadSummariesLastRead(qc, WS_ID, issueA, "2026-10-03T00:00:00Z");
+
+      expect(rowA()?.last_read_at).toBe("2026-10-05T00:00:00Z");
+    });
+
+    it("lifts the cursor to last_reply_at when the client clock is behind", () => {
+      patchThreadSummariesLastRead(qc, WS_ID, issueA, "2026-09-01T00:00:00Z");
+
+      expect(rowA()?.last_read_at).toBe("2026-10-01T00:00:00Z");
+    });
+
+    it("does not create a row for an issue without a summary", () => {
+      patchThreadSummariesLastRead(qc, WS_ID, issueB, "2026-10-03T00:00:00Z");
+
+      expect(read()?.map((s) => s.issue_id)).toEqual([issueA]);
     });
   });
 

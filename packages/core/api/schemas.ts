@@ -1803,6 +1803,8 @@ export const ThreadSummariesResponseSchema = z.object({
       type: z.string(),
       id: z.string(),
     }).loose()).default([]),
+    // Older servers omit the caller's read cursor.
+    last_read_at: z.string().nullable().optional().default(null),
   }).loose()).default([]),
 }).loose();
 

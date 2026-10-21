@@ -8,13 +8,14 @@ import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { LabelChip } from "../../labels/label-chip";
 import { useNavigation } from "../../navigation";
-import { useTimeAgo } from "../../i18n";
+import { useT, useTimeAgo } from "../../i18n";
 import {
   PEEK_TARGET_ATTR,
   useIsIssuePeeked,
   useIssuePeekActions,
 } from "../surface/peek-context";
 import { descriptionPreview } from "./description-preview";
+import type { FeedReadState } from "./feed-read-state";
 
 const MAX_LABELS = 3;
 
@@ -33,10 +34,38 @@ export function useOpenFeedIssue(issueId: string) {
   }, [peek, push, paths, issueId]);
 }
 
+/**
+ * Unread marker on the card's left edge. It carries no text: the dot is an
+ * image with an accessible name. "Awaiting" is the same dot with a ring, so it
+ * stands out among plain unread cards.
+ */
+function FeedUnreadDot({ state }: { state: Exclude<FeedReadState, "read"> }) {
+  const { t } = useT("issues");
+  return (
+    <span className="pointer-events-none absolute inset-y-0 left-1 flex items-center">
+      <span
+        role="img"
+        aria-label={
+          state === "awaiting"
+            ? t(($) => $.feed.awaiting_reply)
+            : t(($) => $.feed.unread)
+        }
+        data-read-state={state}
+        className={cn(
+          "size-1.5 rounded-full bg-brand",
+          state === "awaiting" && "ring-[3px] ring-brand/25",
+        )}
+      />
+    </span>
+  );
+}
+
 export const FeedMessageCard = memo(function FeedMessageCard({
   issue,
+  readState = "read",
 }: {
   issue: Issue;
+  readState?: FeedReadState;
 }) {
   const timeAgo = useTimeAgo();
   const { getActorName } = useActorName();
@@ -59,10 +88,11 @@ export const FeedMessageCard = memo(function FeedMessageCard({
         open();
       }}
       className={cn(
-        "flex cursor-pointer gap-3 rounded-lg border-[0.5px] border-surface-border bg-surface p-3 shadow-[var(--surface-shadow)] transition-colors hover:border-foreground/15 hover:bg-surface-hover",
+        "relative flex cursor-pointer gap-3 rounded-lg border-[0.5px] border-surface-border bg-surface p-3 shadow-[var(--surface-shadow)] transition-colors hover:border-foreground/15 hover:bg-surface-hover",
         peeked && "ring-2 ring-brand/50",
       )}
     >
+      {readState !== "read" && <FeedUnreadDot state={readState} />}
       <ActorAvatar
         actorType={issue.creator_type}
         actorId={issue.creator_id}

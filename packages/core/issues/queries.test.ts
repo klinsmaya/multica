@@ -781,6 +781,7 @@ describe("threadSummariesOptions", () => {
       last_reply_at: null,
       open_thread_count: 0,
       participants: [],
+      last_read_at: null,
     };
   }
 

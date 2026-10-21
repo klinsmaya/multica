@@ -15,6 +15,7 @@ import {
   useCreateComment,
   useCreateCommentSubIssue,
   useDeleteComment,
+  useMarkIssueRead,
   useResolveComment,
   useUpdateComment,
   useUpdateIssue,
@@ -37,6 +38,7 @@ import {
 import type {
   InboxItem,
   Issue,
+  IssueThreadSummary,
   ListIssuesCache,
   TimelineEntry,
   UpdateIssueRequest,
@@ -1342,6 +1344,64 @@ describe("comment mutations — owner revision and last activity", () => {
 
     expect(qc.getQueryData(issueKeys.timelinePages(issueId))).toBe(before);
     qc.clear();
+  });
+});
+
+describe("useMarkIssueRead", () => {
+  let qc: QueryClient;
+
+  afterEach(() => {
+    qc.clear();
+    vi.restoreAllMocks();
+  });
+
+  function summary(issueId: string): IssueThreadSummary {
+    return {
+      issue_id: issueId,
+      reply_count: 1,
+      last_reply_at: "2026-01-01T00:00:00Z",
+      open_thread_count: 0,
+      participants: [],
+      last_read_at: null,
+    };
+  }
+
+  it("calls the API once and stamps last_read_at into the loaded summary caches", async () => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const markIssueRead = vi.fn().mockResolvedValue(undefined);
+    setApiInstance({ markIssueRead } as unknown as ApiClient);
+    const key = issueKeys.threadSummaries(WS_ID, "issue-1,issue-2");
+    qc.setQueryData<IssueThreadSummary[]>(key, [summary("issue-1"), summary("issue-2")]);
+
+    const { result } = renderHook(() => useMarkIssueRead(), { wrapper: createWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync("issue-1");
+    });
+
+    expect(markIssueRead).toHaveBeenCalledTimes(1);
+    expect(markIssueRead).toHaveBeenCalledWith("issue-1");
+    const rows = qc.getQueryData<IssueThreadSummary[]>(key)!;
+    expect(rows[0]!.last_read_at).not.toBeNull();
+    expect(Date.parse(rows[0]!.last_read_at!)).toBeGreaterThanOrEqual(
+      Date.parse("2026-01-01T00:00:00Z"),
+    );
+    expect(rows[1]!.last_read_at).toBeNull();
+  });
+
+  it("leaves the caches untouched when the request fails", async () => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setApiInstance({
+      markIssueRead: vi.fn().mockRejectedValue(new Error("boom")),
+    } as unknown as ApiClient);
+    const key = issueKeys.threadSummaries(WS_ID, "issue-1");
+    qc.setQueryData<IssueThreadSummary[]>(key, [summary("issue-1")]);
+
+    const { result } = renderHook(() => useMarkIssueRead(), { wrapper: createWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync("issue-1").catch(() => {});
+    });
+
+    expect(qc.getQueryData<IssueThreadSummary[]>(key)![0]!.last_read_at).toBeNull();
   });
 });
 

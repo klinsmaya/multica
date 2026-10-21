@@ -54,6 +54,7 @@ import { configStore } from "../config";
 import {
   onIssueAuxiliaryRevision,
   invalidateIssueOwnerProjections,
+  patchThreadSummariesLastRead,
   reconcileIssueFullSnapshotRevision,
 } from "./ws-updaters";
 
@@ -510,6 +511,23 @@ interface BatchUpdateSnapshots {
   prevInboxList?: unknown;
   prevArchivedInboxCaches?: Iterable<readonly [QueryKey, unknown]>;
   prevChildren?: Iterable<readonly [string, unknown]>;
+}
+
+/**
+ * Records that the caller opened an issue: the server stamps the cursor, and on
+ * success the loaded thread-summary caches are patched so the feed's unread
+ * dot clears without a refetch. Failures are silent — an unrecorded read only
+ * leaves a dot on, and the next open records it.
+ */
+export function useMarkIssueRead() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: (issueId: string) => api.markIssueRead(issueId),
+    onSuccess: (_data, issueId) => {
+      patchThreadSummariesLastRead(qc, wsId, issueId, new Date().toISOString());
+    },
+  });
 }
 
 export function useBatchUpdateIssues() {

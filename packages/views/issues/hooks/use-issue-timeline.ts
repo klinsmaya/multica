@@ -33,6 +33,7 @@ import {
 } from "@multica/core/issues/timeline-pages";
 import {
   useCreateComment,
+  useMarkIssueRead,
   useUpdateComment,
   useDeleteComment,
   useResolveComment,
@@ -191,6 +192,9 @@ export function useIssueTimeline(
   // flip on every parent re-render — listing the whole mutation object would
   // defeat React.memo on CommentCard.
   const { mutateAsync: createComment } = useCreateComment(issueId);
+  // The author has read everything up to their own comment, so the feed must
+  // not flag the issue unread for them: the cursor moves with each send.
+  const { mutate: markIssueRead } = useMarkIssueRead();
   const { mutateAsync: updateComment } = useUpdateComment(issueId);
   const { mutateAsync: deleteCommentAsync } = useDeleteComment(issueId);
   const { mutateAsync: resolveCommentAsync } = useResolveComment(issueId);
@@ -421,6 +425,7 @@ export function useIssueTimeline(
       if (!content.trim() || !userId) return false;
       try {
         const comment = await createComment({ content, attachmentIds, suppressAgentIds, steerTaskIds });
+        markIssueRead(issueId);
         warnUnhandledTriggers(comment?.trigger_outcomes, comment?.content);
         return comment.id;
       } catch (err) {
@@ -432,7 +437,7 @@ export function useIssueTimeline(
         return false;
       }
     },
-    [userId, createComment, warnUnhandledTriggers, t],
+    [userId, createComment, markIssueRead, issueId, warnUnhandledTriggers, t],
   );
 
   const submitReply = useCallback(
@@ -447,6 +452,7 @@ export function useIssueTimeline(
           suppressAgentIds,
           steerTaskIds,
         });
+        markIssueRead(issueId);
         warnUnhandledTriggers(comment?.trigger_outcomes, comment?.content);
         return comment.id;
       } catch (err) {
@@ -458,7 +464,7 @@ export function useIssueTimeline(
         return false;
       }
     },
-    [userId, createComment, warnUnhandledTriggers, t],
+    [userId, createComment, markIssueRead, issueId, warnUnhandledTriggers, t],
   );
 
   const editComment = useCallback(

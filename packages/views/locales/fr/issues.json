@@ -713,6 +713,8 @@
     "open_threads_one": "{{count}} fil ouvert",
     "open_threads_other": "{{count}} fils ouverts",
     "open_thread": "Ouvrir le fil",
+    "unread": "Non lu",
+    "awaiting_reply": "En attente de votre réponse",
     "empty": "Aucune tâche dans ce flux",
     "quick": {
       "continue": "Reprendre le dernier travail",

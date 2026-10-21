@@ -2027,6 +2027,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/comments", h.CreateComment)
 					r.Get("/comments", h.ListComments)
 					r.Get("/timeline", h.ListTimeline)
+					r.Put("/read", h.MarkIssueRead)
 					r.Get("/workflow-handoff", h.PreviewWorkflowHandoff)
 					r.Get("/subscribers", h.ListIssueSubscribers)
 					r.Post("/subscribe", h.SubscribeToIssue)

@@ -1130,7 +1130,23 @@ describe("ApiClient schema fallback", () => {
           last_reply_at: null,
           open_thread_count: 0,
           participants: [],
+          last_read_at: null,
         },
+      ]);
+    });
+
+    it("keeps the caller's read cursor and nulls an explicit null", async () => {
+      stubFetchJson({
+        summaries: [
+          { issue_id: "issue-1", last_read_at: "2026-05-01T10:00:00.123456789Z" },
+          { issue_id: "issue-2", last_read_at: null },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries.map((s) => s.last_read_at)).toEqual([
+        "2026-05-01T10:00:00.123456789Z",
+        null,
       ]);
     });
   });

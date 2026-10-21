@@ -180,6 +180,8 @@ export interface IssueThreadSummary {
   last_reply_at: string | null;
   open_thread_count: number;
   participants: IssueThreadParticipant[];
+  /** The caller's own read cursor on the issue; null when never opened. */
+  last_read_at: string | null;
 }
 
 export interface Issue {

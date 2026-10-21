@@ -1638,6 +1638,12 @@ export class ApiClient {
     });
   }
 
+  /** Sets the caller's read cursor on an issue to the server's now. No body, no
+   *  response to parse: the cursor only moves forward and stays private. */
+  async markIssueRead(issueId: string): Promise<void> {
+    await this.fetch(`/api/issues/${encodeURIComponent(issueId)}/read`, { method: "PUT" });
+  }
+
   /** Workspace-wide when `parentIds` is omitted; otherwise only those parents. */
   async getChildIssueProgress(parentIds?: string[]): Promise<{
     progress: { parent_issue_id: string; total: number; done: number }[];

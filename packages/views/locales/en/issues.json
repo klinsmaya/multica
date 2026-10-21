@@ -713,6 +713,8 @@
     "open_threads_one": "{{count}} open thread",
     "open_threads_other": "{{count}} open threads",
     "open_thread": "Open thread",
+    "unread": "Unread",
+    "awaiting_reply": "Awaiting your reply",
     "empty": "No issues in this feed",
     "quick": {
       "continue": "Continue recent work",
