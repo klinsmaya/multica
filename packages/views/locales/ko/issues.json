@@ -690,7 +690,8 @@
       "plan": "계획 세우기",
       "plan_title": "계획 세우기",
       "new": "새 태스크"
-    }
+    },
+    "new_messages": "새 메시지"
   },
   "filtered_empty": {
     "title": "필터 조건에 맞는 태스크가 없습니다",

@@ -42,6 +42,8 @@ import {
   onIssueMetadataChanged,
   onIssueAuxiliaryRevision,
   invalidateIssueOwnerProjections,
+  onCommentCreatedPatchThreadSummaries,
+  invalidateThreadSummaries,
 } from "../issues/ws-updaters";
 import {
   invalidateLastActivitySortedIssueLists,
@@ -1216,6 +1218,7 @@ export function useRealtimeSync(
       if (wsId) {
         invalidateUpdatedAtSortedIssueLists(qc, wsId);
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        onCommentCreatedPatchThreadSummaries(qc, wsId, comment);
         // A comment carries only the aggregate owner revision, not a full
         // Issue snapshot. Mark stale projections for an authoritative fetch
         // without making a later full snapshot look older than the cache.
@@ -1249,6 +1252,7 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        invalidateThreadSummaries(qc, wsId);
         if (issue_revision) {
           onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
         } else {
@@ -1259,12 +1263,18 @@ export function useRealtimeSync(
 
     const unsubCommentResolved = ws.on("comment:resolved", (p) => {
       const { comment } = p as CommentResolvedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (!comment?.issue_id) return;
+      invalidateTimeline(comment.issue_id);
+      const wsId = getCurrentWsId();
+      if (wsId) invalidateThreadSummaries(qc, wsId);
     });
 
     const unsubCommentUnresolved = ws.on("comment:unresolved", (p) => {
       const { comment } = p as CommentUnresolvedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (!comment?.issue_id) return;
+      invalidateTimeline(comment.issue_id);
+      const wsId = getCurrentWsId();
+      if (wsId) invalidateThreadSummaries(qc, wsId);
     });
 
     const unsubActivityCreated = ws.on("activity:created", (p) => {

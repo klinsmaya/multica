@@ -22,11 +22,13 @@ import {
 } from "./cache-helpers";
 import { cleanupDeletedIssueCaches } from "./delete-cache";
 import type {
+  Comment,
   Issue,
   IssueLabelsResponse,
   IssueMetadata,
   IssuePropertyValues,
   IssueTableRowsResponse,
+  IssueThreadSummary,
   Label,
 } from "../types";
 import type { ListIssuesCache } from "../types";
@@ -799,4 +801,89 @@ export function onIssueDeleted(
   qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
+}
+
+// Mirrors the server rollup (ListIssueThreadSummaries): deleted comments and
+// platform-authored rows are not conversation. `type === "system"` is skipped
+// too so a platform notice never inflates the counters between refetches.
+function isCountedThreadComment(comment: Comment): boolean {
+  if (comment.deleted_at) return false;
+  return comment.author_type !== "system" && comment.type !== "system";
+}
+
+const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
+
+function applyCommentToThreadSummary(
+  existing: IssueThreadSummary | undefined,
+  comment: Comment,
+): IssueThreadSummary {
+  const openRoot = comment.parent_id == null && comment.resolved_at == null;
+  const author = { type: comment.author_type, id: comment.author_id };
+  const participants = [
+    author,
+    ...(existing?.participants ?? []).filter(
+      (p) => !(p.type === author.type && p.id === author.id),
+    ),
+  ].slice(0, THREAD_SUMMARY_PARTICIPANT_LIMIT);
+
+  const prevAt = existing?.last_reply_at ?? null;
+  const lastReplyAt =
+    prevAt == null || Date.parse(comment.created_at) >= Date.parse(prevAt)
+      ? comment.created_at
+      : prevAt;
+
+  return {
+    issue_id: comment.issue_id,
+    reply_count: (existing?.reply_count ?? 0) + 1,
+    last_reply_at: lastReplyAt,
+    open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
+    participants,
+  };
+}
+
+/**
+ * Patches the feed's thread-summary caches for a new comment. Only caches that
+ * were asked for the comment's issue (their ids key contains it) are touched;
+ * an issue without a row yet gets one there. A cache that is mid-fetch may or
+ * may not already include the comment, so it is refetched instead of patched.
+ */
+export function onCommentCreatedPatchThreadSummaries(
+  qc: QueryClient,
+  wsId: string,
+  comment: Comment,
+) {
+  if (!comment.issue_id || !isCountedThreadComment(comment)) return;
+
+  const caches = qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  });
+  for (const [key, data] of caches) {
+    const idsKey = key[key.length - 1];
+    if (typeof idsKey !== "string") continue;
+    if (!idsKey.split(",").includes(comment.issue_id)) continue;
+    if (!data) continue;
+
+    if (qc.getQueryState(key)?.fetchStatus === "fetching") {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+      continue;
+    }
+
+    const index = data.findIndex((s) => s.issue_id === comment.issue_id);
+    const patched = applyCommentToThreadSummary(data[index], comment);
+    qc.setQueryData<IssueThreadSummary[]>(
+      key,
+      index === -1
+        ? [...data, patched]
+        : data.map((s, i) => (i === index ? patched : s)),
+    );
+  }
+}
+
+/**
+ * comment:deleted / resolved / unresolved change the counters in ways a client
+ * cannot derive from the payload (which thread a deleted reply belonged to,
+ * whether the root was already counted), so every summary cache is refetched.
+ */
+export function invalidateThreadSummaries(qc: QueryClient, wsId: string) {
+  qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
 }

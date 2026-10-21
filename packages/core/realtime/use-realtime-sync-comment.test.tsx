@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { WSClient } from "../api/ws-client";
 import { issueKeys, type IssueSortParam } from "../issues/queries";
-import type { Issue, ListIssuesCache } from "../types";
+import type { Issue, IssueThreadSummary, ListIssuesCache } from "../types";
 import { useRealtimeSync, type RealtimeSyncStores } from "./use-realtime-sync";
 
 vi.mock("../platform/workspace-storage", () => ({
@@ -168,5 +168,67 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     handlers["comment:created"]?.({ comment: { id: "c1" } });
 
     expect(qc.getQueryState(updatedBoardKey)?.isInvalidated).toBe(false);
+  });
+
+  describe("thread summaries", () => {
+    const key = issueKeys.threadSummaries("ws-1", "issue-1");
+    const otherKey = issueKeys.threadSummaries("ws-1", "issue-2");
+    const row: IssueThreadSummary = {
+      issue_id: "issue-1",
+      reply_count: 1,
+      last_reply_at: "2026-10-01T00:00:00Z",
+      open_thread_count: 1,
+      participants: [{ type: "member", id: "u1" }],
+    };
+
+    function mount() {
+      qc.setQueryData<IssueThreadSummary[]>(key, [row]);
+      qc.setQueryData<IssueThreadSummary[]>(otherKey, []);
+      const { ws, handlers } = createRecordingWs();
+      renderHook(() => useRealtimeSync(ws, createStores()), {
+        wrapper: createWrapper(qc),
+      });
+      return handlers;
+    }
+
+    it("patches the matching summary cache on comment:created", () => {
+      const handlers = mount();
+
+      handlers["comment:created"]?.({
+        comment: {
+          id: "c2",
+          issue_id: "issue-1",
+          author_type: "agent",
+          author_id: "a1",
+          type: "comment",
+          parent_id: "c1",
+          created_at: "2026-10-02T00:00:00Z",
+          resolved_at: null,
+        },
+      });
+
+      expect(qc.getQueryData<IssueThreadSummary[]>(key)?.[0]).toMatchObject({
+        reply_count: 2,
+        open_thread_count: 1,
+        participants: [
+          { type: "agent", id: "a1" },
+          { type: "member", id: "u1" },
+        ],
+      });
+      expect(qc.getQueryData(otherKey)).toEqual([]);
+    });
+
+    it.each([
+      ["comment:deleted", { issue_id: "issue-1", comment_id: "c1" }],
+      ["comment:resolved", { comment: { id: "c1", issue_id: "issue-1" } }],
+      ["comment:unresolved", { comment: { id: "c1", issue_id: "issue-1" } }],
+    ])("invalidates every summary cache on %s", (event, payload) => {
+      const handlers = mount();
+
+      handlers[event]?.(payload);
+
+      expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+      expect(qc.getQueryState(otherKey)?.isInvalidated).toBe(true);
+    });
   });
 });

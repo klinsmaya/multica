@@ -690,7 +690,8 @@
       "plan": "制定计划",
       "plan_title": "制定计划",
       "new": "新建任务"
-    }
+    },
+    "new_messages": "有新消息"
   },
   "filtered_empty": {
     "title": "没有符合筛选条件的任务",

@@ -7,6 +7,8 @@ import {
   agentTasksKeys,
 } from "../agents/queries";
 import {
+  invalidateThreadSummaries,
+  onCommentCreatedPatchThreadSummaries,
   onIssueCreated,
   onIssueDeleted,
   onIssueLabelsChanged,
@@ -24,11 +26,13 @@ import type {
   AgentRunCount,
   AgentTask,
   Attachment,
+  Comment,
   Issue,
   IssueReaction,
   IssueLabelsResponse,
   IssueTableRowsResponse,
   IssueSubscriber,
+  IssueThreadSummary,
   IssueUsageSummary,
   Label,
   ListIssuesCache,
@@ -1204,5 +1208,224 @@ describe("parent detail counts (child_count / child_done_count)", () => {
     onIssueUpdated(qc, WS_ID, { ...child, status: "done", revision: 2 }, { statusChanged: true });
 
     expect(qc.getQueryData<Issue[]>(pageKey)?.[0]).toMatchObject({ status: "done", revision: 2 });
+  });
+});
+
+describe("thread summary realtime updates", () => {
+  const issueA = "issue-a";
+  const issueB = "issue-b";
+  const cacheKey = issueKeys.threadSummaries(WS_ID, `${issueA},${issueB}`);
+  const onlyBKey = issueKeys.threadSummaries(WS_ID, issueB);
+
+  const makeComment = (overrides: Partial<Comment> = {}): Comment => ({
+    id: "comment-1",
+    issue_id: issueA,
+    author_type: "member",
+    author_id: "user-1",
+    content: "hi",
+    type: "comment",
+    parent_id: null,
+    reactions: [],
+    attachments: [],
+    created_at: "2026-10-02T00:00:00Z",
+    updated_at: "2026-10-02T00:00:00Z",
+    resolved_at: null,
+    resolved_by_type: null,
+    resolved_by_id: null,
+    ...overrides,
+  });
+
+  const summaryA = (): IssueThreadSummary => ({
+    issue_id: issueA,
+    reply_count: 2,
+    last_reply_at: "2026-10-01T00:00:00Z",
+    open_thread_count: 1,
+    participants: [
+      { type: "agent", id: "agent-1" },
+      { type: "member", id: "user-2" },
+    ],
+  });
+
+  const read = (key: readonly unknown[] = cacheKey) =>
+    qc.getQueryData<IssueThreadSummary[]>(key);
+  const rowA = () => read()?.find((s) => s.issue_id === issueA);
+
+  let qc: QueryClient;
+
+  beforeEach(() => {
+    qc = new QueryClient();
+    qc.setQueryData<IssueThreadSummary[]>(cacheKey, [summaryA()]);
+  });
+
+  it("counts a new root comment: reply, last_reply_at, open thread, author first", () => {
+    onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+    expect(rowA()).toEqual({
+      issue_id: issueA,
+      reply_count: 3,
+      last_reply_at: "2026-10-02T00:00:00Z",
+      open_thread_count: 2,
+      participants: [
+        { type: "member", id: "user-1" },
+        { type: "agent", id: "agent-1" },
+        { type: "member", id: "user-2" },
+      ],
+    });
+  });
+
+  it("moves an existing participant to the front without duplicating it", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ author_type: "member", author_id: "user-2" }),
+    );
+
+    expect(rowA()?.participants).toEqual([
+      { type: "member", id: "user-2" },
+      { type: "agent", id: "agent-1" },
+    ]);
+  });
+
+  it("caps participants at 3, dropping the least recent", () => {
+    qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+      {
+        ...summaryA(),
+        participants: [
+          { type: "member", id: "u1" },
+          { type: "member", id: "u2" },
+          { type: "member", id: "u3" },
+        ],
+      },
+    ]);
+
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ author_id: "u4" }),
+    );
+
+    expect(rowA()?.participants.map((p) => p.id)).toEqual(["u4", "u1", "u2"]);
+  });
+
+  it("does not open a thread for a reply or an already-resolved root", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ id: "reply", parent_id: "root-1" }),
+    );
+    expect(rowA()).toMatchObject({ reply_count: 3, open_thread_count: 1 });
+
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({
+        id: "resolved-root",
+        resolved_at: "2026-10-02T00:00:01Z",
+      }),
+    );
+    expect(rowA()).toMatchObject({ reply_count: 4, open_thread_count: 1 });
+  });
+
+  it("keeps the later last_reply_at when events arrive out of order", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ created_at: "2026-09-30T00:00:00Z" }),
+    );
+
+    expect(rowA()?.last_reply_at).toBe("2026-10-01T00:00:00Z");
+  });
+
+  it("skips system-authored, system-type and deleted comments", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ author_type: "system" }),
+    );
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ type: "system" }),
+    );
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ deleted_at: "2026-10-02T00:00:00Z" }),
+    );
+
+    expect(read()).toEqual([summaryA()]);
+  });
+
+  it("adds a row for an issue the cache asked for but has no summary yet", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ issue_id: issueB, author_type: "agent", author_id: "agent-9" }),
+    );
+
+    expect(read()).toHaveLength(2);
+    expect(read()?.find((s) => s.issue_id === issueB)).toEqual({
+      issue_id: issueB,
+      reply_count: 1,
+      last_reply_at: "2026-10-02T00:00:00Z",
+      open_thread_count: 1,
+      participants: [{ type: "agent", id: "agent-9" }],
+    });
+  });
+
+  it("leaves caches that were not asked for the issue untouched", () => {
+    qc.setQueryData<IssueThreadSummary[]>(onlyBKey, []);
+    const otherWsKey = issueKeys.threadSummaries("ws-2", issueA);
+    qc.setQueryData<IssueThreadSummary[]>(otherWsKey, []);
+
+    onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+    expect(read(onlyBKey)).toEqual([]);
+    expect(read(otherWsKey)).toEqual([]);
+    expect(rowA()?.reply_count).toBe(3);
+  });
+
+  it("does not match an issue id that only shares a prefix with a requested one", () => {
+    const prefixKey = issueKeys.threadSummaries(WS_ID, `${issueA}-extra`);
+    qc.setQueryData<IssueThreadSummary[]>(prefixKey, []);
+
+    onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+    expect(read(prefixKey)).toEqual([]);
+  });
+
+  it("refetches instead of patching a cache that is mid-fetch", async () => {
+    const key = issueKeys.threadSummaries(WS_ID, issueA);
+    qc.setQueryData<IssueThreadSummary[]>(key, [summaryA()]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetching = qc.fetchQuery({
+      queryKey: key,
+      staleTime: 0,
+      queryFn: async () => {
+        await gate;
+        return [summaryA()];
+      },
+    });
+    expect(qc.getQueryState(key)?.fetchStatus).toBe("fetching");
+
+    onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+    expect(read(key)).toEqual([summaryA()]);
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+    release();
+    await fetching.catch(() => {});
+  });
+
+  it("invalidates every summary cache of the workspace only", () => {
+    const otherWsKey = issueKeys.threadSummaries("ws-2", issueA);
+    qc.setQueryData<IssueThreadSummary[]>(onlyBKey, []);
+    qc.setQueryData<IssueThreadSummary[]>(otherWsKey, []);
+
+    invalidateThreadSummaries(qc, WS_ID);
+
+    expectInvalidated(qc, cacheKey);
+    expectInvalidated(qc, onlyBKey);
+    expect(qc.getQueryState(otherWsKey)?.isInvalidated).toBe(false);
   });
 });

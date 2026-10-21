@@ -719,7 +719,8 @@
       "plan": "Établir un plan",
       "plan_title": "Établir un plan",
       "new": "Nouvelle tâche"
-    }
+    },
+    "new_messages": "Nouveaux messages"
   },
   "filtered_empty": {
     "title": "Aucune tâche ne correspond à ces filtres",

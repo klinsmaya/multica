@@ -719,7 +719,8 @@
       "plan": "Make a plan",
       "plan_title": "Make a plan",
       "new": "New issue"
-    }
+    },
+    "new_messages": "New messages"
   },
   "filtered_empty": {
     "title": "No issues match these filters",

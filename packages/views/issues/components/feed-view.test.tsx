@@ -1,5 +1,6 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { forwardRef, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Issue, IssueThreadSummary } from "@multica/core/types";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
@@ -11,6 +12,10 @@ import {
 import { FeedView } from "./feed-view";
 
 const mockListThreadSummaries = vi.hoisted(() => vi.fn());
+const virtuoso = vi.hoisted(() => ({
+  scrollToIndex: vi.fn(),
+  atBottomStateChange: undefined as ((atBottom: boolean) => void) | undefined,
+}));
 
 vi.mock("@multica/core/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/api")>()),
@@ -49,16 +54,23 @@ vi.mock("./issue-agent-activity-indicator", () => ({
 }));
 
 vi.mock("react-virtuoso", () => ({
-  Virtuoso: ({ data, itemContent, initialTopMostItemIndex }: any) => (
-    <div
-      data-testid="virtuoso"
-      data-initial-index={JSON.stringify(initialTopMostItemIndex)}
-    >
-      {(data ?? []).map((item: any, i: number) => (
-        <div key={item.id}>{itemContent(i, item)}</div>
-      ))}
-    </div>
-  ),
+  Virtuoso: forwardRef(function MockVirtuoso(
+    { data, itemContent, initialTopMostItemIndex, atBottomStateChange }: any,
+    ref,
+  ) {
+    useImperativeHandle(ref, () => ({ scrollToIndex: virtuoso.scrollToIndex }));
+    virtuoso.atBottomStateChange = atBottomStateChange;
+    return (
+      <div
+        data-testid="virtuoso"
+        data-initial-index={JSON.stringify(initialTopMostItemIndex)}
+      >
+        {(data ?? []).map((item: any, i: number) => (
+          <div key={item.id}>{itemContent(i, item)}</div>
+        ))}
+      </div>
+    );
+  }),
 }));
 
 const navigation: NavigationAdapter = {
@@ -111,21 +123,26 @@ function renderFeed(issues: Issue[]) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithI18n(
+  const tree = (current: Issue[]) => (
     <QueryClientProvider client={queryClient}>
       <NavigationProvider value={navigation}>
         <IssuePeekActionsContext.Provider value={peek}>
-          <FeedView issues={issues} projectId={null} />
+          <FeedView issues={current} projectId={null} />
         </IssuePeekActionsContext.Provider>
       </NavigationProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = renderWithI18n(tree(issues));
+  return Object.assign(view, {
+    update: (next: Issue[]) => view.rerender(tree(next)),
+  });
 }
 
 describe("FeedView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListThreadSummaries.mockResolvedValue({ summaries: [] });
+    virtuoso.atBottomStateChange = undefined;
   });
 
   it("renders only top-level issues, oldest first, opened at the newest", () => {
@@ -251,5 +268,70 @@ describe("FeedView", () => {
 
     expect(document.activeElement).toBe(input);
     input.remove();
+  });
+
+  it("marks the open-thread count with the brand accent only when threads are open", async () => {
+    mockListThreadSummaries.mockResolvedValue({
+      summaries: [summary({ issue_id: "issue-1", reply_count: 2, open_thread_count: 1 })],
+    });
+    renderFeed([makeIssue({ id: "issue-1" })]);
+
+    expect(await screen.findByText("1 open thread")).toHaveClass("text-brand");
+  });
+
+  describe("new messages", () => {
+    const base = [
+      makeIssue({ id: "a", title: "First", created_at: "2026-10-01T00:00:00Z" }),
+      makeIssue({ id: "b", title: "Second", created_at: "2026-10-02T00:00:00Z" }),
+    ];
+    const next = makeIssue({ id: "c", title: "Third", created_at: "2026-10-03T00:00:00Z" });
+
+    it("follows a new message to the bottom while the reader is at the bottom", () => {
+      const view = renderFeed(base);
+      act(() => virtuoso.atBottomStateChange?.(true));
+
+      view.update([...base, next]);
+
+      expect(virtuoso.scrollToIndex).toHaveBeenCalledWith(
+        expect.objectContaining({ index: "LAST", align: "end" }),
+      );
+      expect(screen.queryByRole("button", { name: "New messages" })).not.toBeInTheDocument();
+    });
+
+    it("offers a jump button instead when the reader has scrolled up", () => {
+      const view = renderFeed(base);
+      act(() => virtuoso.atBottomStateChange?.(false));
+
+      view.update([...base, next]);
+
+      expect(virtuoso.scrollToIndex).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "New messages" }));
+      expect(virtuoso.scrollToIndex).toHaveBeenCalledWith(
+        expect.objectContaining({ index: "LAST", align: "end" }),
+      );
+      expect(screen.queryByRole("button", { name: "New messages" })).not.toBeInTheDocument();
+    });
+
+    it("hides the button once the reader reaches the bottom by scrolling", () => {
+      const view = renderFeed(base);
+      act(() => virtuoso.atBottomStateChange?.(false));
+      view.update([...base, next]);
+      expect(screen.getByRole("button", { name: "New messages" })).toBeInTheDocument();
+
+      act(() => virtuoso.atBottomStateChange?.(true));
+
+      expect(screen.queryByRole("button", { name: "New messages" })).not.toBeInTheDocument();
+      expect(virtuoso.scrollToIndex).not.toHaveBeenCalled();
+    });
+
+    it("ignores re-renders that add nothing and the first population of an empty feed", () => {
+      const view = renderFeed([]);
+      view.update(base);
+      act(() => virtuoso.atBottomStateChange?.(false));
+      view.update([...base]);
+
+      expect(virtuoso.scrollToIndex).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "New messages" })).not.toBeInTheDocument();
+    });
   });
 });
