@@ -1144,6 +1144,29 @@ describe("ApiClient schema fallback", () => {
         progress: [],
       });
     });
+
+    it("requests the workspace-wide map when no parent ids are given", async () => {
+      stubFetchJson({ progress: [] });
+      const client = new ApiClient("https://api.example.test");
+
+      await client.getChildIssueProgress();
+
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/child-progress",
+      );
+    });
+
+    it("narrows the request with parent_ids and falls back on a malformed body", async () => {
+      stubFetchJson({ progress: "invalid" });
+      const client = new ApiClient("https://api.example.test");
+
+      await expect(client.getChildIssueProgress(["p-1", "p-2"])).resolves.toEqual({
+        progress: [],
+      });
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/child-progress?parent_ids=p-1,p-2",
+      );
+    });
   });
 
   describe("listAutopilotDeliveries", () => {

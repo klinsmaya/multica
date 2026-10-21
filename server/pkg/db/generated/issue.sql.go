@@ -80,6 +80,50 @@ func (q *Queries) ChildIssueProgressForParent(ctx context.Context, arg ChildIssu
 	return i, err
 }
 
+const childIssueProgressForParents = `-- name: ChildIssueProgressForParents :many
+SELECT parent_issue_id,
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY($2::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = ANY($3::uuid[])
+GROUP BY parent_issue_id
+`
+
+type ChildIssueProgressForParentsParams struct {
+	WorkspaceID        pgtype.UUID   `json:"workspace_id"`
+	TerminalStatusKeys []string      `json:"terminal_status_keys"`
+	ParentIds          []pgtype.UUID `json:"parent_ids"`
+}
+
+type ChildIssueProgressForParentsRow struct {
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
+	Total         int64       `json:"total"`
+	Done          int64       `json:"done"`
+}
+
+// ChildIssueProgress narrowed to the given parents. A parent without children
+// (or outside the workspace) yields no row.
+func (q *Queries) ChildIssueProgressForParents(ctx context.Context, arg ChildIssueProgressForParentsParams) ([]ChildIssueProgressForParentsRow, error) {
+	rows, err := q.db.Query(ctx, childIssueProgressForParents, arg.WorkspaceID, arg.TerminalStatusKeys, arg.ParentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChildIssueProgressForParentsRow{}
+	for rows.Next() {
+		var i ChildIssueProgressForParentsRow
+		if err := rows.Scan(&i.ParentIssueID, &i.Total, &i.Done); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearIssueDuplicatesOf = `-- name: ClearIssueDuplicatesOf :many
 UPDATE issue
 SET duplicate_of_issue_id = NULL,

@@ -3171,6 +3171,36 @@ describe("IssueDetail (shared)", () => {
       expect(bareRow?.textContent).not.toContain("/");
     });
 
+    it("fetches nested progress for exactly the loaded sub-issues, never workspace-wide", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [
+          subIssue({ id: "child-2", number: 12, identifier: "TES-12", title: "Ship dashboards" }),
+          subIssue({ id: "child-1", number: 11, identifier: "TES-11", title: "Fix login flow" }),
+        ],
+      });
+
+      renderIssueDetail();
+
+      await screen.findByText("Fix login flow");
+      await waitFor(() =>
+        expect(mockApiObj.getChildIssueProgress).toHaveBeenCalledWith(["child-1", "child-2"]),
+      );
+      expect(mockApiObj.getChildIssueProgress).toHaveBeenCalledTimes(1);
+      for (const call of mockApiObj.getChildIssueProgress.mock.calls) {
+        expect(call[0]).toBeDefined();
+      }
+    });
+
+    it("does not fetch child progress when the issue has no sub-issues", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({ issues: [] });
+
+      renderIssueDetail();
+
+      await screen.findByText("Implement authentication");
+      await waitFor(() => expect(mockApiObj.listChildIssues).toHaveBeenCalled());
+      expect(mockApiObj.getChildIssueProgress).not.toHaveBeenCalled();
+    });
+
     it("hides fields the user toggled off in the display preference", async () => {
       useSubIssueDisplayStore.setState({
         rowProperties: {

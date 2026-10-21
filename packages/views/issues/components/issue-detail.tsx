@@ -135,7 +135,7 @@ import {
 } from "@multica/core/issue-workflows";
 import { useRecentContextStore } from "@multica/core/chat";
 import { useModalStore } from "@multica/core/modals";
-import { findIssueInListCache, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
+import { findIssueInListCache, issueDetailOptions, childIssuesOptions, childIssueProgressForParentsOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@multica/core/labels";
@@ -2129,13 +2129,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ...childIssuesOptions(wsId, parentIssueId ?? ""),
     enabled: !!parentIssueId,
   });
-  // Workspace-wide parent→(done/total) map; lets each sub-issue row show its
-  // OWN nested progress ring without opening it. Same query the list
-  // surfaces use, so it's usually already cached.
-  const { data: subIssueProgress } = useQuery({
-    ...childIssueProgressOptions(wsId),
-    enabled: childIssues.length > 0,
-  });
+  const childIssueIds = useMemo(() => childIssues.map((c) => c.id), [childIssues]);
+  // Child→(done/total) for the loaded sub-issues only; lets each row show its
+  // OWN nested progress ring without opening it.
+  const { data: subIssueProgress } = useQuery(
+    childIssueProgressForParentsOptions(wsId, childIssueIds),
+  );
   // User-level display preference for sub-issue rows (built-in field toggles
   // + opted-in workspace custom properties). `subIssueCustomProps` resolves
   // the persisted ids against this workspace's live, non-archived property
@@ -2170,7 +2169,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     return clearSelection;
   }, [id, clearSelection]);
 
-  const childIssueIds = useMemo(() => childIssues.map((c) => c.id), [childIssues]);
   const childSelectedCount = childIssueIds.filter((cid) =>
     selectedIds.has(cid),
   ).length;

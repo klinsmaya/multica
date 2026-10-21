@@ -168,6 +168,11 @@ export const issueKeys = {
     [...issueKeys.threadSummariesAll(wsId), idsKey] as const,
   childProgress: (wsId: string) =>
     [...issueKeys.all(wsId), "child-progress"] as const,
+  /** Nested under `childProgress` so every invalidation of the workspace-wide
+   *  map also reaches the per-parent caches. idsKey is the sorted,
+   *  deduplicated parent id list joined by commas. */
+  childProgressForParents: (wsId: string, idsKey: string) =>
+    [...issueKeys.childProgress(wsId), "parents", idsKey] as const,
   /** Prefix-match keys for invalidating the per-issue caches below across
    *  all issues. These keys carry no wsId, so `issueKeys.all(wsId)` does NOT
    *  cover them — WS reconnect recovery must invalidate these `*All`
@@ -530,17 +535,51 @@ export function issueIdentifierOptions(wsId: string, identifier: string) {
   });
 }
 
+/** Server cap on the parent_ids filter of the child-progress endpoint. */
+export const CHILD_PROGRESS_PARENTS_CHUNK_SIZE = 100;
+
+function selectChildProgressMap(data: {
+  progress: { parent_issue_id: string; total: number; done: number }[];
+}) {
+  const map = new Map<string, { done: number; total: number }>();
+  for (const entry of data.progress) {
+    map.set(entry.parent_issue_id, { done: entry.done, total: entry.total });
+  }
+  return map;
+}
+
 export function childIssueProgressOptions(wsId: string) {
   return queryOptions({
     queryKey: issueKeys.childProgress(wsId),
     queryFn: () => api.getChildIssueProgress(),
-    select: (data) => {
-      const map = new Map<string, { done: number; total: number }>();
-      for (const entry of data.progress) {
-        map.set(entry.parent_issue_id, { done: entry.done, total: entry.total });
+    select: selectChildProgressMap,
+  });
+}
+
+/**
+ * Child progress for just the given parents, same map shape as
+ * `childIssueProgressOptions`; a parent without children is absent. Chunked at
+ * the server's parent_ids cap and disabled for an empty list.
+ */
+export function childIssueProgressForParentsOptions(
+  wsId: string,
+  parentIds: readonly string[],
+) {
+  const sortedIds = [...new Set(parentIds)].sort();
+  return queryOptions({
+    queryKey: issueKeys.childProgressForParents(wsId, sortedIds.join(",")),
+    queryFn: async () => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < sortedIds.length; i += CHILD_PROGRESS_PARENTS_CHUNK_SIZE) {
+        chunks.push(sortedIds.slice(i, i + CHILD_PROGRESS_PARENTS_CHUNK_SIZE));
       }
-      return map;
+      const responses = await Promise.all(
+        chunks.map((chunk) => api.getChildIssueProgress(chunk)),
+      );
+      return { progress: responses.flatMap((response) => response.progress) };
     },
+    select: selectChildProgressMap,
+    enabled: sortedIds.length > 0,
   });
 }
 

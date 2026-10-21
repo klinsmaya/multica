@@ -2711,24 +2711,13 @@ func (h *Handler) ListChildrenByParents(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// childIssueProgressParentsLimit caps the parent_ids filter of ChildIssueProgress.
+const childIssueProgressParentsLimit = 100
+
 func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
 	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace_id")
 	if !ok {
-		return
-	}
-
-	terminalStatusKeys, err := h.terminalIssueStatusKeys(r.Context(), wsUUID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to resolve status categories")
-		return
-	}
-	rows, err := h.Queries.ChildIssueProgress(r.Context(), db.ChildIssueProgressParams{
-		WorkspaceID:        wsUUID,
-		TerminalStatusKeys: terminalStatusKeys,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
 		return
 	}
 
@@ -2737,12 +2726,68 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 		Total         int64  `json:"total"`
 		Done          int64  `json:"done"`
 	}
-	resp := make([]progressEntry, len(rows))
-	for i, row := range rows {
-		resp[i] = progressEntry{
-			ParentIssueID: uuidToString(row.ParentIssueID),
-			Total:         row.Total,
-			Done:          row.Done,
+
+	// parent_ids narrows the response to those parents; without it the whole
+	// workspace map is returned.
+	raw := r.URL.Query().Get("parent_ids")
+	var parentIDs []pgtype.UUID
+	if raw != "" {
+		parts := strings.Split(raw, ",")
+		if len(parts) > childIssueProgressParentsLimit {
+			writeError(w, http.StatusBadRequest, "too many parent_ids")
+			return
+		}
+		parentIDs = make([]pgtype.UUID, 0, len(parts))
+		for _, s := range parts {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			id, ok := parseUUIDOrBadRequest(w, s, "parent_ids")
+			if !ok {
+				return
+			}
+			parentIDs = append(parentIDs, id)
+		}
+		if len(parentIDs) == 0 {
+			writeJSON(w, http.StatusOK, map[string]any{"progress": []progressEntry{}})
+			return
+		}
+	}
+
+	terminalStatusKeys, err := h.terminalIssueStatusKeys(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve status categories")
+		return
+	}
+
+	var resp []progressEntry
+	if parentIDs != nil {
+		rows, err := h.Queries.ChildIssueProgressForParents(r.Context(), db.ChildIssueProgressForParentsParams{
+			WorkspaceID:        wsUUID,
+			TerminalStatusKeys: terminalStatusKeys,
+			ParentIds:          parentIDs,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
+			return
+		}
+		resp = make([]progressEntry, len(rows))
+		for i, row := range rows {
+			resp[i] = progressEntry{ParentIssueID: uuidToString(row.ParentIssueID), Total: row.Total, Done: row.Done}
+		}
+	} else {
+		rows, err := h.Queries.ChildIssueProgress(r.Context(), db.ChildIssueProgressParams{
+			WorkspaceID:        wsUUID,
+			TerminalStatusKeys: terminalStatusKeys,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get child issue progress")
+			return
+		}
+		resp = make([]progressEntry, len(rows))
+		for i, row := range rows {
+			resp[i] = progressEntry{ParentIssueID: uuidToString(row.ParentIssueID), Total: row.Total, Done: row.Done}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

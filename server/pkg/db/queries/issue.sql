@@ -727,6 +727,17 @@ WHERE workspace_id = $1
   AND parent_issue_id IS NOT NULL
 GROUP BY parent_issue_id;
 
+-- name: ChildIssueProgressForParents :many
+-- ChildIssueProgress narrowed to the given parents. A parent without children
+-- (or outside the workspace) yields no row.
+SELECT parent_issue_id,
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
+GROUP BY parent_issue_id;
+
 -- name: ChildIssueProgressForParent :one
 -- Single-parent variant of ChildIssueProgress for the issue detail response.
 -- Always returns one row; a parent without children yields 0/0.

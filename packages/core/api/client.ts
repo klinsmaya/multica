@@ -1638,10 +1638,15 @@ export class ApiClient {
     });
   }
 
-  async getChildIssueProgress(): Promise<{
+  /** Workspace-wide when `parentIds` is omitted; otherwise only those parents. */
+  async getChildIssueProgress(parentIds?: string[]): Promise<{
     progress: { parent_issue_id: string; total: number; done: number }[];
   }> {
-    const raw = await this.fetch<unknown>("/api/issues/child-progress");
+    const raw = await this.fetch<unknown>(
+      parentIds
+        ? `/api/issues/child-progress?parent_ids=${parentIds.join(",")}`
+        : "/api/issues/child-progress",
+    );
     return parseWithFallback(
       raw,
       ChildIssueProgressResponseSchema,

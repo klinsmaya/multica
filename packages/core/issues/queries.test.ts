@@ -33,6 +33,9 @@ import {
   projectGanttIssuesOptions,
   sourceContextPreviewOptions,
   threadSummariesOptions,
+  childIssueProgressOptions,
+  childIssueProgressForParentsOptions,
+  CHILD_PROGRESS_PARENTS_CHUNK_SIZE,
 } from "./queries";
 import { onIssueUpdated } from "./ws-updaters";
 import { TIMELINE_PAGE_SIZE } from "./timeline-pages";
@@ -834,6 +837,99 @@ describe("threadSummariesOptions", () => {
 
   it("is disabled when there are no ids", () => {
     expect(threadSummariesOptions(WS_ID, []).enabled).toBe(false);
+  });
+});
+
+describe("childIssueProgressForParentsOptions", () => {
+  let qc: QueryClient;
+
+  type ProgressResponse = {
+    progress: { parent_issue_id: string; total: number; done: number }[];
+  };
+
+  function installFakeProgressApi(
+    getChildIssueProgress: (ids?: string[]) => Promise<ProgressResponse>,
+  ) {
+    setApiInstance({ getChildIssueProgress } as unknown as ApiClient);
+  }
+
+  beforeEach(() => {
+    qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  afterEach(() => {
+    qc.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("nests its key under the workspace-wide prefix so existing invalidations reach it", async () => {
+    installFakeProgressApi(async () => ({ progress: [] }));
+    await qc.fetchQuery(childIssueProgressForParentsOptions(WS_ID, ["a"]));
+
+    const key = childIssueProgressForParentsOptions(WS_ID, ["a"]).queryKey;
+    expect(key.slice(0, issueKeys.childProgress(WS_ID).length)).toEqual(
+      issueKeys.childProgress(WS_ID),
+    );
+
+    await qc.invalidateQueries({ queryKey: issueKeys.childProgress(WS_ID) });
+    expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it("does not share a cache entry with the workspace-wide query", () => {
+    expect(childIssueProgressForParentsOptions(WS_ID, ["a"]).queryKey).not.toEqual(
+      childIssueProgressOptions(WS_ID).queryKey,
+    );
+  });
+
+  it("sorts and dedupes ids so the cache key is stable", async () => {
+    const getChildIssueProgress = vi
+      .fn<(ids?: string[]) => Promise<ProgressResponse>>()
+      .mockResolvedValue({ progress: [] });
+    installFakeProgressApi(getChildIssueProgress);
+
+    await qc.fetchQuery(childIssueProgressForParentsOptions(WS_ID, ["b", "a", "b"]));
+
+    expect(getChildIssueProgress).toHaveBeenCalledWith(["a", "b"]);
+    expect(childIssueProgressForParentsOptions(WS_ID, ["b", "a"]).queryKey).toEqual(
+      childIssueProgressForParentsOptions(WS_ID, ["a", "b", "a"]).queryKey,
+    );
+  });
+
+  it("chunks ids at the server cap and merges the chunks", async () => {
+    const ids = Array.from(
+      { length: CHILD_PROGRESS_PARENTS_CHUNK_SIZE * 2 + 5 },
+      (_, i) => `p-${String(i).padStart(4, "0")}`,
+    );
+    const calls: string[][] = [];
+    installFakeProgressApi(async (chunk) => {
+      calls.push(chunk ?? []);
+      return {
+        progress: (chunk ?? []).map((id) => ({ parent_issue_id: id, total: 2, done: 1 })),
+      };
+    });
+
+    const observer = new QueryObserver(qc, childIssueProgressForParentsOptions(WS_ID, ids));
+    const result = await observer.refetch();
+
+    expect(calls.map((c) => c.length)).toEqual([100, 100, 5]);
+    expect(calls.flat()).toEqual(ids);
+    expect(result.data!.size).toBe(ids.length);
+  });
+
+  it("selects the same map shape as the workspace-wide query", async () => {
+    installFakeProgressApi(async () => ({
+      progress: [{ parent_issue_id: "a", total: 3, done: 2 }],
+    }));
+
+    const observer = new QueryObserver(qc, childIssueProgressForParentsOptions(WS_ID, ["a", "b"]));
+    const map = (await observer.refetch()).data!;
+
+    expect(map.get("a")).toEqual({ done: 2, total: 3 });
+    expect(map.has("b")).toBe(false);
+  });
+
+  it("is disabled when there are no ids", () => {
+    expect(childIssueProgressForParentsOptions(WS_ID, []).enabled).toBe(false);
   });
 });
 
