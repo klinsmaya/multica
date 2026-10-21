@@ -29,6 +29,35 @@ import {
   type PlatformAdmin,
   type SetPlatformAdminRequest,
 } from "../admin/schemas";
+import {
+  EMPTY_REGISTRY_CONSUMER,
+  EMPTY_REGISTRY_CONSUMER_KEY,
+  EMPTY_REGISTRY_LISTING_DETAIL,
+  EMPTY_REGISTRY_SOURCE,
+  EMPTY_REGISTRY_UPLOAD_RESULT,
+  RegistryConsumerKeySchema,
+  RegistryConsumerListSchema,
+  RegistryConsumerSchema,
+  RegistryListingDetailSchema,
+  RegistryListingPageSchema,
+  RegistrySourceListSchema,
+  RegistrySourceSchema,
+  RegistryUploadResultSchema,
+  type RegistryConsumer,
+  type RegistryConsumerKey,
+  type RegistryCreateConsumerRequest,
+  type RegistryCreateSourceRequest,
+  type RegistryListing,
+  type RegistryListingDetail,
+  type RegistryListingListParams,
+  type RegistryListingStatusRequest,
+  type RegistryReviewRequest,
+  type RegistrySource,
+  type RegistryTargetingRequest,
+  type RegistryToggleRequest,
+  type RegistryUploadRequest,
+  type RegistryUploadResult,
+} from "../admin/registry-schemas";
 import type { ZodType } from "zod";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -202,6 +231,7 @@ import type {
   PluginInstallationListResponse,
   PluginPackage,
   PluginPackageListResponse,
+  PluginMarketplaceResponse,
   PluginSurfaceLaunch,
   PluginInvocation,
   PluginMCPTool,
@@ -499,10 +529,12 @@ import {
   EMPTY_PLUGIN_PREVIEW,
   EMPTY_PLUGIN_PACKAGE,
   EMPTY_PLUGIN_PACKAGE_LIST,
+  EMPTY_PLUGIN_MARKETPLACE,
   EMPTY_PLUGIN_SURFACE_LAUNCH,
   PluginHookResultSchema,
   PluginInstallationListResponseSchema,
   PluginPackageListResponseSchema,
+  PluginMarketplaceResponseSchema,
   PluginPackageSchema,
   PluginSurfaceLaunchSchema,
   PluginInvocationListSchema,
@@ -3183,6 +3215,14 @@ export class ApiClient {
     });
   }
 
+  /** Templates this workspace may install from the marketplace. */
+  async listPluginMarketplace(workspaceId: string): Promise<PluginMarketplaceResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/plugins/marketplace`);
+    return parseWithFallback(raw, PluginMarketplaceResponseSchema, EMPTY_PLUGIN_MARKETPLACE, {
+      endpoint: "GET /api/workspaces/{id}/plugins/marketplace",
+    });
+  }
+
   /**
    * Publishes an artifact bundle: a zip holding the manifest and every file it
    * names. This is the whole publishing path — a plugin author needs no server
@@ -5539,6 +5579,141 @@ export class ApiClient {
     await this.fetch(`/api/admin/admins/${userId}`, {
       method: "DELETE",
       body: JSON.stringify(body),
+    });
+  }
+
+  // Template marketplace operator API (/api/admin/registry).
+  async adminRegistryListListings(
+    params: RegistryListingListParams = {},
+  ): Promise<AdminPage<RegistryListing>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/registry/listings${this.adminQuery({
+        source_id: params.source_id,
+        status: params.status,
+        q: params.q,
+        pending: params.pending_only,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, RegistryListingPageSchema, emptyAdminPage<RegistryListing>(), {
+      endpoint: "GET /api/admin/registry/listings",
+    });
+  }
+
+  async adminRegistryGetListing(id: string): Promise<RegistryListingDetail> {
+    const raw = await this.fetch<unknown>(`/api/admin/registry/listings/${id}`);
+    return parseWithFallback(raw, RegistryListingDetailSchema, EMPTY_REGISTRY_LISTING_DETAIL, {
+      endpoint: "GET /api/admin/registry/listings/:id",
+    });
+  }
+
+  /** Multipart like publishPluginPackage: the bundle is a file, not JSON. */
+  async adminRegistryUploadVersion(request: RegistryUploadRequest): Promise<RegistryUploadResult> {
+    const formData = new FormData();
+    formData.append("source_id", request.source_id);
+    formData.append("bundle", request.bundle);
+    formData.append("reason", request.reason);
+    if (request.changelog) formData.append("changelog", request.changelog);
+    if (request.category) formData.append("category", request.category);
+    if (request.tags && request.tags.length > 0) formData.append("tags", request.tags.join(","));
+
+    const credentialUsed = this.getToken();
+    const res = await fetch(`${this.baseUrl}/api/admin/registry/listings`, {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: formData,
+      credentials: "include",
+    });
+    if (!res.ok) {
+      if (res.status === 401) this.handleUnauthorized(credentialUsed);
+      throw new ApiError(await this.parseErrorMessage(res, `Upload failed: ${res.status}`), res.status, res.statusText);
+    }
+    const raw = (await res.json()) as unknown;
+    return parseWithFallback(raw, RegistryUploadResultSchema, EMPTY_REGISTRY_UPLOAD_RESULT, {
+      endpoint: "POST /api/admin/registry/listings",
+    });
+  }
+
+  async adminRegistrySetListingStatus(id: string, body: RegistryListingStatusRequest): Promise<void> {
+    await this.fetch(`/api/admin/registry/listings/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminRegistrySetTargeting(id: string, body: RegistryTargetingRequest): Promise<void> {
+    await this.fetch(`/api/admin/registry/listings/${id}/targeting`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminRegistryReviewVersion(id: string, body: RegistryReviewRequest): Promise<void> {
+    await this.fetch(`/api/admin/registry/versions/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminRegistryListSources(): Promise<RegistrySource[]> {
+    const raw = await this.fetch<unknown>("/api/admin/registry/sources");
+    return parseWithFallback(raw, RegistrySourceListSchema, { items: [] }, {
+      endpoint: "GET /api/admin/registry/sources",
+    }).items;
+  }
+
+  async adminRegistryCreateSource(body: RegistryCreateSourceRequest): Promise<RegistrySource> {
+    const raw = await this.fetch<unknown>("/api/admin/registry/sources", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, RegistrySourceSchema, EMPTY_REGISTRY_SOURCE, {
+      endpoint: "POST /api/admin/registry/sources",
+    });
+  }
+
+  async adminRegistrySetSourceEnabled(id: string, body: RegistryToggleRequest): Promise<void> {
+    await this.fetch(`/api/admin/registry/sources/${id}/enabled`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminRegistryListConsumers(): Promise<RegistryConsumer[]> {
+    const raw = await this.fetch<unknown>("/api/admin/registry/consumers");
+    return parseWithFallback(raw, RegistryConsumerListSchema, { items: [] }, {
+      endpoint: "GET /api/admin/registry/consumers",
+    }).items;
+  }
+
+  async adminRegistryCreateConsumer(body: RegistryCreateConsumerRequest): Promise<RegistryConsumerKey> {
+    const raw = await this.fetch<unknown>("/api/admin/registry/consumers", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, RegistryConsumerKeySchema, EMPTY_REGISTRY_CONSUMER_KEY, {
+      endpoint: "POST /api/admin/registry/consumers",
+    });
+  }
+
+  async adminRegistryRotateConsumerKey(id: string, body: AdminActionRequest): Promise<RegistryConsumerKey> {
+    const raw = await this.fetch<unknown>(`/api/admin/registry/consumers/${id}/key`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, RegistryConsumerKeySchema, EMPTY_REGISTRY_CONSUMER_KEY, {
+      endpoint: "POST /api/admin/registry/consumers/:id/key",
+    });
+  }
+
+  async adminRegistrySetConsumerEnabled(id: string, body: RegistryToggleRequest): Promise<RegistryConsumer> {
+    const raw = await this.fetch<unknown>(`/api/admin/registry/consumers/${id}/enabled`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, RegistryConsumerSchema, EMPTY_REGISTRY_CONSUMER, {
+      endpoint: "PUT /api/admin/registry/consumers/:id/enabled",
     });
   }
 }

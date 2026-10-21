@@ -5,6 +5,7 @@ export const pluginKeys = {
   all: (wsId: string) => ["workspaces", wsId, "plugins"] as const,
   installed: (wsId: string) => [...pluginKeys.all(wsId), "installed"] as const,
   packages: (wsId: string) => [...pluginKeys.all(wsId), "packages"] as const,
+  marketplace: (wsId: string) => [...pluginKeys.all(wsId), "marketplace"] as const,
 };
 
 export function pluginInstallationsOptions(wsId: string) {
@@ -20,6 +21,15 @@ export function pluginPackagesOptions(wsId: string) {
   return queryOptions({
     queryKey: pluginKeys.packages(wsId),
     queryFn: () => api.listPluginPackages(wsId),
+    enabled: wsId.length > 0,
+  });
+}
+
+/** Templates the marketplace offers this workspace, with install state. */
+export function pluginMarketplaceOptions(wsId: string) {
+  return queryOptions({
+    queryKey: pluginKeys.marketplace(wsId),
+    queryFn: () => api.listPluginMarketplace(wsId),
     enabled: wsId.length > 0,
   });
 }

@@ -117,15 +117,46 @@ export interface PluginPreview {
   installed_version?: string;
   /** Scopes this install would add on top of what is already granted. */
   added_scopes?: string[];
+  /** Set when the preview describes a template marketplace version. */
+  registry_version_id?: string;
 }
 
+/** Exactly one of the two ids: a workspace publish, or a marketplace version. */
 export interface PluginPreviewRequest {
-  version_id: string;
+  version_id?: string;
+  registry_version_id?: string;
 }
 
 export interface PluginInstallRequest {
-  version_id: string;
+  version_id?: string;
+  registry_version_id?: string;
   granted_scopes: string[];
+}
+
+export type PluginMarketplaceState = "not_installed" | "current" | "outdated";
+
+/** One template the workspace may install from the marketplace. */
+export interface PluginMarketplaceListing {
+  listing_id: string;
+  namespace: string;
+  name: string;
+  plugin_key: string;
+  display_name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  source_kind: string;
+  version_id: string;
+  version: string;
+  changelog: string;
+  published_at: string;
+  state: PluginMarketplaceState;
+  installed_version?: string;
+  installation_id?: string;
+}
+
+export interface PluginMarketplaceResponse {
+  listings: PluginMarketplaceListing[];
 }
 
 /** One immutable published version of a plugin package. */

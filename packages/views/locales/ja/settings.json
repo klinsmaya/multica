@@ -454,7 +454,8 @@
       "confirm_upgrade": "許可してアップグレード",
       "installed": "Plugin をインストールしました",
       "upgrade_from": " · v{{version}} からアップグレード",
-      "new_scope": "新規"
+      "new_scope": "新規",
+      "no_scopes": "この Plugin はスキルのみを追加し、アクセス権限を要求しません。"
     },
     "schedule": {
       "title": "自動スケジュール",
@@ -512,6 +513,13 @@
       "installed_version": "使用中",
       "review_install": "確認してインストール",
       "review_upgrade": "確認してアップグレード"
+    },
+    "marketplace": {
+      "title": "テンプレートマーケット",
+      "empty": "このワークスペースに提供されているテンプレートはありません。",
+      "load_failed": "テンプレートマーケットを読み込めませんでした。インストール済みの Plugin には影響しません。",
+      "state_current": "最新",
+      "state_outdated": "v{{version}} から更新"
     }
   },
   "properties": {
