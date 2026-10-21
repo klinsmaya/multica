@@ -713,7 +713,13 @@
     "open_threads_one": "{{count}} fil ouvert",
     "open_threads_other": "{{count}} fils ouverts",
     "open_thread": "Ouvrir le fil",
-    "empty": "Aucune tâche dans ce flux"
+    "empty": "Aucune tâche dans ce flux",
+    "quick": {
+      "continue": "Reprendre le dernier travail",
+      "plan": "Établir un plan",
+      "plan_title": "Établir un plan",
+      "new": "Nouvelle tâche"
+    }
   },
   "filtered_empty": {
     "title": "Aucune tâche ne correspond à ces filtres",

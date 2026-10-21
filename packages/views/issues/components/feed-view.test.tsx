@@ -115,7 +115,7 @@ function renderFeed(issues: Issue[]) {
     <QueryClientProvider client={queryClient}>
       <NavigationProvider value={navigation}>
         <IssuePeekActionsContext.Provider value={peek}>
-          <FeedView issues={issues} />
+          <FeedView issues={issues} projectId={null} />
         </IssuePeekActionsContext.Provider>
       </NavigationProvider>
     </QueryClientProvider>,
@@ -226,5 +226,30 @@ describe("FeedView", () => {
     renderFeed([makeIssue({ id: "child", parent_issue_id: "p" })]);
 
     expect(screen.getByText("No issues in this feed")).toBeInTheDocument();
+  });
+
+  it("renders the quick actions below the stream, with or without messages", () => {
+    const { unmount } = renderFeed([makeIssue({ id: "a" })]);
+    const stream = screen.getByTestId("virtuoso");
+    const newIssue = screen.getByRole("button", { name: "New issue" });
+    expect(
+      stream.compareDocumentPosition(newIssue) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    unmount();
+
+    renderFeed([]);
+    expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument();
+  });
+
+  it("focuses the composer input from the new-issue action when one exists", () => {
+    renderFeed([makeIssue({ id: "a" })]);
+    const input = document.createElement("textarea");
+    input.setAttribute("data-feed-composer-input", "");
+    document.body.appendChild(input);
+
+    fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+
+    expect(document.activeElement).toBe(input);
+    input.remove();
   });
 });

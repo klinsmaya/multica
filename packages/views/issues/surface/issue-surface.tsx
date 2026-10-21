@@ -374,7 +374,7 @@ function IssueSurfaceContent({
             {controller.viewMode === "gantt" && (
               <GanttView issues={controller.filteredGanttIssues} />
             )}
-            {controller.viewMode === "feed" && <FeedView issues={issues} />}
+            {controller.viewMode === "feed" && <FeedView issues={issues} projectId={scope.type === "project" ? scope.projectId : null} />}
             {controller.viewMode === "swimlane" && (
               <SwimLaneView
                 issues={issues}

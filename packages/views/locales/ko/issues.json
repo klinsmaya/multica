@@ -684,7 +684,13 @@
     "last_reply": "마지막 답글 {{time}}",
     "open_threads_other": "미해결 스레드 {{count}}개",
     "open_thread": "스레드 열기",
-    "empty": "피드에 표시할 태스크가 없습니다"
+    "empty": "피드에 표시할 태스크가 없습니다",
+    "quick": {
+      "continue": "최근 작업 이어가기",
+      "plan": "계획 세우기",
+      "plan_title": "계획 세우기",
+      "new": "새 태스크"
+    }
   },
   "filtered_empty": {
     "title": "필터 조건에 맞는 태스크가 없습니다",

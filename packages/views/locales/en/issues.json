@@ -713,7 +713,13 @@
     "open_threads_one": "{{count}} open thread",
     "open_threads_other": "{{count}} open threads",
     "open_thread": "Open thread",
-    "empty": "No issues in this feed"
+    "empty": "No issues in this feed",
+    "quick": {
+      "continue": "Continue recent work",
+      "plan": "Make a plan",
+      "plan_title": "Make a plan",
+      "new": "New issue"
+    }
   },
   "filtered_empty": {
     "title": "No issues match these filters",
