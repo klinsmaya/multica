@@ -240,8 +240,13 @@ function renderWithProviders(ui: ReactNode) {
   );
 }
 
-function renderCommentInput(onSubmit = vi.fn().mockResolvedValue(true)) {
-  const view = renderWithProviders(<CommentInput issueId="issue-1" onSubmit={onSubmit} />);
+function renderCommentInput(
+  onSubmit = vi.fn().mockResolvedValue(true),
+  replyContext?: { attachmentId: string; filename: string },
+) {
+  const view = renderWithProviders(
+    <CommentInput issueId="issue-1" onSubmit={onSubmit} replyContext={replyContext} />,
+  );
   return { ...view, onSubmit };
 }
 
@@ -446,6 +451,51 @@ describe("comment composers", () => {
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith("hello from composer", undefined, undefined, undefined);
+    });
+  });
+
+  describe("deliverable reply chip", () => {
+    const report = { attachmentId: "11111111-1111-1111-1111-111111111111", filename: "report.pdf" };
+    const reportCard = "!file[report.pdf](/api/attachments/11111111-1111-1111-1111-111111111111/download)";
+
+    it("starts the comment with a reference to the deliverable", async () => {
+      const { container, onSubmit } = renderCommentInput(undefined, report);
+      expect(screen.getByText("report.pdf")).toBeInTheDocument();
+
+      activateComposer("comment-composer-shell");
+      fireEvent.change(screen.getByTestId("editor"), { target: { value: "Please redo page 2" } });
+      fireEvent.click(getSubmitButton(container));
+
+      await waitFor(() => {
+        expect(onSubmit).toHaveBeenCalledWith(`${reportCard}\n\nPlease redo page 2`, undefined, undefined, undefined);
+      });
+    });
+
+    it("does not make an empty reply sendable", () => {
+      const { container } = renderCommentInput(undefined, report);
+      expect(getSubmitButton(container)).toBeDisabled();
+    });
+
+    it("leaves the reference out once dismissed, and offers it again for the next file", async () => {
+      const onSubmit = vi.fn().mockResolvedValue(true);
+      const view = renderCommentInput(onSubmit, report);
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove report.pdf from this reply" }));
+      expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+
+      activateComposer("comment-composer-shell");
+      fireEvent.change(screen.getByTestId("editor"), { target: { value: "No file this time" } });
+      fireEvent.click(getSubmitButton(view.container));
+      await waitFor(() => {
+        expect(onSubmit).toHaveBeenCalledWith("No file this time", undefined, undefined, undefined);
+      });
+
+      view.rerender(
+        <QueryClientProvider client={new QueryClient()}>
+          <CommentInput issueId="issue-1" onSubmit={onSubmit} replyContext={{ attachmentId: "next", filename: "next.png" }} />
+        </QueryClientProvider>,
+      );
+      expect(screen.getByText("next.png")).toBeInTheDocument();
     });
   });
 

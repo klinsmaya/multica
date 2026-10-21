@@ -642,6 +642,7 @@
     "recipient_count_other": "{{count}} 个智能体会收到",
     "steer_attachment_notice": "插话只支持文字，带附件的消息会在本轮结束后处理。",
     "restart_send": "停止并发送",
+    "reply_context_remove": "回复中不再引用 {{name}}",
     "restart_failed": "没能停止当前运行，消息还没有发送。"
   },
   "reply": {

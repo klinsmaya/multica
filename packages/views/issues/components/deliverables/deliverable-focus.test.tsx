@@ -39,10 +39,24 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
 // the thread variant). The stub keeps a reply draft in local state, so a
 // remount on navigation would lose it.
 vi.mock("../issue-detail", () => ({
-  IssueDetail: ({ issueId, variant }: { issueId: string; variant?: string }) => {
+  IssueDetail: ({
+    issueId,
+    variant,
+    replyContext,
+  }: {
+    issueId: string;
+    variant?: string;
+    replyContext?: { attachmentId: string; filename: string };
+  }) => {
     const [draft, setDraft] = useState("");
     return (
-      <div data-testid="thread" data-issue={issueId} data-variant={variant}>
+      <div
+        data-testid="thread"
+        data-issue={issueId}
+        data-variant={variant}
+        data-reply-attachment={replyContext?.attachmentId}
+        data-reply-filename={replyContext?.filename}
+      >
         <input aria-label="Reply" value={draft} onChange={(e) => setDraft(e.target.value)} />
       </div>
     );
@@ -160,6 +174,18 @@ describe("DeliverableFocusModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("2 / 3");
     expect(screen.getByLabelText("Reply")).toHaveValue("half a thought");
+  });
+
+  it("tells the thread which file is on screen, and follows the paging", async () => {
+    renderFocus("b");
+    await screen.findByText("2 / 3");
+    expect(screen.getByTestId("thread")).toHaveAttribute("data-reply-attachment", "b");
+    expect(screen.getByTestId("thread")).toHaveAttribute("data-reply-filename", "b.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("3 / 3");
+    expect(screen.getByTestId("thread")).toHaveAttribute("data-reply-attachment", "a");
+    expect(screen.getByTestId("thread")).toHaveAttribute("data-reply-filename", "a.png");
   });
 
   it("collapses the thread from the top bar", async () => {

@@ -173,7 +173,11 @@ function DeliverableFocus({
           )}
           style={NO_DRAG}
         >
-          <IssueDetail issueId={issueId} variant="thread" />
+          <IssueDetail
+            issueId={issueId}
+            variant="thread"
+            replyContext={attachment ? { attachmentId: attachment.id, filename: attachment.filename } : undefined}
+          />
         </aside>
       )}
     </>

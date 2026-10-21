@@ -662,6 +662,7 @@
     "recipient_count_other": "{{count}} agents recevront ce message",
     "steer_attachment_notice": "Seul du texte peut rejoindre une exécution en cours : un message avec des fichiers sera traité après.",
     "restart_send": "Arrêter et envoyer",
+    "reply_context_remove": "Retirer {{name}} de cette réponse",
     "restart_failed": "Impossible d'arrêter l'exécution en cours. Votre message n'a pas été envoyé."
   },
   "reply": {

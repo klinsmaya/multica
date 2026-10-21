@@ -1179,6 +1179,8 @@ interface IssueDetailProps {
   trailingActions?: ReactNode;
   /** Peek only: a full-width strip between the header and the content. */
   belowHeader?: ReactNode;
+  /** Thread only: the deliverable the host is showing; the reply box offers to reference it. */
+  replyContext?: { attachmentId: string; filename: string };
 }
 
 // Not found
@@ -1310,7 +1312,7 @@ export function IssueDetailSkeleton({
 /** How long an issue must stay open before it counts as read. */
 const MARK_READ_DELAY_MS = 1500;
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader, replyContext }: IssueDetailProps) {
   const isThread = variant === "thread";
   // The thread is a peek with the content sections removed, so every
   // single-column switch below applies to it as well.
@@ -3991,6 +3993,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               onSubmit={submitComment}
               onAccepted={scrollToTimelineBottom}
               onEditAnnotation={(annotationId) => descriptionAnnotations.editAnnotation(annotationId, true)}
+              replyContext={isThread ? replyContext : undefined}
             />
           </div>
         </div>
