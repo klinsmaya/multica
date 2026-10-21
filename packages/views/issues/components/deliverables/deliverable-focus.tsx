@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, PanelRight } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRight } from "lucide-react";
 import {
   collectDeliverableFiles,
   findDeliverableVersion,
 } from "@multica/core/attachments/deliverables";
+import { isCanvasFilename } from "@multica/core/attachments/prototype-canvas";
 import { issueTimelineOptions } from "@multica/core/issues/queries";
 import {
   Dialog,
@@ -25,6 +26,9 @@ import { IssueDetail } from "../issue-detail";
 import { AnnotatablePreviewPanel, useDocumentAnnotations } from "./document-annotations";
 import { VersionBadge } from "./version-badge";
 import { useProgressiveDocument } from "./use-progressive-document";
+import { useFollowLatestVersion } from "./use-follow-latest-version";
+import { PrototypeCanvas } from "./prototype-canvas";
+import { useAttachmentHtmlText } from "../../../editor/hooks/use-attachment-html-text";
 
 // The focus covers the whole window, drag strip included, so it opts out of
 // the desktop window-drag region itself (see AttachmentPreviewModal).
@@ -95,6 +99,8 @@ function DeliverableFocus({
   const files = useMemo(() => collectDeliverableFiles(timeline ?? []), [timeline]);
 
   const [attachmentId, setAttachmentId] = useState(initialAttachmentId);
+  // The canvas this view was opened from by "Play", so "Back to canvas" can return.
+  const [canvasOrigin, setCanvasOrigin] = useState<string | null>(null);
   const [discussionOpen, setDiscussionOpen] = useState(wideEnoughForDiscussion);
 
   const current = findDeliverableVersion(files, attachmentId);
@@ -139,9 +145,61 @@ function DeliverableFocus({
     viewedId: attachmentId,
     onFollow: setAttachmentId,
   });
+  const isCanvas = !!attachment && isCanvasFilename(attachment.filename);
+  // A new canvas version is followed once its body is in hand, like a document.
+  const latestCanvasText = useAttachmentHtmlText(isCanvas ? current?.file.latest.id : null);
+  useFollowLatestVersion({
+    file: isCanvas ? current?.file : undefined,
+    viewedId: attachmentId,
+    ready: latestCanvasText.isSuccess || latestCanvasText.isError,
+    onFollow: setAttachmentId,
+  });
+  const playFromCanvas = useCallback(
+    (htmlId: string) => {
+      setCanvasOrigin(attachmentId);
+      setAttachmentId(htmlId);
+    },
+    [attachmentId],
+  );
+  const originFile = canvasOrigin ? findDeliverableVersion(files, canvasOrigin)?.file : undefined;
+  const backToCanvas =
+    originFile && !isCanvas ? (
+      <button
+        type="button"
+        className="flex h-6 shrink-0 items-center gap-1 rounded-md bg-secondary px-2 text-label text-foreground transition-colors hover:bg-muted"
+        onClick={() => {
+          setAttachmentId(originFile.latest.id);
+          setCanvasOrigin(null);
+        }}
+      >
+        <ArrowLeft className="size-3.5" />
+        {t(($) => $.deliverables.canvas.back)}
+      </button>
+    ) : undefined;
+  const stage =
+    isCanvas && attachment && current ? (
+      <PrototypeCanvas
+        key={current.file.key}
+        issueId={issueId}
+        attachment={attachment}
+        latestId={current.file.latest.id}
+        files={files}
+        onPlay={playFromCanvas}
+      />
+    ) : undefined;
   const versionBadge =
     current && current.file.versions.length > 1 ? (
       <VersionBadge version={current.version} className="bg-secondary" />
+    ) : undefined;
+
+  // Left undefined when empty: an accessory makes the title row a no-drag region.
+  const titleAccessory =
+    backToCanvas || versionBadge || progressive.status ? (
+      <>
+        {backToCanvas}
+        {versionBadge}
+        {progressive.status}
+      </>
     ) : undefined;
 
   return (
@@ -154,16 +212,8 @@ function DeliverableFocus({
             documentAnnotations={documentAnnotations}
             attachment={attachment}
             sequence={{ index, total: files.length, onPrev, onNext }}
-            titleAccessory={
-              progressive.status ? (
-                <>
-                  {versionBadge}
-                  {progressive.status}
-                </>
-              ) : (
-                versionBadge
-              )
-            }
+            titleAccessory={titleAccessory}
+            stage={stage}
             renderMarkdown={progressive.renderMarkdown}
             extraActions={
               <>

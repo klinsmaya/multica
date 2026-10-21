@@ -1504,6 +1504,20 @@
       "changed_label": "Claude",
       "writing": "작성 중 · {{done}}/{{total}}개 섹션",
       "unfinished": "미완료 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "전체 보기",
+      "prototypes": "프로토타입",
+      "play": "재생",
+      "play_named": "{{name}} 재생",
+      "back": "캔버스로 돌아가기",
+      "save_layout": "레이아웃 저장",
+      "saving": "저장 중…",
+      "save_failed": "레이아웃을 저장하지 못했습니다",
+      "file_not_found": "파일을 찾을 수 없음: {{name}}",
+      "load_failed": "{{name}}을(를) 불러오지 못했습니다",
+      "invalid": "이 캔버스를 읽을 수 없습니다",
+      "page": "페이지"
     }
   },
   "workflows": {

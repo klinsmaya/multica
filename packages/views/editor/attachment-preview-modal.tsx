@@ -674,6 +674,7 @@ function PreviewPanel({
   onOpenOverview,
   extraActions,
   annotationSource,
+  stage,
   renderHtmlFrame = renderViewerHtmlFrame,
   renderMarkdown,
   initialHtmlAddress = "",
@@ -697,6 +698,8 @@ function PreviewPanel({
   extraActions?: ReactNode;
   /** Marks a Markdown or text body as a quotable source (`data-comment-content`). */
   annotationSource?: string;
+  /** Replaces the stage's body; the top bar and sequence buttons stay. */
+  stage?: ReactNode;
   renderHtmlFrame?: HtmlFrameRenderer;
   renderMarkdown?: MarkdownRenderer;
   /** Query and fragment an HTML file opens at. */
@@ -1038,7 +1041,9 @@ function PreviewPanel({
             },
           }}
         >
-          {kind === "image" ? (
+          {stage ? (
+            stage
+          ) : kind === "image" ? (
             <ImagePreview
               state={state}
               mediaUrl={mediaUrl}
@@ -1688,6 +1693,7 @@ export function AttachmentPreviewPanel({
   titleAccessory,
   extraActions,
   annotationSource,
+  stage,
   renderMarkdown,
   onClose,
 }: {
@@ -1697,6 +1703,8 @@ export function AttachmentPreviewPanel({
   extraActions?: ReactNode;
   /** See PreviewPanel: lets the host quote Markdown and text bodies. */
   annotationSource?: string;
+  /** A host-drawn stage for this file (e.g. a prototype canvas) in place of the kind's own. */
+  stage?: ReactNode;
   /** Replaces the Markdown body's renderer, e.g. to mark placeholders. */
   renderMarkdown?: MarkdownRenderer;
   onClose: () => void;
@@ -1711,11 +1719,13 @@ export function AttachmentPreviewPanel({
   return (
     <PreviewPanel
       surface="viewer"
-      kind={state.kind}
+      // A host stage replaces the kind's own body, so its view controls go too.
+      kind={stage ? null : state.kind}
       source={source}
       state={state}
       onClose={onClose}
       onDownload={() => download(attachment.id)}
+      stage={stage}
       sequence={sequence}
       reduceMotion={shouldReduceMotion}
       titleAccessory={titleAccessory}

@@ -1504,6 +1504,20 @@
       "changed_label": "Claude",
       "writing": "正在写 · {{done}}/{{total}} 段",
       "unfinished": "未完成 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "适应全部",
+      "prototypes": "原型",
+      "play": "演示",
+      "play_named": "演示 {{name}}",
+      "back": "返回画布",
+      "save_layout": "保存布局",
+      "saving": "保存中…",
+      "save_failed": "无法保存布局",
+      "file_not_found": "找不到文件：{{name}}",
+      "load_failed": "无法加载 {{name}}",
+      "invalid": "无法读取此画布",
+      "page": "页面"
     }
   },
   "workflows": {

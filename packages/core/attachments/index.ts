@@ -16,6 +16,21 @@ export {
   type WritingProgress,
 } from "./progressive-document";
 export {
+  CANVAS_DEVICE_SIZES,
+  centerOnFrame,
+  clampScale,
+  fitAllTransform,
+  isCanvasFilename,
+  moveFrame,
+  parsePrototypeCanvas,
+  zoomAround,
+  type CanvasDevice,
+  type CanvasFrame,
+  type CanvasPage,
+  type CanvasTransform,
+  type PrototypeCanvas,
+} from "./prototype-canvas";
+export {
   collectAttachmentSequence,
   collectImageSequence,
   indexOfImageKey,

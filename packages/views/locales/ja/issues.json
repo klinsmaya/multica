@@ -1504,6 +1504,20 @@
       "changed_label": "Claude",
       "writing": "執筆中 · {{done}}/{{total}} 節",
       "unfinished": "未完了 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "すべて表示",
+      "prototypes": "プロトタイプ",
+      "play": "再生",
+      "play_named": "{{name}} を再生",
+      "back": "キャンバスに戻る",
+      "save_layout": "レイアウトを保存",
+      "saving": "保存中…",
+      "save_failed": "レイアウトを保存できませんでした",
+      "file_not_found": "ファイルが見つかりません: {{name}}",
+      "load_failed": "{{name}} を読み込めませんでした",
+      "invalid": "このキャンバスを読み取れません",
+      "page": "ページ"
     }
   },
   "workflows": {

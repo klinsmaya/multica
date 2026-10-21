@@ -17,6 +17,7 @@
     "./attachments/deliverables": "./attachments/deliverables.ts",
     "./attachments/image-sequence": "./attachments/image-sequence.ts",
     "./attachments/progressive-document": "./attachments/progressive-document.ts",
+    "./attachments/prototype-canvas": "./attachments/prototype-canvas.ts",
     "./api": "./api/index.ts",
     "./api/client": "./api/client.ts",
     "./api/schema": "./api/schema.ts",

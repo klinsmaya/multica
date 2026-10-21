@@ -1560,6 +1560,20 @@
       "changed_label": "Claude",
       "writing": "Rédaction · {{done}}/{{total}} sections",
       "unfinished": "Inachevé · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "Tout afficher",
+      "prototypes": "Prototypes",
+      "play": "Lancer",
+      "play_named": "Lancer {{name}}",
+      "back": "Retour au canevas",
+      "save_layout": "Enregistrer la disposition",
+      "saving": "Enregistrement…",
+      "save_failed": "Impossible d'enregistrer la disposition",
+      "file_not_found": "Fichier introuvable : {{name}}",
+      "load_failed": "Impossible de charger {{name}}",
+      "invalid": "Ce canevas est illisible",
+      "page": "Page"
     }
   },
   "workflows": {

@@ -838,6 +838,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 		b.WriteString("Keep comments concise and natural — state the outcome, not the process.\n\n")
 		b.WriteString("**Delivering files here:** pass `--attachment <path>` to `multica issue comment add` (repeatable) — the only way a screenshot or artifact reaches the reader.\n")
 		b.WriteString("\n**Long documents, section by section (optional):** upload an outline first, with each unwritten section as a single line `<!-- pending: Section title -->`, then re-upload the same file name after each section is written, replacing that line with the text. Each upload becomes a new version, so the reader watches the document fill in. Each upload rides on a one-line comment, the one exception to the single-comment rule above; your final result is still the last comment.\n")
+		b.WriteString("\n**Prototype canvas (optional):** to lay several HTML pages out side by side, upload each page as its own `.html` file, then upload `canvas.json`: `{\"pages\":[{\"id\":\"p1\",\"name\":\"Flow\",\"frames\":[{\"id\":\"f1\",\"name\":\"Home\",\"file\":\"home.html\",\"x\":0,\"y\":0,\"w\":1280,\"h\":800,\"device\":\"desktop\"}]}]}`. `file` is the file name of an HTML upload on this same issue; `device` (`desktop`, `tablet`, `phone`) is optional. Re-upload `canvas.json` or any page under the same name to update the canvas.\n")
 		writeInlineBlocksPolicy(b)
 	}
 	b.WriteString("\n")

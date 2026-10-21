@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Attachment, TimelineEntry } from "@multica/core/types";
@@ -37,6 +37,7 @@ vi.mock("../../../editor/use-download-attachment", () => ({ useDownloadAttachmen
 vi.mock("../../../editor/hooks/use-inline-media-url", () => ({
   useResignedInlineMedia: (_id: string | undefined, url: string) => ({ url, pending: false }),
 }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("@multica/core/workspace/avatar-url", () => ({ resolvePublicFileUrl: (url: string) => url }));
 vi.mock("../../../platform", () => ({ useImmersiveMode: () => {} }));
 vi.mock("../../../navigation", () => ({ useNavigation: () => ({}), useAppOrigin: () => "https://app.example.test" }));
@@ -244,6 +245,118 @@ describe("DeliverableFocusModal", () => {
     // requested upload is the one on screen.
     expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     expect(screen.getByText("v1")).toBeInTheDocument();
+  });
+
+  describe("a prototype canvas", () => {
+    const canvasJson = (extra: object[] = []) =>
+      JSON.stringify({
+        pages: [
+          {
+            id: "p1",
+            name: "Flow",
+            frames: [{ id: "home", name: "Home", file: "home.html", x: 0, y: 0, w: 400, h: 300 }, ...extra],
+          },
+        ],
+      });
+
+    function file(id: string, filename: string, contentType: string, createdAt: string) {
+      return shot(id, filename, createdAt, { content_type: contentType });
+    }
+    const PAGE = file("page-1", "home.html", "text/html", "2026-09-20T10:00:00Z");
+    const CANVAS_1 = file("canvas-1", "canvas.json", "application/json", "2026-09-20T10:05:00Z");
+
+    beforeEach(() => {
+      listTimelineMock.mockResolvedValue([comment(A), comment(PAGE), comment(CANVAS_1)]);
+      textContentMock.mockImplementation(async (id: string) => ({
+        text: id.startsWith("canvas") ? canvasJson() : `<html><body>${id}</body></html>`,
+        originalContentType: id.startsWith("canvas") ? "application/json" : "text/html",
+      }));
+    });
+
+    it("takes the place of the document stage, under the same top bar", async () => {
+      renderFocus("canvas-1");
+
+      expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "canvas.json" })).toBeInTheDocument();
+      expect(await screen.findByTitle("Home")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Comments" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+      // The JSON viewer's own controls do not apply to the canvas.
+      expect(screen.queryByRole("group", { name: "View" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Back to canvas" })).not.toBeInTheDocument();
+    });
+
+    it("still pages through the issue's deliverables", async () => {
+      renderFocus("canvas-1");
+      await screen.findByText("1 / 3");
+
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      expect(await screen.findByText("2 / 3")).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: "home.html" })).toBeInTheDocument();
+      expect(screen.queryByTestId("prototype-canvas")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+      expect(await screen.findByTestId("prototype-canvas")).toBeInTheDocument();
+    });
+
+    it("plays a frame's HTML file in the same focus and comes back", async () => {
+      renderFocus("canvas-1");
+      await screen.findByTitle("Home");
+
+      const list = screen.getByRole("region", { name: "Prototypes" });
+      fireEvent.click(within(list).getByRole("button", { name: "Play Home" }));
+
+      expect(await screen.findByRole("dialog", { name: "home.html" })).toBeInTheDocument();
+      expect(screen.getByText("2 / 3")).toBeInTheDocument();
+      expect(screen.getByTestId("thread")).toHaveAttribute("data-reply-attachment", "page-1");
+
+      // Paging works from the played file too.
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await screen.findByText("3 / 3");
+      fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+      await screen.findByText("2 / 3");
+
+      fireEvent.click(screen.getByRole("button", { name: "Back to canvas" }));
+      expect(await screen.findByRole("dialog", { name: "canvas.json" })).toBeInTheDocument();
+      expect(await screen.findByTitle("Home")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Back to canvas" })).not.toBeInTheDocument();
+    });
+
+    it("offers no way back to a canvas it was not opened from", async () => {
+      renderFocus("page-1");
+      await screen.findByText("2 / 3");
+      expect(screen.queryByRole("button", { name: "Back to canvas" })).not.toBeInTheDocument();
+    });
+
+    it("follows a new canvas version once it has loaded", async () => {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      renderWithI18n(
+        <QueryClientProvider client={qc}>
+          <DeliverableFocusModal onClose={vi.fn()} data={{ issueId: "issue-1", attachmentId: "canvas-1" }} />
+        </QueryClientProvider>,
+      );
+      await screen.findByTitle("Home");
+      expect(screen.queryByText("v2")).not.toBeInTheDocument();
+
+      const CANVAS_2 = file("canvas-2", "canvas.json", "application/json", "2026-09-21T10:00:00Z");
+      textContentMock.mockImplementation(async (id: string) => ({
+        text:
+          id === "canvas-2"
+            ? canvasJson([{ id: "b", name: "Second", file: "home.html", x: 500, y: 0 }])
+            : id.startsWith("canvas")
+              ? canvasJson()
+              : "<p>x</p>",
+        originalContentType: "application/json",
+      }));
+      listTimelineMock.mockResolvedValue([comment(A), comment(PAGE), comment(CANVAS_1), comment(CANVAS_2)]);
+      await qc.invalidateQueries({ queryKey: issueTimelineOptions("issue-1").queryKey });
+
+      expect(await screen.findByText("v2")).toBeInTheDocument();
+      const list = await screen.findByRole("region", { name: "Prototypes" });
+      expect(within(list).getByRole("button", { name: "Second" })).toBeInTheDocument();
+      // Still one deliverable called canvas.json.
+      expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    });
   });
 
   describe("a document written section by section", () => {
