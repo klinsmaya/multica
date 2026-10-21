@@ -1,0 +1,109 @@
+---
+title: テンプレートパッケージの作成
+description: スキル、エージェント、スクワッドをテンプレートマーケットプレイス向けにパッケージ化し、管理コンソールから公開する方法。
+---
+
+テンプレートマーケットプレイスは、Claude Code プラグインレイアウトの**パッケージ**を配布します。1 つのパッケージでスキル、エージェント、スクワッドをまとめてワークスペースにインストールでき、同じパッケージを `claude plugin marketplace add` でも使えます。
+
+このページはパッケージを書く人向けです。運用者は `/admin/registry` から公開し、ワークスペース管理者は **設定 → Plugins → テンプレートマーケットプレイス** からインストールします。どちらも `plugins_v1` と `marketplace_v1` のフィーチャーフラグが必要です。
+
+## レイアウト
+
+```
+customer-support-squad/
+  .claude-plugin/plugin.json      # 必須
+  README.md
+  CHANGELOG.md                    # バージョンの変更履歴になります
+  skills/<name>/SKILL.md          # Agent Skills 標準
+  agents/<name>.md                # frontmatter + 指示
+  .mcp.json                       # URL サーバーのみ
+```
+
+ディレクトリを zip（トップレベルフォルダの有無は問いません）にしてアップロードします。これ以外のパスのファイルはアーカイブに残りますが Multica は読みません。`hooks/` と `commands/` は拒否されます。サーバーはパッケージ内のコードを実行しません。
+
+## plugin.json
+
+```json
+{
+  "name": "customer-support-squad",
+  "version": "1.0.0",
+  "displayName": "Customer Support Squad",
+  "description": "Triage and reply to support issues",
+  "author": { "name": "Multica" },
+  "keywords": ["support", "triage"],
+  "metadata": {
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "squad": { "name": "Customer Support", "lead": "triager", "members": ["responder"] },
+      "requires": { "runtime": "claude-code", "connectors": ["zendesk"] }
+    }
+  }
+}
+```
+
+- `name` は小文字（英字、数字、`.`、`_`、`-`）です。Multica のプラグインキーは `<namespace>.<name>`、例えば `multica.customer-support-squad` になります。
+- `version` は semver です。各バージョンは不変で、変更するには新しいバージョンを公開します。
+- `keywords` は、運用者が別に設定しない限りリスティングのタグになります。
+- 標準フィールド以外で Multica が読む内容はすべて `metadata.multica` の下に置きます。他のコンシューマーは無視します。
+
+### metadata.multica
+
+| フィールド | 意味 |
+| --- | --- |
+| `scopes` | パッケージがワークスペース管理者に許可を求めるアクセス。プラグインのスコープ一覧（`issues:read`、`comments:write`、`net:<host>` など）から選びます。`.mcp.json` のサーバーに対する `net:` スコープは自動で追加されます。スキルのみのパッケージでは省略できます。 |
+| `squad` | パッケージのエージェントから作る 1 つのスクワッド。`lead` と `members` は `agents/` のエージェント名です。`name` と `description` は任意です。 |
+| `requires` | 同意画面に表示されるだけで強制はされません。`runtime`（エージェントが想定するランタイム種別）、`min_backend`、`connectors`（連携アプリ id）。 |
+
+## スキル
+
+`skills/<name>/SKILL.md` は Agent Skills 標準に従います。frontmatter の `name` はディレクトリ名と一致し、`description` は必須です。各スキルはインストールが所有するワークスペーススキルになり、アンインストールで削除されます。同名のスキルを人が作成済みの場合、インストールは失敗します。
+
+## エージェント
+
+`agents/<name>.md` は Claude Code のエージェントファイルです。YAML frontmatter の後に Markdown の指示を書きます。
+
+```markdown
+---
+name: triager
+description: Sorts incoming support issues by urgency and topic.
+model: claude-sonnet-5-5
+skills: [ticket-triage]
+---
+
+You are the first reader of every support issue…
+```
+
+Multica は `description`、`model`、`thinking_level`、`skills`（同じパッケージ内のスキル名）を読みます。`tools` は受け付けますが無視されます。ツールへのアクセスは許可されたスコープと MCP の承認から決まります。ファイル名がワークスペースでのエージェント名です。
+
+エージェントは**ランタイム未割り当て**で作成され、ワークスペースの全メンバーが呼び出せます。同意画面にその旨が表示され、作業を割り当てる前にメンバーが各エージェントの設定でランタイムを割り当てます。アップグレード時、テンプレートは説明、指示、モデル、スキルを書き換え、ランタイムの割り当て、アバター、権限には触れません。新バージョンで削除されたエージェントは削除ではなくアーカイブされ、再インストールで復元されます。
+
+## スクワッド
+
+`metadata.multica.squad` は、`lead` をリーダー、`members` をメンバーとする 1 つのスクワッドを作成します。ワークスペースが手動で追加したメンバーはアップグレード後も残り、新バージョンで削除されたエージェントはスクワッドから外れます。アンインストールでスクワッドはアーカイブされます。
+
+## MCP サーバー
+
+`.mcp.json` にはリモートサーバーのみ（`{"type": "http", "url": "https://…"}`）を、認証情報を埋め込まずに記載します。各項目はエージェント起動の MCP フックになり、`net:<host>` スコープが追加されます。ツールはインストール後も通常の MCP 承認を経ます。
+
+## 公開
+
+1. `/admin/registry/sources` に `self` または `official` 種別のソース（例: `@self`）があることを確認します。
+2. `/admin/registry` でそのソースに zip をアップロードし、リスティングページでバージョンを承認します。
+3. リスティングを**公開済み**にします。パブリックなリスティングは匿名の `marketplace.json` に表示されます。そうでない場合は**可視範囲**を編集してコンシューマーとテナント（Multica のテナントはワークスペース id）を選びます。
+4. ワークスペース管理者は 設定 → Plugins でテンプレートを確認し、同意画面からインストールできます。
+
+リスティングページには各バージョンの内容（スキル、エージェント、スクワッド、MCP サーバー）が表示され、レビュアーは名前だけでなく機能を承認します。
+
+## スターターテンプレート
+
+新しいレジストリは空です。`make registry-seed`（または `server/` で `go run ./cmd/registry seed`）は、`server/internal/registry/seed/templates/` 以下のパッケージを `@multica` 公式ソースに読み込み、承認・公開・パブリック化し、すべての Multica ワークスペースに配信します。このコマンドは再実行しても安全です。既存バージョンはスキップされ、運用者が変更した可視範囲は保持されます。
+
+## Claude Code からマーケットプレイスを使う
+
+公開 API は名前空間ごとに標準のマーケットプレイスファイルを提供します。
+
+```
+claude plugin marketplace add https://<host>/registry/v1/@multica/marketplace.json
+```
+
+キーなしで見えるのはパブリックなリスティングだけです。`/admin/registry/consumers` で作成したコンシューマーは API キー（`Authorization: Bearer rk_…`）を受け取り、自分に配信された内容を見られます。
