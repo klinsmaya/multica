@@ -17,8 +17,15 @@ func withPluginsV1Flag(t *testing.T, h *Handler, enabled bool) {
 
 func withFeatureFlag(t *testing.T, h *Handler, key string, enabled bool) {
 	t.Helper()
+	withFeatureFlags(t, h, map[string]bool{key: enabled})
+}
+
+func withFeatureFlags(t *testing.T, h *Handler, values map[string]bool) {
+	t.Helper()
 	provider := featureflag.NewStaticProvider()
-	provider.Set(key, featureflag.Rule{Default: enabled})
+	for key, enabled := range values {
+		provider.Set(key, featureflag.Rule{Default: enabled})
+	}
 	flags := featureflag.NewService(provider)
 
 	origHandlerFlags := h.FeatureFlags

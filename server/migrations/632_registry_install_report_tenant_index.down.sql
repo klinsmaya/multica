@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_registry_install_report_tenant;

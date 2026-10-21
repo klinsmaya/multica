@@ -1,0 +1,109 @@
+---
+title: Writing a template package
+description: How to package skills, agents and a squad for the template marketplace, and how to publish them from the admin console.
+---
+
+The template marketplace distributes **packages** in the Claude Code plugin layout. One package can install skills, agents and a squad into a workspace in a single step, and the same package works with `claude plugin marketplace add`.
+
+This page is for people who write packages. Operators publish them from `/admin/registry`; workspace admins install them from **Settings → Plugins → Template marketplace**. Both need the `plugins_v1` and `marketplace_v1` feature flags.
+
+## Layout
+
+```
+customer-support-squad/
+  .claude-plugin/plugin.json      # required
+  README.md
+  CHANGELOG.md                    # becomes the version's changelog
+  skills/<name>/SKILL.md          # Agent Skills standard
+  agents/<name>.md                # frontmatter + instructions
+  .mcp.json                       # URL servers only
+```
+
+Zip the directory (with or without the top-level folder) and upload it. Files outside these paths are kept in the archive but ignored by Multica. `hooks/` and `commands/` are refused: the server never runs code from a package.
+
+## plugin.json
+
+```json
+{
+  "name": "customer-support-squad",
+  "version": "1.0.0",
+  "displayName": "Customer Support Squad",
+  "description": "Triage and reply to support issues",
+  "author": { "name": "Multica" },
+  "keywords": ["support", "triage"],
+  "metadata": {
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "squad": { "name": "Customer Support", "lead": "triager", "members": ["responder"] },
+      "requires": { "runtime": "claude-code", "connectors": ["zendesk"] }
+    }
+  }
+}
+```
+
+- `name` is lowercase (letters, digits, `.`, `_`, `-`). The Multica plugin key becomes `<namespace>.<name>`, for example `multica.customer-support-squad`.
+- `version` is semver. Each version is immutable; publish a new one to change anything.
+- `keywords` become the listing's tags unless the operator sets others.
+- Everything Multica reads beyond the standard fields lives under `metadata.multica`. Other consumers ignore it.
+
+### metadata.multica
+
+| Field | Meaning |
+| --- | --- |
+| `scopes` | Access the package asks the workspace admin to grant, from the plugin scope list (`issues:read`, `comments:write`, `net:<host>`, …). `net:` scopes for `.mcp.json` servers are added automatically. A skill-only package may omit this. |
+| `squad` | One squad built from the package's agents: `lead` and `members` are agent names from `agents/`. `name` and `description` are optional. |
+| `requires` | Shown on the consent screen, not enforced: `runtime` (the runtime kind the agents were written for), `min_backend`, `connectors` (integration app ids). |
+
+## Skills
+
+`skills/<name>/SKILL.md` follows the Agent Skills standard. The frontmatter `name` must equal the directory name and `description` is required. Each skill becomes a workspace skill owned by the installation; uninstalling removes it. A workspace skill with the same name that a person created blocks the install.
+
+## Agents
+
+`agents/<name>.md` is a Claude Code agent file: YAML frontmatter, then the instructions as Markdown.
+
+```markdown
+---
+name: triager
+description: Sorts incoming support issues by urgency and topic.
+model: claude-sonnet-5-5
+skills: [ticket-triage]
+---
+
+You are the first reader of every support issue…
+```
+
+Multica reads `description`, `model`, `thinking_level` and `skills` (names of skills in the same package). `tools` is accepted and ignored: tool access comes from the granted scopes and MCP approvals. The file name is the agent's name in the workspace.
+
+Agents are created **without a runtime**, invocable by every workspace member. The consent screen says so; a member binds a runtime in each agent's settings before assigning work. On upgrade the template rewrites description, instructions, model and skills and leaves the runtime binding, avatar and permissions alone. An agent the new version drops is archived, not deleted; a reinstall restores it.
+
+## Squad
+
+`metadata.multica.squad` creates one squad with the `lead` agent as leader and `members` as members. Members a workspace adds by hand are kept across upgrades; an agent the new version drops leaves the squad. Uninstall archives the squad.
+
+## MCP servers
+
+`.mcp.json` lists remote servers only (`{"type": "http", "url": "https://…"}`), without inline credentials. Each becomes an agent-triggered MCP hook with the `net:<host>` scope added, and its tools still go through the normal MCP approval step after install.
+
+## Publishing
+
+1. In `/admin/registry/sources`, make sure a `self` or `official` source exists (for example `@self`).
+2. In `/admin/registry`, upload the zip into that source, then approve the version on the listing page.
+3. Set the listing to **published**. Public listings appear in the anonymous `marketplace.json`; otherwise edit **visibility** to choose consumers and tenants (a Multica tenant is a workspace id).
+4. Workspace admins now see the template under Settings → Plugins and install it through the consent screen.
+
+The listing page lists what each version contains (skills, agents, squad, MCP servers) so reviewers approve capabilities, not only a name.
+
+## Starter templates
+
+A fresh registry is empty. `make registry-seed` (or `go run ./cmd/registry seed` in `server/`) loads the packages under `server/internal/registry/seed/templates/` into an `@multica` official source, approved, published, public, and targeted at every Multica workspace. The command is safe to re-run: existing versions are skipped and operator changes to visibility are kept.
+
+## Using the marketplace from Claude Code
+
+The public API serves a standard marketplace file per namespace:
+
+```
+claude plugin marketplace add https://<host>/registry/v1/@multica/marketplace.json
+```
+
+Only public listings are visible without a key. A consumer created in `/admin/registry/consumers` gets an API key (`Authorization: Bearer rk_…`) and sees what is targeted at it.

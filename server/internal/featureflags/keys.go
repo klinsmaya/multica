@@ -23,6 +23,12 @@ const (
 	// gate pinned Task/Run execution: disabling discovery and management must not
 	// mutate an immutable execution manifest that is already in flight.
 	PluginsV1 = "plugins_v1"
+	// MarketplaceV1 gates the template marketplace for consumers: the
+	// workspace marketplace section and the external registry catalog. It
+	// only takes effect together with PluginsV1, because installing a
+	// marketplace version is a plugin install. The /admin governance pages
+	// are not gated, so operators can stage listings before turning it on.
+	MarketplaceV1 = "marketplace_v1"
 	// TriageV1 gates the Triage inbox (MUL-7189): creating issues into Triage,
 	// triage runs, and the Triage page. It is a GLOBAL switch — per-workspace
 	// targeting has no production wiring — which is enough because a
@@ -62,6 +68,7 @@ var frontendPublicFlags = []string{
 	BillingWorkspaceSubscriptions,
 	ComposioMCPApps,
 	PluginsV1,
+	MarketplaceV1,
 	ProjectWorkflowsV1,
 }
 
@@ -75,6 +82,10 @@ func ComposioMCPAppsEnabled(ctx context.Context, flags *featureflag.Service) boo
 
 func PluginsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, PluginsV1, false)
+}
+
+func MarketplaceV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, MarketplaceV1, false)
 }
 
 func TriageV1Enabled(ctx context.Context, flags *featureflag.Service) bool {

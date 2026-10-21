@@ -2,11 +2,14 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertCircle, CalendarClock, Loader2, Store, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { useFeatureEnabled } from "@multica/core/config";
+import { MARKETPLACE_V1_FLAG } from "@multica/core/feature-flags";
 import { useCurrentMember } from "@multica/core/permissions";
 import {
   pluginInstallationsOptions,
+  pluginMarketplaceOptions,
   pluginPackagesOptions,
   useConfigurePlugin,
   useDeletePluginPackage,
@@ -20,6 +23,7 @@ import { useCurrentWorkspace } from "@multica/core/paths";
 import type {
   PluginConfigField,
   PluginInstallation,
+  PluginMarketplaceListing,
   PluginPackage,
   PluginPreview,
 } from "@multica/core/types";
@@ -334,8 +338,6 @@ function PublishAndInstall({ wsId, canManage }: { wsId: string; canManage: boole
   const [preview, setPreview] = useState<PluginPreview | null>(null);
 
   const packages = useMemo(() => data?.packages ?? [], [data]);
-  const scheduledHooks = (preview?.manifest.contributes?.hooks ?? [])
-    .filter((hook) => hook.schedule !== undefined);
 
   const reportError = (error: unknown) => {
     toast.error(error instanceof Error ? error.message : t(($) => $.plugins.action_failed));
@@ -427,57 +429,259 @@ function PublishAndInstall({ wsId, canManage }: { wsId: string; canManage: boole
         )}
 
         {preview ? (
-          <div className="space-y-4 border-t border-surface-border px-4 py-4">
-            <div>
-              <div className="text-body font-semibold">{preview.manifest.name}</div>
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.plugins.byline, {
-                  author: preview.manifest.author.name,
-                  version: preview.version,
-                })}
-                {preview.installed
-                  ? t(($) => $.plugins.consent.upgrade_from, { version: preview.installed_version ?? "" })
-                  : ""}
-              </p>
-              {preview.manifest.description ? (
-                <p className="mt-2 text-caption">{preview.manifest.description}</p>
-              ) : null}
-            </div>
-
-            <Alert>
-              <AlertCircle />
-              <AlertTitle>{t(($) => $.plugins.consent.title)}</AlertTitle>
-              <AlertDescription>{t(($) => $.plugins.consent.description)}</AlertDescription>
-            </Alert>
-
-            <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
-
-            {scheduledHooks.length > 0 ? (
-              <Alert>
-                <CalendarClock />
-                <AlertTitle>{t(($) => $.plugins.schedule.consent_title)}</AlertTitle>
-                <AlertDescription>
-                  {t(($) => $.plugins.schedule.consent_description)}
-                  <ScheduleList hooks={scheduledHooks} />
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPreview(null)}>
-                {t(($) => $.plugins.consent.cancel)}
-              </Button>
-              <Button disabled={!canManage || installMutation.isPending} onClick={confirmInstall}>
-                {installMutation.isPending ? <Loader2 className="animate-spin" /> : null}
-                {preview.installed
-                  ? t(($) => $.plugins.consent.confirm_upgrade)
-                  : t(($) => $.plugins.consent.confirm)}
-              </Button>
-            </div>
-          </div>
+          <ConsentCard
+            preview={preview}
+            canManage={canManage}
+            pending={installMutation.isPending}
+            onCancel={() => setPreview(null)}
+            onConfirm={confirmInstall}
+          />
         ) : null}
       </SettingsCard>
     </SettingsSection>
+  );
+}
+
+/**
+ * The consent screen. Shared by workspace publishes and marketplace
+ * templates: whichever way a version arrives, what an administrator approves
+ * is the same thing, the manifest's scope list.
+ */
+function ConsentCard({
+  preview,
+  canManage,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  preview: PluginPreview;
+  canManage: boolean;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useT("settings");
+  const scheduledHooks = (preview.manifest.contributes?.hooks ?? [])
+    .filter((hook) => hook.schedule !== undefined);
+  const resources = preview.manifest.contributes?.resources ?? [];
+  const names = (type: string) => resources.filter((r) => r.type === type).map((r) => r.key);
+  const skills = names("skill");
+  const agents = names("agent");
+  const squads = names("squad");
+  const requires = preview.requires;
+  const contents = [
+    skills.length > 0 ? t(($) => $.plugins.consent.contents_skills, { count: skills.length, names: skills.join(", ") }) : null,
+    agents.length > 0 ? t(($) => $.plugins.consent.contents_agents, { count: agents.length, names: agents.join(", ") }) : null,
+    squads.length > 0 ? t(($) => $.plugins.consent.contents_squads, { count: squads.length, names: squads.join(", ") }) : null,
+  ].filter((line): line is string => line !== null);
+  return (
+    <div className="space-y-4 border-t border-surface-border px-4 py-4">
+      <div>
+        <div className="text-body font-semibold">{preview.manifest.name}</div>
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.plugins.byline, {
+            author: preview.manifest.author.name,
+            version: preview.version,
+          })}
+          {preview.installed
+            ? t(($) => $.plugins.consent.upgrade_from, { version: preview.installed_version ?? "" })
+            : ""}
+        </p>
+        {preview.manifest.description ? (
+          <p className="mt-2 text-caption">{preview.manifest.description}</p>
+        ) : null}
+      </div>
+
+      <Alert>
+        <AlertCircle />
+        <AlertTitle>{t(($) => $.plugins.consent.title)}</AlertTitle>
+        <AlertDescription>{t(($) => $.plugins.consent.description)}</AlertDescription>
+      </Alert>
+
+      {preview.scopes.length === 0 ? (
+        <p className="text-caption text-muted-foreground">{t(($) => $.plugins.consent.no_scopes)}</p>
+      ) : (
+        <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
+      )}
+
+      {contents.length > 0 ? (
+        <div className="space-y-1 text-caption">
+          <div className="font-medium">{t(($) => $.plugins.consent.contents_title)}</div>
+          <ul className="space-y-0.5 text-muted-foreground">
+            {contents.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {agents.length > 0 ? (
+            <p className="text-muted-foreground">{t(($) => $.plugins.consent.agents_runtime_note)}</p>
+          ) : null}
+          {requires?.runtime ? (
+            <p className="text-muted-foreground">{t(($) => $.plugins.consent.requires_runtime, { runtime: requires.runtime })}</p>
+          ) : null}
+          {requires && requires.connectors.length > 0 ? (
+            <p className="text-muted-foreground">
+              {t(($) => $.plugins.consent.requires_connectors, { names: requires.connectors.join(", ") })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {scheduledHooks.length > 0 ? (
+        <Alert>
+          <CalendarClock />
+          <AlertTitle>{t(($) => $.plugins.schedule.consent_title)}</AlertTitle>
+          <AlertDescription>
+            {t(($) => $.plugins.schedule.consent_description)}
+            <ScheduleList hooks={scheduledHooks} />
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          {t(($) => $.plugins.consent.cancel)}
+        </Button>
+        <Button disabled={!canManage || pending} onClick={onConfirm}>
+          {pending ? <Loader2 className="animate-spin" /> : null}
+          {preview.installed
+            ? t(($) => $.plugins.consent.confirm_upgrade)
+            : t(($) => $.plugins.consent.confirm)}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Templates the marketplace offers this workspace. Installing one copies the
+ * approved version into the workspace and goes through the same consent
+ * screen as a local publish; upgrades are a decision, never automatic.
+ */
+function Marketplace({ wsId, canManage }: { wsId: string; canManage: boolean }) {
+  const { t } = useT("settings");
+  const { data, isLoading, isError } = useQuery(pluginMarketplaceOptions(wsId));
+  const previewMutation = usePreviewPlugin(wsId);
+  const installMutation = useInstallPlugin(wsId);
+  const [preview, setPreview] = useState<PluginPreview | null>(null);
+  const listings = useMemo(() => data?.listings ?? [], [data]);
+
+  const reportError = (error: unknown) => {
+    toast.error(error instanceof Error ? error.message : t(($) => $.plugins.action_failed));
+  };
+
+  const review = async (listing: PluginMarketplaceListing) => {
+    try {
+      setPreview(await previewMutation.mutateAsync({ registry_version_id: listing.version_id }));
+    } catch (error) {
+      setPreview(null);
+      reportError(error);
+    }
+  };
+
+  const confirmInstall = async () => {
+    if (!preview?.registry_version_id) return;
+    try {
+      await installMutation.mutateAsync({
+        registry_version_id: preview.registry_version_id,
+        granted_scopes: preview.scopes,
+      });
+      setPreview(null);
+      toast.success(t(($) => $.plugins.consent.installed));
+    } catch (error) {
+      reportError(error);
+    }
+  };
+
+  return (
+    <SettingsSection title={t(($) => $.plugins.marketplace.title)}>
+      <SettingsCard>
+        {isLoading ? (
+          <div className="px-4 py-4">
+            <Skeleton className="h-16 w-full" aria-label={t(($) => $.plugins.loading)} />
+          </div>
+        ) : isError ? (
+          <p className="px-4 py-6 text-caption text-muted-foreground">
+            {t(($) => $.plugins.marketplace.load_failed)}
+          </p>
+        ) : listings.length === 0 ? (
+          <p className="px-4 py-6 text-caption text-muted-foreground">
+            {t(($) => $.plugins.marketplace.empty)}
+          </p>
+        ) : (
+          listings.map((listing) => (
+            <MarketplaceListing
+              key={listing.listing_id}
+              listing={listing}
+              canManage={canManage}
+              busy={previewMutation.isPending}
+              onReview={review}
+            />
+          ))
+        )}
+
+        {preview ? (
+          <ConsentCard
+            preview={preview}
+            canManage={canManage}
+            pending={installMutation.isPending}
+            onCancel={() => setPreview(null)}
+            onConfirm={confirmInstall}
+          />
+        ) : null}
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+function MarketplaceListing({
+  listing,
+  canManage,
+  busy,
+  onReview,
+}: {
+  listing: PluginMarketplaceListing;
+  canManage: boolean;
+  busy: boolean;
+  onReview: (listing: PluginMarketplaceListing) => void;
+}) {
+  const { t } = useT("settings");
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-surface-border px-4 py-4 last:border-b-0">
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Store className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="text-body font-medium">{listing.display_name || listing.name}</span>
+          <code className="rounded-xs bg-muted px-1.5 py-0.5 font-mono text-caption">{listing.version}</code>
+          {listing.state === "current" ? (
+            <Badge variant="secondary">{t(($) => $.plugins.marketplace.state_current)}</Badge>
+          ) : listing.state === "outdated" ? (
+            <Badge>{t(($) => $.plugins.marketplace.state_outdated, { version: listing.installed_version ?? "" })}</Badge>
+          ) : null}
+        </div>
+        <p className="text-caption text-muted-foreground">
+          {listing.namespace}/{listing.name}
+          {listing.category ? ` · ${listing.category}` : ""}
+        </p>
+        {listing.description ? (
+          <p className="max-w-2xl text-caption">{listing.description}</p>
+        ) : null}
+        {listing.state === "outdated" && listing.changelog ? (
+          <p className="max-w-2xl text-caption text-muted-foreground">{listing.changelog}</p>
+        ) : null}
+      </div>
+      {listing.state === "current" ? null : (
+        <Button
+          size="sm"
+          variant={listing.state === "outdated" ? "default" : "outline"}
+          disabled={!canManage || busy}
+          onClick={() => onReview(listing)}
+        >
+          {listing.state === "outdated"
+            ? t(($) => $.plugins.publish.review_upgrade)
+            : t(($) => $.plugins.publish.review_install)}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -679,6 +883,7 @@ export function PluginsTab() {
   const wsId = workspace?.id ?? "";
   const { role } = useCurrentMember(wsId);
   const canManage = role === "owner" || role === "admin";
+  const marketplaceEnabled = useFeatureEnabled(MARKETPLACE_V1_FLAG, false);
 
   const { data, isLoading, isError } = useQuery(pluginInstallationsOptions(wsId));
   const installations = useMemo(() => data?.plugins ?? [], [data]);
@@ -686,6 +891,8 @@ export function PluginsTab() {
   return (
     <SettingsTab title={t(($) => $.plugins.title)} scope="workspace">
       {role && !canManage ? <SettingsReadOnlyNotice wsId={wsId} /> : null}
+
+      {marketplaceEnabled ? <Marketplace wsId={wsId} canManage={canManage} /> : null}
 
       {canManage ? <PublishAndInstall wsId={wsId} canManage={canManage} /> : null}
 

@@ -132,6 +132,26 @@ func TestParseManifestValidatesScheduledHookContract(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsSkillOnlyPluginWithoutScopes(t *testing.T) {
+	manifest, _, err := ParseManifest([]byte(`{
+  "manifest_version": 1,
+  "key": "com.example.skills",
+  "name": "Skills",
+  "version": "1.0.0",
+  "author": { "name": "example" },
+  "scopes": [],
+  "contributes": {
+    "resources": [{ "type": "skill", "key": "pr-review", "entry": "skills/pr-review/SKILL.md" }]
+  }
+}`))
+	if err != nil {
+		t.Fatalf("parse skill-only manifest: %v", err)
+	}
+	if len(manifest.Scopes) != 0 {
+		t.Fatalf("scopes = %v, want none", manifest.Scopes)
+	}
+}
+
 func TestConfigSchemaPreservesDeclarationOrder(t *testing.T) {
 	manifest, canonical, err := ParseManifest([]byte(validManifest))
 	if err != nil {
@@ -192,6 +212,11 @@ func TestParseManifestRejectsMalformedDocuments(t *testing.T) {
 			"overlong name",
 			mutate(t, func(doc map[string]any) { doc["name"] = strings.Repeat("n", 161) }),
 			"exceeds",
+		},
+		{
+			"no scopes with code contributions",
+			mutate(t, func(doc map[string]any) { doc["scopes"] = []any{} }),
+			"scopes must not be empty",
 		},
 		{
 			"unknown scope",

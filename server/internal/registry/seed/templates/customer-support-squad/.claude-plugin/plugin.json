@@ -1,0 +1,21 @@
+{
+  "name": "customer-support-squad",
+  "version": "1.0.0",
+  "displayName": "Customer Support Squad",
+  "description": "A triager and a responder that sort incoming support issues and draft replies.",
+  "author": { "name": "Multica" },
+  "keywords": ["support", "triage", "squad"],
+  "metadata": {
+    "registry": { "category": "support" },
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "squad": {
+        "name": "Customer Support",
+        "description": "Triages support issues and drafts replies for a human to send.",
+        "lead": "triager",
+        "members": ["responder"]
+      },
+      "requires": { "runtime": "claude-code" }
+    }
+  }
+}

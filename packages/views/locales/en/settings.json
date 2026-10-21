@@ -459,7 +459,15 @@
       "confirm_upgrade": "Grant and upgrade",
       "installed": "Plugin installed",
       "upgrade_from": " · upgrading from v{{version}}",
-      "new_scope": "New"
+      "new_scope": "New",
+      "no_scopes": "This Plugin only adds skills and asks for no access.",
+      "contents_title": "This Plugin adds",
+      "contents_skills": "{{count}} skills: {{names}}",
+      "contents_agents": "{{count}} agents: {{names}}",
+      "contents_squads": "{{count}} squads: {{names}}",
+      "agents_runtime_note": "Agents are created without a runtime. Bind one in each agent's settings before assigning work.",
+      "requires_runtime": "Written for the {{runtime}} runtime.",
+      "requires_connectors": "Uses these connectors: {{names}}."
     },
     "schedule": {
       "title": "Automatic schedules",
@@ -518,6 +526,13 @@
       "installed_version": "In use",
       "review_install": "Review and install",
       "review_upgrade": "Review and upgrade"
+    },
+    "marketplace": {
+      "title": "Template marketplace",
+      "empty": "No templates are offered to this workspace.",
+      "load_failed": "Couldn't load the template marketplace. Installed Plugins are unaffected.",
+      "state_current": "Up to date",
+      "state_outdated": "Update from v{{version}}"
     }
   },
   "properties": {

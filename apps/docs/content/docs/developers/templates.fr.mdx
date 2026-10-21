@@ -1,0 +1,109 @@
+---
+title: Écrire un package de modèle
+description: Comment empaqueter des compétences, des agents et une escouade pour la place de marché des modèles, et les publier depuis la console d'administration.
+---
+
+La place de marché des modèles distribue des **packages** au format des plugins Claude Code. Un package installe en une fois des compétences, des agents et une escouade dans un espace de travail, et le même package fonctionne avec `claude plugin marketplace add`.
+
+Cette page s'adresse aux personnes qui écrivent des packages. Les opérateurs les publient depuis `/admin/registry` ; les administrateurs d'espace de travail les installent depuis **Paramètres → Plugins → Place de marché des modèles**. Les deux nécessitent les indicateurs `plugins_v1` et `marketplace_v1`.
+
+## Arborescence
+
+```
+customer-support-squad/
+  .claude-plugin/plugin.json      # requis
+  README.md
+  CHANGELOG.md                    # devient le journal des modifications de la version
+  skills/<name>/SKILL.md          # standard Agent Skills
+  agents/<name>.md                # frontmatter + instructions
+  .mcp.json                       # serveurs URL uniquement
+```
+
+Compressez le répertoire en zip (avec ou sans le dossier racine) et téléversez-le. Les fichiers hors de ces chemins restent dans l'archive mais Multica les ignore. `hooks/` et `commands/` sont refusés : le serveur n'exécute jamais de code issu d'un package.
+
+## plugin.json
+
+```json
+{
+  "name": "customer-support-squad",
+  "version": "1.0.0",
+  "displayName": "Customer Support Squad",
+  "description": "Triage and reply to support issues",
+  "author": { "name": "Multica" },
+  "keywords": ["support", "triage"],
+  "metadata": {
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "squad": { "name": "Customer Support", "lead": "triager", "members": ["responder"] },
+      "requires": { "runtime": "claude-code", "connectors": ["zendesk"] }
+    }
+  }
+}
+```
+
+- `name` est en minuscules (lettres, chiffres, `.`, `_`, `-`). La clé de plugin Multica devient `<namespace>.<name>`, par exemple `multica.customer-support-squad`.
+- `version` suit semver. Chaque version est immuable ; publiez-en une nouvelle pour changer quoi que ce soit.
+- `keywords` devient les étiquettes de l'annonce, sauf si l'opérateur en définit d'autres.
+- Tout ce que Multica lit au-delà des champs standard se trouve sous `metadata.multica`. Les autres consommateurs l'ignorent.
+
+### metadata.multica
+
+| Champ | Signification |
+| --- | --- |
+| `scopes` | Les accès que le package demande à l'administrateur, pris dans la liste des périmètres de plugin (`issues:read`, `comments:write`, `net:<host>`, …). Les périmètres `net:` des serveurs de `.mcp.json` sont ajoutés automatiquement. Un package ne contenant que des compétences peut l'omettre. |
+| `squad` | Une escouade construite à partir des agents du package : `lead` et `members` sont des noms d'agents de `agents/`. `name` et `description` sont facultatifs. |
+| `requires` | Affiché sur l'écran de consentement, non imposé : `runtime` (le type de runtime pour lequel les agents ont été écrits), `min_backend`, `connectors` (identifiants d'applications d'intégration). |
+
+## Compétences
+
+`skills/<name>/SKILL.md` suit le standard Agent Skills. Le `name` du frontmatter doit être égal au nom du répertoire et `description` est obligatoire. Chaque compétence devient une compétence de l'espace de travail détenue par l'installation ; la désinstallation la supprime. Une compétence du même nom créée par une personne bloque l'installation.
+
+## Agents
+
+`agents/<name>.md` est un fichier d'agent Claude Code : un frontmatter YAML, puis les instructions en Markdown.
+
+```markdown
+---
+name: triager
+description: Sorts incoming support issues by urgency and topic.
+model: claude-sonnet-5-5
+skills: [ticket-triage]
+---
+
+You are the first reader of every support issue…
+```
+
+Multica lit `description`, `model`, `thinking_level` et `skills` (noms de compétences du même package). `tools` est accepté et ignoré : l'accès aux outils vient des périmètres accordés et des approbations MCP. Le nom du fichier est le nom de l'agent dans l'espace de travail.
+
+Les agents sont créés **sans runtime**, invocables par tous les membres de l'espace de travail. L'écran de consentement le précise ; un membre associe un runtime dans les réglages de chaque agent avant de lui confier du travail. À la mise à jour, le modèle réécrit la description, les instructions, le modèle et les compétences, et laisse intacts le runtime, l'avatar et les permissions. Un agent supprimé par la nouvelle version est archivé, pas effacé ; une réinstallation le restaure.
+
+## Escouade
+
+`metadata.multica.squad` crée une escouade dont l'agent `lead` est le responsable et `members` les membres. Les membres ajoutés à la main par l'espace de travail sont conservés lors des mises à jour ; un agent supprimé par la nouvelle version quitte l'escouade. La désinstallation archive l'escouade.
+
+## Serveurs MCP
+
+`.mcp.json` ne liste que des serveurs distants (`{"type": "http", "url": "https://…"}`), sans identifiants intégrés. Chacun devient un hook MCP déclenché par agent avec le périmètre `net:<host>` ajouté, et ses outils passent toujours par l'étape d'approbation MCP après l'installation.
+
+## Publication
+
+1. Dans `/admin/registry/sources`, vérifiez qu'une source de type `self` ou `official` existe (par exemple `@self`).
+2. Dans `/admin/registry`, téléversez le zip dans cette source, puis approuvez la version sur la page de l'annonce.
+3. Passez l'annonce en **publiée**. Les annonces publiques apparaissent dans le `marketplace.json` anonyme ; sinon, modifiez la **visibilité** pour choisir les consommateurs et les locataires (un locataire Multica est un identifiant d'espace de travail).
+4. Les administrateurs voient maintenant le modèle dans Paramètres → Plugins et l'installent via l'écran de consentement.
+
+La page de l'annonce liste le contenu de chaque version (compétences, agents, escouade, serveurs MCP) pour que les relecteurs approuvent des capacités, pas seulement un nom.
+
+## Modèles de départ
+
+Un registre neuf est vide. `make registry-seed` (ou `go run ./cmd/registry seed` dans `server/`) charge les packages de `server/internal/registry/seed/templates/` dans une source officielle `@multica`, approuvés, publiés, publics et ciblés sur tous les espaces de travail Multica. La commande peut être relancée sans risque : les versions existantes sont ignorées et les changements de visibilité faits par l'opérateur sont conservés.
+
+## Utiliser la place de marché depuis Claude Code
+
+L'API publique sert un fichier de place de marché standard par espace de noms :
+
+```
+claude plugin marketplace add https://<host>/registry/v1/@multica/marketplace.json
+```
+
+Sans clé, seules les annonces publiques sont visibles. Un consommateur créé dans `/admin/registry/consumers` reçoit une clé d'API (`Authorization: Bearer rk_…`) et voit ce qui lui est destiné.

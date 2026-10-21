@@ -75,6 +75,10 @@ const nextConfig: NextConfig = {
               destination: `${remoteApiUrl}/api/:path*`,
             },
             {
+              source: "/registry/:path*",
+              destination: `${remoteApiUrl}/registry/:path*`,
+            },
+            {
               source: "/ws",
               destination: `${remoteApiUrl}/ws`,
             },

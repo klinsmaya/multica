@@ -94,6 +94,10 @@ export const paths = {
     workspace: (id: string) => `/admin/workspaces/${encode(id)}`,
     audit: () => "/admin/audit",
     admins: () => "/admin/admins",
+    registry: () => "/admin/registry",
+    registryListing: (id: string) => `/admin/registry/listings/${encode(id)}`,
+    registrySources: () => "/admin/registry/sources",
+    registryConsumers: () => "/admin/registry/consumers",
   },
 };
 

@@ -154,22 +154,31 @@ func (s *PluginService) publish(ctx context.Context, workspaceID, userID pgtype.
 		}
 		return PluginPackageSummary{}, &PluginError{Kind: PluginErrorUnavailable, Message: "publish plugin version", Err: err}
 	}
-	for _, file := range bundle.Files {
-		sum := sha256.Sum256(file.Content)
-		if err := queries.CreatePluginPackageFile(ctx, db.CreatePluginPackageFileParams{
-			VersionID: row.ID,
-			Path:      file.Path,
-			Content:   file.Content,
-			SizeBytes: int64(len(file.Content)),
-			Sha256:    hex.EncodeToString(sum[:]),
-		}); err != nil {
-			return PluginPackageSummary{}, &PluginError{Kind: PluginErrorUnavailable, Message: "store plugin package file", Err: err}
-		}
+	if err := storeBundleFiles(ctx, queries, row.ID, bundle); err != nil {
+		return PluginPackageSummary{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return PluginPackageSummary{}, &PluginError{Kind: PluginErrorUnavailable, Message: "commit publish", Err: err}
 	}
 	return s.packageSummary(ctx, workspaceID, pkg)
+}
+
+// storeBundleFiles writes every file of a bundle under one version, inside the
+// caller's transaction.
+func storeBundleFiles(ctx context.Context, queries *db.Queries, versionID pgtype.UUID, bundle plugincontract.Bundle) error {
+	for _, file := range bundle.Files {
+		sum := sha256.Sum256(file.Content)
+		if err := queries.CreatePluginPackageFile(ctx, db.CreatePluginPackageFileParams{
+			VersionID: versionID,
+			Path:      file.Path,
+			Content:   file.Content,
+			SizeBytes: int64(len(file.Content)),
+			Sha256:    hex.EncodeToString(sum[:]),
+		}); err != nil {
+			return &PluginError{Kind: PluginErrorUnavailable, Message: "store plugin package file", Err: err}
+		}
+	}
+	return nil
 }
 
 // BundleDigest hashes the bundle's contents: the canonical manifest, then each
@@ -238,6 +247,11 @@ func upsertPackage(ctx context.Context, queries *db.Queries, workspaceID, userID
 		PluginKey:   manifest.Key,
 	})
 	if err == nil {
+		// A registry copy owns this key; publishing over it would mix the
+		// workspace's own versions into a registry listing's history.
+		if existing.RegistryListingID.Valid {
+			return db.PluginPackage{}, pluginErrf(PluginErrorConflict, "plugin %q is installed from the template marketplace; publish under another key", manifest.Key)
+		}
 		if existing.Name == manifest.Name {
 			return existing, nil
 		}

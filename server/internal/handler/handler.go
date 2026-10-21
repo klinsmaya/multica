@@ -37,6 +37,7 @@ import (
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/multica-ai/multica/server/internal/registry"
 	"github.com/multica-ai/multica/server/internal/seatcapacity"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/storage"
@@ -217,6 +218,8 @@ type Handler struct {
 	Bus                    *events.Bus
 	TaskService            *service.TaskService
 	PluginService          *service.PluginService
+	RegistryService        *registry.Service
+	PluginRegistry         *service.PluginRegistry
 	IssueService           *service.IssueService
 	AutopilotService       *service.AutopilotService
 	// Entitlements supplies workspace-scoped commercial gates. A nil provider
@@ -486,6 +489,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// backs auto-titling. A deployment with no MULTICA_LLM_* configuration gets
 	// a disabled client, which turns the feature off rather than failing.
 	taskSvc.QuickActions = llmClient
+	pluginSvc := service.NewPluginService(queries, txStarter)
+	registrySvc := registry.NewService(queries)
 	h := &Handler{
 		Queries:                      queries,
 		ReadSelector:                 dbreader.NewPrimaryOnly(queries),
@@ -498,7 +503,9 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonRuntimeGone:            daemonRuntimeGone,
 		Bus:                          bus,
 		TaskService:                  taskSvc,
-		PluginService:                service.NewPluginService(queries, txStarter),
+		PluginService:                pluginSvc,
+		RegistryService:              registrySvc,
+		PluginRegistry:               service.NewPluginRegistry(registrySvc, pluginSvc),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutopilotService:             service.NewAutopilotService(queries, txStarter, bus, taskSvc),
 		EmailService:                 emailService,

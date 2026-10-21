@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { configStore } from "@multica/core/config";
 import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
@@ -17,6 +18,7 @@ const mockDeletePackage = vi.hoisted(() => vi.fn());
 const data = vi.hoisted(() => ({
   installed: { plugins: [] as Array<Record<string, unknown>> },
   packages: { packages: [] as Array<Record<string, unknown>> },
+  marketplace: { listings: [] as Array<Record<string, unknown>> },
   role: "owner" as "owner" | "admin" | "member",
 }));
 
@@ -30,12 +32,15 @@ vi.mock("@tanstack/react-query", () => ({
       ? { data: [], isLoading: false, isError: false }
       : options?.queryKey?.[1] === "packages"
       ? { data: data.packages, isLoading: false, isError: false }
+      : options?.queryKey?.[1] === "marketplace"
+      ? { data: data.marketplace, isLoading: false, isError: false }
       : { data: data.installed, isLoading: false, isError: false },
 }));
 
 vi.mock("@multica/core/plugins", () => ({
   pluginInstallationsOptions: () => ({ queryKey: ["plugins", "installed"] }),
   pluginPackagesOptions: () => ({ queryKey: ["plugins", "packages"] }),
+  pluginMarketplaceOptions: () => ({ queryKey: ["plugins", "marketplace"] }),
   usePreviewPlugin: () => ({ mutateAsync: mockPreview, isPending: false }),
   useInstallPlugin: () => ({ mutateAsync: mockInstall, isPending: false }),
   useConfigurePlugin: () => ({ mutateAsync: mockConfigure, isPending: false }),
@@ -253,5 +258,97 @@ describe("PluginsTab", () => {
     // the native attribute, so assert what a screen reader actually sees.
     expect(screen.getByRole("switch", { name: "Enable Plugin" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
+  });
+});
+
+const LISTING = {
+  listing_id: "listing-1",
+  namespace: "@self",
+  name: "pr-helper",
+  plugin_key: "self.pr-helper",
+  display_name: "PR Helper",
+  description: "Reviews pull requests.",
+  category: "",
+  tags: [],
+  source_kind: "self",
+  version_id: "registry-version-1",
+  version: "1.1.0",
+  changelog: "Adds a checklist.",
+  published_at: "2026-08-20T00:00:00Z",
+  state: "not_installed" as const,
+};
+
+describe("PluginsTab marketplace", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    data.role = "owner";
+    data.installed.plugins = [];
+    data.packages.packages = [];
+    data.marketplace.listings = [LISTING];
+    configStore.getState().setFeatureFlags({ marketplace_v1: true });
+    mockPreview.mockResolvedValue({
+      ...PREVIEW,
+      scopes: ["issues:read", "net:mcp.example.com"],
+      version_id: "",
+      version: "1.1.0",
+      registry_version_id: "registry-version-1",
+      manifest: {
+        ...PREVIEW.manifest,
+        key: "self.pr-helper",
+        name: "PR Helper",
+        contributes: {
+          hooks: [],
+          resources: [
+            { type: "skill", key: "triage" },
+            { type: "agent", key: "triager" },
+            { type: "agent", key: "responder" },
+            { type: "squad", key: "support" },
+          ],
+        },
+      },
+      requires: { runtime: "claude-code", min_backend: "", connectors: ["zendesk"] },
+    });
+    mockInstall.mockResolvedValue(INSTALLATION);
+  });
+
+  it("installs a template through the same consent screen, by registry version", async () => {
+    const user = userEvent.setup();
+    render(<PluginsTab />, { wrapper: Wrapper });
+
+    expect(screen.getByText("PR Helper")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Review and install" }));
+    await waitFor(() => expect(mockPreview).toHaveBeenCalledWith({ registry_version_id: "registry-version-1" }));
+    await screen.findByText("This Plugin is asking for the following access");
+    expect(screen.getByText("net:mcp.example.com")).toBeInTheDocument();
+    // What the template creates, and what the workspace has to do afterwards.
+    expect(screen.getByText("2 agents: triager, responder")).toBeInTheDocument();
+    expect(screen.getByText("1 squads: support")).toBeInTheDocument();
+    expect(screen.getByText(/Bind one in each agent's settings/)).toBeInTheDocument();
+    expect(screen.getByText("Uses these connectors: zendesk.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Grant and install" }));
+    await waitFor(() => expect(mockInstall).toHaveBeenCalledWith({
+      registry_version_id: "registry-version-1",
+      granted_scopes: ["issues:read", "net:mcp.example.com"],
+    }));
+  });
+
+  it("marks the installed version and only offers an upgrade when a newer one is approved", () => {
+    data.marketplace.listings = [
+      { ...LISTING, state: "current" as const, installed_version: "1.1.0", installation_id: "installation-1" },
+      { ...LISTING, listing_id: "listing-2", name: "docs", display_name: "Docs", version: "2.0.0", version_id: "registry-version-2", state: "outdated" as const, installed_version: "1.0.0", installation_id: "installation-2" },
+    ];
+    render(<PluginsTab />, { wrapper: Wrapper });
+
+    expect(screen.getByText("Up to date")).toBeInTheDocument();
+    expect(screen.getByText("Update from v1.0.0")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review and install" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Review and upgrade" })).toHaveLength(1);
+  });
+
+  it("hides the marketplace while the flag is off", () => {
+    configStore.getState().setFeatureFlags({});
+    render(<PluginsTab />, { wrapper: Wrapper });
+    expect(screen.queryByText("Template marketplace")).not.toBeInTheDocument();
   });
 });

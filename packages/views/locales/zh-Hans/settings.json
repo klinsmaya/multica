@@ -456,7 +456,15 @@
       "confirm_upgrade": "授权并升级",
       "installed": "Plugin 已安装",
       "upgrade_from": " · 从 v{{version}} 升级",
-      "new_scope": "新增"
+      "new_scope": "新增",
+      "no_scopes": "该 Plugin 只提供技能，不请求任何访问权限。",
+      "contents_title": "该 Plugin 会添加",
+      "contents_skills": "{{count}} 个技能：{{names}}",
+      "contents_agents": "{{count}} 个 agent：{{names}}",
+      "contents_squads": "{{count}} 个 squad：{{names}}",
+      "agents_runtime_note": "agent 创建时不绑定运行时。分配工作前，请在每个 agent 的设置里绑定一个运行时。",
+      "requires_runtime": "为 {{runtime}} 运行时编写。",
+      "requires_connectors": "会使用这些连接器：{{names}}。"
     },
     "schedule": {
       "title": "自动运行计划",
@@ -514,6 +522,13 @@
       "installed_version": "使用中",
       "review_install": "查看并安装",
       "review_upgrade": "查看并升级"
+    },
+    "marketplace": {
+      "title": "模板市场",
+      "empty": "当前没有向此工作区提供的模板。",
+      "load_failed": "无法加载模板市场。已安装的 Plugin 不受影响。",
+      "state_current": "已是最新",
+      "state_outdated": "从 v{{version}} 更新"
     }
   },
   "properties": {

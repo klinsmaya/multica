@@ -210,7 +210,7 @@ func buildBundle(open func(entry string) ([]byte, bool, error), prefix string) (
 		if err != nil {
 			return Bundle{}, err
 		}
-		if err := validateSkillFile(resource.Entry, content); err != nil {
+		if err := ValidateResourceFile(manifest, resource, content); err != nil {
 			return Bundle{}, err
 		}
 	}
@@ -302,6 +302,41 @@ func (v *surfaceModuleSyntaxVisitor) Exit(node js.INode) {
 	switch node.(type) {
 	case *js.FuncDecl, *js.ArrowFunc:
 		v.functionDepth--
+	}
+}
+
+// ValidateResourceFile checks a resource's file the way the installer will
+// read it, so a package that would fail at install fails at publish instead.
+func ValidateResourceFile(manifest Manifest, resource Resource, content []byte) error {
+	switch resource.Type {
+	case ResourceAgent:
+		if err := validateSkillFile(resource.Entry, content); err != nil {
+			return err
+		}
+		_, err := ParseAgentDefinition(content)
+		if err != nil {
+			return fmt.Errorf("agent resource %q: %w", resource.Entry, err)
+		}
+		return nil
+	case ResourceSquad:
+		squad, err := ParseSquadDefinition(content)
+		if err != nil {
+			return fmt.Errorf("squad resource %q: %w", resource.Entry, err)
+		}
+		agents := map[string]bool{}
+		for _, other := range manifest.Contributes.Resources {
+			if other.Type == ResourceAgent {
+				agents[other.Key] = true
+			}
+		}
+		for _, member := range append([]string{squad.Lead}, squad.Members...) {
+			if !agents[member] {
+				return fmt.Errorf("squad resource %q names agent %q, which the manifest does not contribute", resource.Entry, member)
+			}
+		}
+		return nil
+	default:
+		return validateSkillFile(resource.Entry, content)
 	}
 }
 

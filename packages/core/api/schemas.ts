@@ -77,6 +77,7 @@ import type {
   PluginInstallationListResponse,
   PluginPackage,
   PluginPackageListResponse,
+  PluginMarketplaceResponse,
   PluginPreview,
   PluginSurfaceLaunch,
   ResourceLabelsResponse,
@@ -261,7 +262,17 @@ export const PluginManifestSummarySchema = z.object({
         timezone: z.string().default(""),
       }).loose().optional(),
     }).loose()).default([]),
+    resources: z.array(z.object({
+      type: z.string().default(""),
+      key: z.string().default(""),
+    }).loose()).default([]),
   }).loose().optional(),
+}).loose();
+
+export const PluginTemplateRequiresSchema = z.object({
+  runtime: z.string().default(""),
+  min_backend: z.string().default(""),
+  connectors: z.array(z.string()).default([]),
 }).loose();
 
 export const PluginPreviewSchema = z.object({
@@ -274,6 +285,8 @@ export const PluginPreviewSchema = z.object({
   installed: z.boolean().default(false),
   installed_version: z.string().optional(),
   added_scopes: z.array(z.string()).default([]),
+  registry_version_id: z.string().optional(),
+  requires: PluginTemplateRequiresSchema.optional(),
 }).loose();
 
 export const EMPTY_PLUGIN_PREVIEW: PluginPreview = {
@@ -315,6 +328,35 @@ export const PluginPackageListResponseSchema = z.object({
 
 export const EMPTY_PLUGIN_PACKAGE_LIST: PluginPackageListResponse = {
   packages: [],
+};
+
+export const PluginMarketplaceListingSchema = z.object({
+  listing_id: z.string(),
+  namespace: z.string().default(""),
+  name: z.string().default(""),
+  plugin_key: z.string().default(""),
+  display_name: z.string().default(""),
+  description: z.string().default(""),
+  category: z.string().default(""),
+  tags: z.array(z.string()).default([]),
+  source_kind: z.string().default(""),
+  version_id: z.string(),
+  version: z.string().default(""),
+  changelog: z.string().default(""),
+  published_at: z.string().default(""),
+  // An unknown state from a newer backend reads as not installed, which only
+  // ever offers an install the server will still validate.
+  state: z.enum(["not_installed", "current", "outdated"]).catch("not_installed").default("not_installed"),
+  installed_version: z.string().optional(),
+  installation_id: z.string().optional(),
+}).loose();
+
+export const PluginMarketplaceResponseSchema = z.object({
+  listings: z.array(PluginMarketplaceListingSchema).default([]),
+}).loose();
+
+export const EMPTY_PLUGIN_MARKETPLACE: PluginMarketplaceResponse = {
+  listings: [],
 };
 
 export const EMPTY_PLUGIN_PACKAGE: PluginPackage = {

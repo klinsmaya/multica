@@ -1501,6 +1501,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// version, surface and one bridge challenge.
 	r.Get("/plugin-surfaces/{token}", h.ServePluginSurface)
 
+	// Template marketplace public read API. Anonymous callers see public
+	// listings; other products authenticate with a consumer API key issued in
+	// /admin, never a user session, so it sits outside the session middleware.
+	r.Route("/registry/v1", func(r chi.Router) {
+		r.Use(h.RequireMarketplaceV1)
+		h.RegistryPublic().Routes(r)
+	})
+
 	// Auth (public) — per-IP rate limiting.
 	if rdb == nil {
 		slog.Warn("auth rate limiting disabled: REDIS_URL not configured")
@@ -1760,6 +1768,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// store it; a version is immutable once published, so
 					// there is no update route here by design.
 					r.Get("/plugins/packages", h.ListPluginPackages)
+					r.Get("/plugins/marketplace", h.ListWorkspaceMarketplace)
 					r.Post("/plugins/packages", h.PublishPluginPackage)
 					r.Post("/plugins/packages/local", h.PublishLocalPluginPackage)
 					r.Delete("/plugins/packages/{packageId}", h.DeletePluginPackage)
@@ -1958,17 +1967,22 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/workspaces/{id}", h.AdminGetWorkspace)
 				r.Get("/audit", h.AdminListAudit)
 				r.Get("/admins", h.AdminListPlatformAdmins)
+				h.MountRegistryAdminRead(r)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleOperator))
 				r.Post("/users/{id}/disable", h.AdminDisableUser)
 				r.Post("/users/{id}/enable", h.AdminEnableUser)
 				r.Post("/users/{id}/tokens/{tokenId}/revoke", h.AdminRevokeUserToken)
+				h.MountRegistryAdminOperate(r)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleSuperAdmin))
 				r.Put("/admins", h.AdminSetPlatformAdmin)
 				r.Delete("/admins/{userId}", h.AdminRemovePlatformAdmin)
+				// Sources and consumers decide what enters the registry and
+				// who may read it, so they sit at the top role.
+				h.MountRegistryAdminSuper(r)
 			})
 		})
 

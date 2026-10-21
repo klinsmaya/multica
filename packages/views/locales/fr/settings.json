@@ -459,7 +459,15 @@
       "confirm_upgrade": "Accorder et mettre à jour",
       "installed": "Plugin installé",
       "upgrade_from": " · mise à jour depuis la v{{version}}",
-      "new_scope": "Nouveau"
+      "new_scope": "Nouveau",
+      "no_scopes": "Ce plugin n'ajoute que des compétences et ne demande aucun accès.",
+      "contents_title": "Ce plugin ajoute",
+      "contents_skills": "{{count}} compétences : {{names}}",
+      "contents_agents": "{{count}} agents : {{names}}",
+      "contents_squads": "{{count}} escouades : {{names}}",
+      "agents_runtime_note": "Les agents sont créés sans runtime. Associez-en un dans les réglages de chaque agent avant de leur confier du travail.",
+      "requires_runtime": "Écrit pour le runtime {{runtime}}.",
+      "requires_connectors": "Utilise ces connecteurs : {{names}}."
     },
     "schedule": {
       "title": "Planifications automatiques",
@@ -518,6 +526,13 @@
       "installed_version": "Utilisés",
       "review_install": "Vérifier et installer",
       "review_upgrade": "Vérifier et mettre à niveau"
+    },
+    "marketplace": {
+      "title": "Marché de modèles",
+      "empty": "Aucun modèle n'est proposé à cet espace de travail.",
+      "load_failed": "Impossible de charger le marché de modèles. Les plugins installés ne sont pas affectés.",
+      "state_current": "À jour",
+      "state_outdated": "Mettre à jour depuis v{{version}}"
     }
   },
   "properties": {

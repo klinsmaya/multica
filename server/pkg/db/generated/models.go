@@ -67,6 +67,7 @@ type Agent struct {
 	DisabledRuntimeSkills []byte      `json:"disabled_runtime_skills"`
 	ServiceTier           pgtype.Text `json:"service_tier"`
 	ConversationStarters  []byte      `json:"conversation_starters"`
+	PluginInstallationID  pgtype.UUID `json:"plugin_installation_id"`
 }
 
 type AgentBuilderDraft struct {
@@ -1301,13 +1302,14 @@ type PluginInvocation struct {
 }
 
 type PluginPackage struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	PluginKey   string             `json:"plugin_key"`
-	Name        string             `json:"name"`
-	CreatedBy   pgtype.UUID        `json:"created_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	PluginKey         string             `json:"plugin_key"`
+	Name              string             `json:"name"`
+	CreatedBy         pgtype.UUID        `json:"created_by"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	RegistryListingID pgtype.UUID        `json:"registry_listing_id"`
 }
 
 type PluginPackageFile struct {
@@ -1321,15 +1323,16 @@ type PluginPackageFile struct {
 }
 
 type PluginPackageVersion struct {
-	ID          pgtype.UUID        `json:"id"`
-	PackageID   pgtype.UUID        `json:"package_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Version     string             `json:"version"`
-	Manifest    []byte             `json:"manifest"`
-	Digest      string             `json:"digest"`
-	SizeBytes   int64              `json:"size_bytes"`
-	PublishedBy pgtype.UUID        `json:"published_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID                pgtype.UUID        `json:"id"`
+	PackageID         pgtype.UUID        `json:"package_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	Version           string             `json:"version"`
+	Manifest          []byte             `json:"manifest"`
+	Digest            string             `json:"digest"`
+	SizeBytes         int64              `json:"size_bytes"`
+	PublishedBy       pgtype.UUID        `json:"published_by"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	RegistryVersionID pgtype.UUID        `json:"registry_version_id"`
 }
 
 type PluginSecret struct {
@@ -1397,6 +1400,103 @@ type QuickAction struct {
 	CreatedByID   pgtype.UUID        `json:"created_by_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RegistryConsumer struct {
+	ID         pgtype.UUID        `json:"id"`
+	Key        string             `json:"key"`
+	Name       string             `json:"name"`
+	Builtin    bool               `json:"builtin"`
+	ApiKeyHash pgtype.Text        `json:"api_key_hash"`
+	WebhookUrl string             `json:"webhook_url"`
+	Enabled    bool               `json:"enabled"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	CreatedBy  pgtype.UUID        `json:"created_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type RegistryInstallReport struct {
+	ID         pgtype.UUID        `json:"id"`
+	ConsumerID pgtype.UUID        `json:"consumer_id"`
+	TenantID   string             `json:"tenant_id"`
+	ListingID  pgtype.UUID        `json:"listing_id"`
+	VersionID  pgtype.UUID        `json:"version_id"`
+	State      string             `json:"state"`
+	Error      string             `json:"error"`
+	ReportedAt pgtype.Timestamptz `json:"reported_at"`
+}
+
+type RegistryListing struct {
+	ID        pgtype.UUID        `json:"id"`
+	PackageID pgtype.UUID        `json:"package_id"`
+	Status    string             `json:"status"`
+	Public    bool               `json:"public"`
+	Enforced  bool               `json:"enforced"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RegistryPackage struct {
+	ID          pgtype.UUID        `json:"id"`
+	SourceID    pgtype.UUID        `json:"source_id"`
+	Name        string             `json:"name"`
+	Kind        string             `json:"kind"`
+	DisplayName string             `json:"display_name"`
+	Description string             `json:"description"`
+	Category    string             `json:"category"`
+	Tags        []string           `json:"tags"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RegistryPackageFile struct {
+	ID        pgtype.UUID `json:"id"`
+	VersionID pgtype.UUID `json:"version_id"`
+	Path      string      `json:"path"`
+	Content   []byte      `json:"content"`
+	SizeBytes int64       `json:"size_bytes"`
+}
+
+type RegistryPackageVersion struct {
+	ID           pgtype.UUID        `json:"id"`
+	PackageID    pgtype.UUID        `json:"package_id"`
+	Version      string             `json:"version"`
+	Manifest     []byte             `json:"manifest"`
+	Archive      []byte             `json:"archive"`
+	Sha256       string             `json:"sha256"`
+	SizeBytes    int64              `json:"size_bytes"`
+	SourceRef    string             `json:"source_ref"`
+	Changelog    string             `json:"changelog"`
+	ReviewStatus string             `json:"review_status"`
+	ReviewReason string             `json:"review_reason"`
+	ReviewedBy   pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt   pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+type RegistrySource struct {
+	ID           pgtype.UUID        `json:"id"`
+	Namespace    string             `json:"namespace"`
+	Kind         string             `json:"kind"`
+	DisplayName  string             `json:"display_name"`
+	Url          string             `json:"url"`
+	Enabled      bool               `json:"enabled"`
+	LastSyncedAt pgtype.Timestamptz `json:"last_synced_at"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RegistryTargeting struct {
+	ID          pgtype.UUID        `json:"id"`
+	ListingID   pgtype.UUID        `json:"listing_id"`
+	ConsumerID  pgtype.UUID        `json:"consumer_id"`
+	TenantID    pgtype.Text        `json:"tenant_id"`
+	TenantGroup pgtype.Text        `json:"tenant_group"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type RuntimeProfile struct {
@@ -1477,18 +1577,19 @@ type SkillToLabel struct {
 }
 
 type Squad struct {
-	ID           pgtype.UUID        `json:"id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	Name         string             `json:"name"`
-	Description  string             `json:"description"`
-	LeaderID     pgtype.UUID        `json:"leader_id"`
-	CreatorID    pgtype.UUID        `json:"creator_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	ArchivedAt   pgtype.Timestamptz `json:"archived_at"`
-	ArchivedBy   pgtype.UUID        `json:"archived_by"`
-	AvatarUrl    pgtype.Text        `json:"avatar_url"`
-	Instructions string             `json:"instructions"`
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	Name                 string             `json:"name"`
+	Description          string             `json:"description"`
+	LeaderID             pgtype.UUID        `json:"leader_id"`
+	CreatorID            pgtype.UUID        `json:"creator_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	ArchivedBy           pgtype.UUID        `json:"archived_by"`
+	AvatarUrl            pgtype.Text        `json:"avatar_url"`
+	Instructions         string             `json:"instructions"`
+	PluginInstallationID pgtype.UUID        `json:"plugin_installation_id"`
 }
 
 type SquadMember struct {

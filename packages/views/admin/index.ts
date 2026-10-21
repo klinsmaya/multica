@@ -6,3 +6,7 @@ export { AdminWorkspacesPage } from "./workspaces-page";
 export { AdminWorkspaceDetailPage } from "./workspace-detail-page";
 export { AdminAuditPage } from "./audit-page";
 export { AdminAdminsPage } from "./admins-page";
+export { AdminRegistryListingsPage } from "./registry-listings-page";
+export { AdminRegistryListingPage } from "./registry-listing-page";
+export { AdminRegistrySourcesPage } from "./registry-sources-page";
+export { AdminRegistryConsumersPage } from "./registry-consumers-page";

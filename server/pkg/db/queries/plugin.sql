@@ -35,8 +35,10 @@ SELECT * FROM plugin_package
 WHERE workspace_id = $1 AND id = $2;
 
 -- name: ListWorkspacePluginPackages :many
+-- What the workspace published itself. Registry copies are listed by the
+-- template marketplace section instead, from the registry listing they came from.
 SELECT * FROM plugin_package
-WHERE workspace_id = $1
+WHERE workspace_id = $1 AND registry_listing_id IS NULL
 ORDER BY name ASC;
 
 -- name: DeletePluginPackage :exec
@@ -344,3 +346,108 @@ UPDATE plugin_installation
 SET mcp_approvals = $2, updated_at = now()
 WHERE id = $1
 RETURNING *;
+
+-- name: GetWorkspaceAgentByName :one
+-- Name is the table's own uniqueness rule, archived rows included, so an
+-- installer has to look before it writes.
+SELECT * FROM agent WHERE workspace_id = $1 AND name = $2;
+
+-- name: CreatePluginAgent :one
+-- A plugin's agent resource, as an ordinary workspace agent. No runtime is
+-- bound: the package cannot know the workspace's machines, so the agent is
+-- created blocked until a member binds one in its settings. Workspace-invocable
+-- from the start (permission_mode public_to plus the workspace target the
+-- caller adds), because a template squad is only useful if members can use it.
+INSERT INTO agent (
+    workspace_id, name, description, runtime_mode, runtime_config, runtime_id,
+    visibility, permission_mode, max_concurrent_tasks, owner_id, instructions,
+    custom_env, custom_args, model, thinking_level, kind, plugin_installation_id
+) VALUES (
+    $1, $2, $3, 'local', '{}'::jsonb, NULL,
+    'workspace', 'public_to', 1, $4, $5,
+    '{}'::jsonb, '[]'::jsonb, sqlc.narg('model'), sqlc.narg('thinking_level'), 'user', $6
+)
+RETURNING *;
+
+-- name: UpdatePluginAgent :one
+-- Upgrade: the template owns description, instructions and model. Everything
+-- else (runtime binding, avatar, concurrency, permissions) belongs to the
+-- workspace and is left alone. Also re-adopts an archived agent this
+-- installation (or a previous installation of the same key) left behind, so
+-- uninstall then reinstall restores it under its original identity.
+UPDATE agent
+SET description = $2,
+    instructions = $3,
+    model = sqlc.narg('model'),
+    thinking_level = sqlc.narg('thinking_level'),
+    plugin_installation_id = $4,
+    archived_at = NULL,
+    archived_by = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ListPluginAgents :many
+SELECT * FROM agent WHERE plugin_installation_id = $1 ORDER BY name ASC;
+
+-- name: ArchivePluginAgentsNotIn :many
+-- Upgrade pruning: an agent this installation used to contribute but no
+-- longer declares is archived, not deleted — its tasks and comments stay
+-- attributable. Ownership is kept so a later version that brings the name
+-- back re-adopts the row.
+UPDATE agent
+SET archived_at = now(), archived_by = sqlc.narg('archived_by'), updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL AND name <> ALL(@keep_names::text[])
+RETURNING *;
+
+-- name: ArchivePluginAgentsByInstallation :many
+UPDATE agent
+SET archived_at = now(), archived_by = sqlc.narg('archived_by'), updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL
+RETURNING *;
+
+-- name: RemoveAgentSkillsByInstallationSkills :exec
+-- Agent-skill links to skills this installation is about to delete.
+DELETE FROM agent_skill
+WHERE skill_id IN (SELECT id FROM skill WHERE plugin_installation_id = $1);
+
+-- name: CreatePluginSquad :one
+INSERT INTO squad (workspace_id, name, description, leader_id, creator_id, plugin_installation_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: UpdatePluginSquad :one
+UPDATE squad
+SET name = $2,
+    description = $3,
+    leader_id = $4,
+    plugin_installation_id = $5,
+    archived_at = NULL,
+    archived_by = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ListPluginSquads :many
+SELECT * FROM squad WHERE plugin_installation_id = $1 ORDER BY name ASC;
+
+-- name: ArchivePluginSquadsNotIn :many
+UPDATE squad
+SET archived_at = now(), archived_by = sqlc.narg('archived_by'), updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL AND name <> ALL(@keep_names::text[])
+RETURNING *;
+
+-- name: ArchivePluginSquadsByInstallation :many
+UPDATE squad
+SET archived_at = now(), archived_by = sqlc.narg('archived_by'), updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL
+RETURNING *;
+
+-- name: GetArchivedPluginSquadByName :one
+-- Reinstall after uninstall: squad names are not unique, so the row a
+-- previous installation of the same template archived is found by name and
+-- ownership and re-adopted rather than duplicated.
+SELECT * FROM squad
+WHERE workspace_id = $1 AND name = $2 AND plugin_installation_id IS NOT NULL AND archived_at IS NOT NULL
+ORDER BY archived_at DESC
+LIMIT 1;

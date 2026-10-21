@@ -1,0 +1,15 @@
+{
+  "name": "code-review-agent",
+  "version": "1.0.0",
+  "displayName": "Code Review Agent",
+  "description": "A reviewer agent that reads pull requests linked to an issue and leaves a structured review.",
+  "author": { "name": "Multica" },
+  "keywords": ["code-review", "pull-request", "engineering"],
+  "metadata": {
+    "registry": { "category": "engineering" },
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "requires": { "runtime": "claude-code" }
+    }
+  }
+}

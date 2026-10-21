@@ -1,0 +1,109 @@
+---
+title: 编写模板包
+description: 如何把 skill、agent 和 squad 打包进模板市场，以及如何在运营后台发布。
+---
+
+模板市场分发的是 Claude Code 插件布局的**包**。一个包可以一次性把 skill、agent 和 squad 装进工作区，同一个包也能直接用 `claude plugin marketplace add` 安装。
+
+本页面向写包的人。运营方在 `/admin/registry` 发布，工作区管理员在 **设置 → Plugins → 模板市场** 安装。两者都需要打开 `plugins_v1` 和 `marketplace_v1` 功能开关。
+
+## 目录布局
+
+```
+customer-support-squad/
+  .claude-plugin/plugin.json      # 必需
+  README.md
+  CHANGELOG.md                    # 作为该版本的变更说明
+  skills/<name>/SKILL.md          # Agent Skills 标准
+  agents/<name>.md                # frontmatter + 指令
+  .mcp.json                       # 只允许 URL 型服务器
+```
+
+把目录打成 zip（带不带顶层文件夹都可以）上传即可。其他路径的文件会保留在归档里，但 Multica 不读取。`hooks/` 和 `commands/` 会被拒绝：服务端不执行包内代码。
+
+## plugin.json
+
+```json
+{
+  "name": "customer-support-squad",
+  "version": "1.0.0",
+  "displayName": "Customer Support Squad",
+  "description": "Triage and reply to support issues",
+  "author": { "name": "Multica" },
+  "keywords": ["support", "triage"],
+  "metadata": {
+    "multica": {
+      "scopes": ["issues:read", "comments:write"],
+      "squad": { "name": "Customer Support", "lead": "triager", "members": ["responder"] },
+      "requires": { "runtime": "claude-code", "connectors": ["zendesk"] }
+    }
+  }
+}
+```
+
+- `name` 用小写字母、数字、`.`、`_`、`-`。Multica 的插件 key 是 `<命名空间>.<name>`，例如 `multica.customer-support-squad`。
+- `version` 用 semver。每个版本不可变，要改任何内容就发布新版本。
+- `keywords` 会成为条目的标签，除非运营方另行设置。
+- Multica 在标准字段之外读取的内容全部放在 `metadata.multica` 下，其他消费方会忽略它。
+
+### metadata.multica
+
+| 字段 | 含义 |
+| --- | --- |
+| `scopes` | 包请求工作区管理员授予的访问权限，取自插件 scope 列表（`issues:read`、`comments:write`、`net:<host>` 等）。`.mcp.json` 里服务器对应的 `net:` scope 会自动补上。只含 skill 的包可以省略。 |
+| `squad` | 由包内 agent 组成的一个 squad：`lead` 和 `members` 是 `agents/` 里的 agent 名。`name` 和 `description` 可选。 |
+| `requires` | 显示在同意页上，不做强制校验：`runtime`（agent 面向的运行时类型）、`min_backend`、`connectors`（集成应用 id）。 |
+
+## Skill
+
+`skills/<name>/SKILL.md` 遵循 Agent Skills 标准。frontmatter 的 `name` 必须与目录名一致，`description` 必填。每个 skill 会成为由该安装拥有的工作区 skill，卸载时删除。如果工作区里已有人工创建的同名 skill，安装会失败。
+
+## Agent
+
+`agents/<name>.md` 是 Claude Code 的 agent 文件：YAML frontmatter，后面是 Markdown 指令。
+
+```markdown
+---
+name: triager
+description: Sorts incoming support issues by urgency and topic.
+model: claude-sonnet-5-5
+skills: [ticket-triage]
+---
+
+You are the first reader of every support issue…
+```
+
+Multica 读取 `description`、`model`、`thinking_level` 和 `skills`（同一个包里的 skill 名）。`tools` 会被接受但忽略：工具访问来自已授予的 scope 和 MCP 审批。文件名就是 agent 在工作区里的名字。
+
+agent 创建时**不绑定运行时**，所有工作区成员都可以调用。同意页会说明这一点；成员需要在每个 agent 的设置里绑定运行时后才能分配工作。升级时模板会重写描述、指令、模型和 skill，不动运行时绑定、头像和权限。新版本去掉的 agent 会被归档而不是删除，重新安装会恢复。
+
+## Squad
+
+`metadata.multica.squad` 创建一个 squad，`lead` 为负责人，`members` 为成员。工作区手动加入的成员在升级时保留；新版本去掉的 agent 会退出 squad。卸载会归档该 squad。
+
+## MCP 服务器
+
+`.mcp.json` 只列远程服务器（`{"type": "http", "url": "https://…"}`），不能内联凭据。每一项会成为由 agent 触发的 MCP hook，并自动补上 `net:<host>` scope；安装后其工具仍要经过正常的 MCP 审批。
+
+## 发布
+
+1. 在 `/admin/registry/sources` 确认存在 `self` 或 `official` 类型的来源（例如 `@self`）。
+2. 在 `/admin/registry` 把 zip 上传到该来源，然后在条目页审核通过该版本。
+3. 把条目设为**已上架**。公开条目会出现在匿名的 `marketplace.json` 里；否则编辑**可见范围**，选择消费方和租户（Multica 的租户就是工作区 id）。
+4. 工作区管理员现在能在 设置 → Plugins 看到该模板，并通过同意页安装。
+
+条目页会列出每个版本包含的内容（skill、agent、squad、MCP 服务器），审核的是能力，不只是名字。
+
+## 初始模板
+
+新建的注册中心是空的。`make registry-seed`（或在 `server/` 下运行 `go run ./cmd/registry seed`）会把 `server/internal/registry/seed/templates/` 下的包装入 `@multica` 官方来源，并自动审核通过、上架、公开、投放给所有 Multica 工作区。该命令可以重复执行：已有版本会跳过，运营方对可见范围的修改会保留。
+
+## 在 Claude Code 里使用市场
+
+公开接口按命名空间提供标准的 marketplace 文件：
+
+```
+claude plugin marketplace add https://<host>/registry/v1/@multica/marketplace.json
+```
+
+不带 key 只能看到公开条目。在 `/admin/registry/consumers` 创建的消费方会拿到 API key（`Authorization: Bearer rk_…`），能看到投放给它的条目。

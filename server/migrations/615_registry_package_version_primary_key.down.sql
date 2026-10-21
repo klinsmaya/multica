@@ -1,0 +1,1 @@
+ALTER TABLE registry_package_version DROP CONSTRAINT IF EXISTS registry_package_version_pkey;

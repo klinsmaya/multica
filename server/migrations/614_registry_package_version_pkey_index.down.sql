@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS registry_package_version_pkey_uidx;
