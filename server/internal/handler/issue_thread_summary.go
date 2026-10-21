@@ -114,7 +114,7 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		summaries[i] = IssueThreadSummaryResponse{
 			IssueID:         issueID,
 			ReplyCount:      row.ReplyCount,
-			LastReplyAt:     timestampToPtr(row.LastReplyAt),
+			LastReplyAt:     timestampToNanoPtr(row.LastReplyAt),
 			OpenThreadCount: row.OpenThreadCount,
 			Participants:    list,
 		}
