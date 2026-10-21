@@ -58,6 +58,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"comment":                            workspaceDelete,
 	"comment_reaction":                   workspaceDelete,
 	"connector_oauth_state":              workspaceDeleteKeep,
+	"connector_service_policy":           workspaceDeleteKeep, // Platform-level publication policy, not workspace-owned.
 	"contact_sales_inquiry":              workspaceDeleteKeep,
 	"daemon_connection":                  workspaceDelete,
 	"daemon_token":                       workspaceDelete,
