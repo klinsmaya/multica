@@ -152,6 +152,16 @@
     "ref_default_label": "Default branch",
     "ref_default_tooltip": "No branch set — tasks use whatever the repository's default branch is at the time."
   },
+  "pull_requests": {
+    "group_open": "Open",
+    "group_merged": "Merged",
+    "group_closed": "Closed",
+    "empty": "No pull requests yet",
+    "load_more": "Load more",
+    "loading": "Loading…",
+    "load_failed": "Couldn't load pull requests",
+    "retry": "Retry"
+  },
   "delete_dialog": {
     "title": "Delete project",
     "description": "This will delete the project. Issues will not be deleted but will be unlinked.",
@@ -182,5 +192,49 @@
     "direction_desc": "Descending",
     "section_columns": "Columns",
     "view": "View"
+  },
+  "sidebar": {
+    "tab_properties": "Properties",
+    "tab_overview": "Overview",
+    "tab_autopilots": "Automations",
+    "tab_library": "Library",
+    "tab_pull_requests": "PRs",
+    "tabs_label": "Project panels"
+  },
+  "automations": {
+    "new": "New",
+    "empty": "No automations in this project yet",
+    "next_run": "Next {{time}}",
+    "last_run": "Last run {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "Needs you",
+    "group_running": "Running",
+    "group_idle": "Idle",
+    "group_resolved": "Resolved",
+    "empty_needs_you": "Nothing is waiting on you",
+    "empty_running": "No agents are working",
+    "empty_idle": "No idle issues",
+    "empty_resolved": "Nothing resolved yet",
+    "empty_project": "No issues in this project yet",
+    "load_failed": "Couldn't load issues",
+    "truncated": "Showing the {{limit}} most recently active issues",
+    "sub_issue_progress": "Sub-issues done: {{done}} of {{total}}",
+    "deliverables": "Files: {{count}}"
+  },
+  "library": {
+    "add": "Add",
+    "add_failed": "Couldn't upload the file",
+    "deliverables": "Deliverables",
+    "files": "Files",
+    "view_list": "List view",
+    "view_grid": "Grid view",
+    "filter_label": "Filter by type",
+    "load_more": "Load more",
+    "empty": "No files yet",
+    "empty_filtered": "No files match this filter",
+    "load_failed": "Couldn't load files",
+    "retry": "Retry",
+    "open_issue": "Open issue {{identifier}}"
   }
 }

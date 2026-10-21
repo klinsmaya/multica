@@ -7,6 +7,7 @@ import {
 import { api, ApiError } from "../api";
 import type {
   Issue,
+  IssueThreadSummary,
   IssueAssigneeType,
   IssueStatusCategory,
   IssueTableFacetsRequest,
@@ -17,8 +18,10 @@ import type {
   ListGroupedIssuesParams,
   ListIssuesParams,
   ListIssuesCache,
+  TimelinePageCursor,
 } from "../types";
 import { ALL_STATUSES } from "./config";
+import { TIMELINE_PAGE_SIZE, nextTimelinePageCursor } from "./timeline-pages";
 import { issueColumnCategory } from "./status-category";
 
 export function issueTasksOptions(issueId: string) {
@@ -141,23 +144,48 @@ export const issueKeys = {
     [...issueKeys.all(wsId), "children"] as const,
   children: (wsId: string, id: string) =>
     [...issueKeys.childrenAll(wsId), id] as const,
+  /**
+   * One page of a parent's children. Nested under `children(wsId, id)` so the
+   * per-parent invalidation and the Issue[] cache patchers reach it, but a
+   * separate entry from the full list: a partial page must never be read by a
+   * consumer that expects every child.
+   */
+  childrenPage: (
+    wsId: string,
+    id: string,
+    page: { limit: number; offset: number },
+  ) => [...issueKeys.children(wsId, id), "page", page.offset, page.limit] as const,
   /** Prefix for invalidating all batched-children queries in a workspace. */
   childrenByParentsAll: (wsId: string) =>
     [...issueKeys.all(wsId), "children-by-parents"] as const,
   /** Full key — includes sorted parent ids for cache stability. */
   childrenByParents: (wsId: string, parentIds: readonly string[]) =>
     [...issueKeys.childrenByParentsAll(wsId), parentIds] as const,
+  threadSummariesAll: (wsId: string) =>
+    [...issueKeys.all(wsId), "thread-summaries"] as const,
+  /** idsKey is the sorted, deduplicated id list joined by commas. */
+  threadSummaries: (wsId: string, idsKey: string) =>
+    [...issueKeys.threadSummariesAll(wsId), idsKey] as const,
   childProgress: (wsId: string) =>
     [...issueKeys.all(wsId), "child-progress"] as const,
+  /** Nested under `childProgress` so every invalidation of the workspace-wide
+   *  map also reaches the per-parent caches. idsKey is the sorted,
+   *  deduplicated parent id list joined by commas. */
+  childProgressForParents: (wsId: string, idsKey: string) =>
+    [...issueKeys.childProgress(wsId), "parents", idsKey] as const,
   /** Prefix-match keys for invalidating the per-issue caches below across
    *  all issues. These keys carry no wsId, so `issueKeys.all(wsId)` does NOT
    *  cover them — WS reconnect recovery must invalidate these `*All`
    *  prefixes explicitly, or missed events leave them stale forever under
    *  the staleTime: Infinity default (#3953). */
   timelineAll: () => ["issues", "timeline"] as const,
-  /** Full-issue timeline (single TanStack Query, no cursor). */
+  /** Prefix of everything cached for one issue's timeline. Invalidating or
+   *  removing it covers the paged cache below. */
   timeline: (issueId: string) =>
     [...issueKeys.timelineAll(), issueId] as const,
+  /** The paged timeline (infinite query, newest page first). */
+  timelinePages: (issueId: string) =>
+    [...issueKeys.timeline(issueId), "pages"] as const,
   /** Prefix across all issues — WS task lifecycle events invalidate here so
    *  an open composer's trigger preview refreshes when an agent's queue
    *  state changes (the dedup guard makes the answer queue-dependent). */
@@ -377,6 +405,25 @@ export function issueListOptions(wsId: string, sort?: IssueSortParam) {
 }
 
 /**
+ * Read-only lookup of `issueId` across every cached workspace list. It never
+ * fetches and never subscribes, so a detail view can seed from a list another
+ * surface already loaded without loading the whole list itself.
+ */
+export function findIssueInListCache(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+): Issue | undefined {
+  for (const [, data] of qc.getQueriesData<ListIssuesCache>({
+    queryKey: issueKeys.list(wsId),
+  })) {
+    const found = data && flattenIssueBuckets(data).find((i) => i.id === issueId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
  * Page size for the scheduled-issue fetch. The Gantt view always pulls every
  * scheduled issue (no client pagination), so this is just the chunk size we
  * use to walk the server's `(limit, offset)` window until we hit `total`.
@@ -488,17 +535,51 @@ export function issueIdentifierOptions(wsId: string, identifier: string) {
   });
 }
 
+/** Server cap on the parent_ids filter of the child-progress endpoint. */
+export const CHILD_PROGRESS_PARENTS_CHUNK_SIZE = 100;
+
+function selectChildProgressMap(data: {
+  progress: { parent_issue_id: string; total: number; done: number }[];
+}) {
+  const map = new Map<string, { done: number; total: number }>();
+  for (const entry of data.progress) {
+    map.set(entry.parent_issue_id, { done: entry.done, total: entry.total });
+  }
+  return map;
+}
+
 export function childIssueProgressOptions(wsId: string) {
   return queryOptions({
     queryKey: issueKeys.childProgress(wsId),
     queryFn: () => api.getChildIssueProgress(),
-    select: (data) => {
-      const map = new Map<string, { done: number; total: number }>();
-      for (const entry of data.progress) {
-        map.set(entry.parent_issue_id, { done: entry.done, total: entry.total });
+    select: selectChildProgressMap,
+  });
+}
+
+/**
+ * Child progress for just the given parents, same map shape as
+ * `childIssueProgressOptions`; a parent without children is absent. Chunked at
+ * the server's parent_ids cap and disabled for an empty list.
+ */
+export function childIssueProgressForParentsOptions(
+  wsId: string,
+  parentIds: readonly string[],
+) {
+  const sortedIds = [...new Set(parentIds)].sort();
+  return queryOptions({
+    queryKey: issueKeys.childProgressForParents(wsId, sortedIds.join(",")),
+    queryFn: async () => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < sortedIds.length; i += CHILD_PROGRESS_PARENTS_CHUNK_SIZE) {
+        chunks.push(sortedIds.slice(i, i + CHILD_PROGRESS_PARENTS_CHUNK_SIZE));
       }
-      return map;
+      const responses = await Promise.all(
+        chunks.map((chunk) => api.getChildIssueProgress(chunk)),
+      );
+      return { progress: responses.flatMap((response) => response.progress) };
     },
+    select: selectChildProgressMap,
+    enabled: sortedIds.length > 0,
   });
 }
 
@@ -514,16 +595,24 @@ export function issueDuplicatesOptions(wsId: string, id: string) {
   });
 }
 
-export function childIssuesOptions(wsId: string, id: string) {
+/**
+ * A parent's children. Without `page` this is the full list (cached under
+ * `issueKeys.children`); with `page` it is one slice, cached separately.
+ * Realtime child events invalidate both (see ws-updaters).
+ */
+export function childIssuesOptions(
+  wsId: string,
+  id: string,
+  page?: { limit: number; offset: number },
+) {
   return queryOptions({
-    queryKey: issueKeys.children(wsId, id),
-    queryFn: () => api.listChildIssues(id).then((r) => r.issues),
-    // Child creation can happen while this workspace is not the active
-    // realtime subscription (for example, an agent creates it while a
-    // desktop tab is showing another workspace). The global Infinity
-    // staleTime would otherwise reuse an incomplete children snapshot when
-    // the parent is opened again, with no later event guaranteed to heal it.
-    refetchOnMount: "always",
+    queryKey: page
+      ? issueKeys.childrenPage(wsId, id, page)
+      : issueKeys.children(wsId, id),
+    queryFn: () =>
+      (page ? api.listChildIssues(id, page) : api.listChildIssues(id)).then(
+        (r) => r.issues,
+      ),
   });
 }
 
@@ -595,12 +684,61 @@ export function childrenByParentsOptions(
   });
 }
 
+/** Server cap on ids per `GET /api/issues/thread-summaries` request. */
+export const THREAD_SUMMARIES_CHUNK_SIZE = 100;
+
 /**
- * Single-fetch timeline options. The endpoint returns the full ordered set of
- * comments + activities for an issue (server caps at 2000 as a safety net).
- * Cursor pagination was removed in #1929 — at observed data sizes (p99 ~30
- * entries per issue) it added complexity without a UX win and broke reply
- * threads at page boundaries.
+ * Comment-thread rollups for a set of issues, keyed by issue id. Ids without
+ * a server row (no counted comments, or an older server) are absent from the
+ * map; callers treat a missing entry as zeros.
+ */
+export function threadSummariesOptions(wsId: string, ids: readonly string[]) {
+  const sortedIds = [...new Set(ids)].sort();
+  return queryOptions({
+    queryKey: issueKeys.threadSummaries(wsId, sortedIds.join(",")),
+    queryFn: async () => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < sortedIds.length; i += THREAD_SUMMARIES_CHUNK_SIZE) {
+        chunks.push(sortedIds.slice(i, i + THREAD_SUMMARIES_CHUNK_SIZE));
+      }
+      const responses = await Promise.all(
+        chunks.map((chunk) => api.listThreadSummaries(chunk)),
+      );
+      return responses.flatMap((response) => response.summaries);
+    },
+    select: (summaries): Map<string, IssueThreadSummary> =>
+      new Map(summaries.map((summary) => [summary.issue_id, summary])),
+    staleTime: 30_000,
+    enabled: sortedIds.length > 0,
+  });
+}
+
+/**
+ * The issue timeline, paged by root comment: the first page is the newest
+ * TIMELINE_PAGE_SIZE root comments with all their replies and the activities of
+ * that time window; each further page is the next OLDER slice, reached through
+ * the previous page's cursor. Older pages are the query's "next" pages, so
+ * `pages[0]` is always the newest page. Read and patch the cache through
+ * `timeline-pages.ts`, not by indexing `pages`.
+ */
+export function issueTimelineInfiniteOptions(issueId: string) {
+  return infiniteQueryOptions({
+    queryKey: issueKeys.timelinePages(issueId),
+    initialPageParam: null as TimelinePageCursor | null,
+    queryFn: ({ pageParam }) =>
+      api.listTimeline(issueId, {
+        limit: TIMELINE_PAGE_SIZE,
+        ...(pageParam ?? {}),
+      }),
+    getNextPageParam: nextTimelinePageCursor,
+  });
+}
+
+/**
+ * The unpaged timeline: the full ordered set of comments + activities for an
+ * issue (server caps at 2000 as a safety net) as one flat array. Nothing in the
+ * app reads it any more — the issue page uses `issueTimelineInfiniteOptions` —
+ * and it lives under a different key, so the two caches never mix.
  */
 export function issueTimelineOptions(issueId: string) {
   return queryOptions({

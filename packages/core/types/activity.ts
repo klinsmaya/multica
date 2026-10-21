@@ -49,3 +49,26 @@ export interface TimelineEntry {
   /** Set by frontend coalescing when consecutive identical activities are merged. */
   coalesced_count?: number;
 }
+
+/**
+ * One page of the root-paged timeline: `limit` root comments (newest first) with
+ * every reply of those roots, plus the activities in the page's time window.
+ * `next_before` / `next_before_id` are the cursor to the next OLDER page; they
+ * are null on a server that does not page (it answers with its whole timeline).
+ */
+export interface TimelinePage {
+  /** Server order: newest first. Consumers sort. */
+  entries: TimelineEntry[];
+  has_more_before: boolean;
+  has_more_after: boolean;
+  next_before: string | null;
+  next_before_id: string | null;
+  /** Index of the `around` anchor inside `entries`, when one was requested. */
+  target_index?: number;
+}
+
+/** Cursor of an older timeline page: roots strictly older than (before, beforeId). */
+export interface TimelinePageCursor {
+  before: string;
+  beforeId: string;
+}

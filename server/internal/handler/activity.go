@@ -116,14 +116,17 @@ func takeNewest[T any](rows []T) ([]T, bool) {
 	return rows[len(rows)-timelineHardCap:], true
 }
 
-// timelinePaginatedResponse mirrors the wrapper shape produced by the prior
-// cursor-paginated ListTimeline (#2128). It is preserved as a backward-compat
-// surface for installed Desktop builds and stale Web bundles between #2128 and
-// #1929 that send `?limit=`/`?before=`/`?after=`/`?around=` and parse the
-// response with the old TimelinePageSchema (entries + cursors). Cursors are
-// always nil and `has_more_after` is always false: the new server returns the
-// whole timeline in one shot. `has_more_before` is now truthful — it reports the
-// hard-cap clamp — instead of being hardcoded false.
+// timelinePaginatedResponse is the wrapped timeline shape. It has two producers:
+//
+//   - Legacy: the wrapper produced by the prior cursor-paginated ListTimeline
+//     (#2128), kept for installed Desktop builds and stale Web bundles between
+//     #2128 and #1929 that send `?before=`/`?after=`/`?around=` and parse the
+//     response with the old TimelinePageSchema. Cursors are always nil and
+//     `has_more_after` is always false: the whole timeline comes in one shot.
+//     `has_more_before` reports the hard-cap clamp.
+//   - Root-paged (`?roots=`, see activity_timeline_page.go): `has_more_before`
+//     is exact and `next_before` / `next_before_id` carry the cursor to the
+//     next older page.
 type timelinePaginatedResponse struct {
 	Entries       []TimelineEntry `json:"entries"`
 	NextCursor    *string         `json:"next_cursor"`
@@ -131,23 +134,29 @@ type timelinePaginatedResponse struct {
 	HasMoreBefore bool            `json:"has_more_before"`
 	HasMoreAfter  bool            `json:"has_more_after"`
 	TargetIndex   *int            `json:"target_index,omitempty"`
+	// NextBefore / NextBeforeID are the composite cursor of the root-paged
+	// path (`roots` present): the oldest root on the page, RFC3339Nano. Always
+	// null on the legacy wrapper.
+	NextBefore   *string `json:"next_before"`
+	NextBeforeID *string `json:"next_before_id"`
 }
 
-// ListTimeline returns the full issue timeline (comments + activities merged).
-// Two response shapes coexist for boundary compatibility (#1929):
+// ListTimeline returns the issue timeline (comments + activities merged).
+// Three response modes coexist for boundary compatibility (#1929):
 //
 //   - No pagination params → flat ASC `TimelineEntry[]`. Matches the legacy
 //     desktop contract (Multica.app ≤ v0.2.25) and the new client.
-//   - Any of `limit` / `before` / `after` / `around` present → wrapped object
+//   - Any of `limit` / `before` / `after` / `around` WITHOUT `roots` → wrapped object
 //     with DESC entries + null cursors + has_more_after=false. Matches what a
 //     stale v0.2.26+ build expects when it parses the response with
-//     TimelinePageSchema; cursor-walking is now a no-op so the client just
-//     sees a single full page.
+//     TimelinePageSchema; the client just sees a single full page.
+//   - `roots` present → real paging by root comment, see
+//     activity_timeline_page.go. Only this mode returns a partial timeline.
 //
-// Both shapes carry the same set of entries — paging and ordering differ.
-// Time-based pagination was removed because it split reply threads at page
-// boundaries, and at observed data sizes (p99 ~30 comments per issue) the
-// cursor machinery was pure overhead.
+// The first two modes carry the same set of entries — shape and ordering
+// differ. Time-based pagination was removed because it split reply threads at
+// page boundaries; the root-paged mode avoids that by always returning every
+// reply of the roots on a page.
 //
 // When the hard cap fires each list is independently reduced to its newest
 // entries and X-Timeline-Truncated names which kinds were affected. Comment
@@ -160,6 +169,20 @@ func (h *Handler) ListTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+
+	// `roots` is the only param that opts into real root paging; see
+	// activity_timeline_page.go. The legacy `limit` / before / after / around
+	// keep the stale-client wrapper so installed builds still get the whole
+	// timeline.
+	q := r.URL.Query()
+	if rawRoots := q.Get("roots"); rawRoots != "" {
+		req, ok := parseTimelinePageRequest(w, q, rawRoots)
+		if !ok {
+			return
+		}
+		h.listTimelinePage(w, r, issue, req)
+		return
+	}
 
 	comments, err := h.Queries.ListCommentsForIssue(ctx, db.ListCommentsForIssueParams{
 		IssueID:     issue.ID,
@@ -179,7 +202,6 @@ func (h *Handler) ListTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := r.URL.Query()
 	wantWrapped := q.Get("limit") != "" || q.Get("before") != "" ||
 		q.Get("after") != "" || q.Get("around") != ""
 

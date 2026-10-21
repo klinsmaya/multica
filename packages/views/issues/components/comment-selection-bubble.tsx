@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { autoUpdate, computePosition, flip, hide, offset, shift } from "@floating-ui/dom";
 
 /** Match the description's EditorBubbleMenu geometry for readonly selections. */
-export function CommentSelectionBubble({ range, source, children, owner, markerRanges, onPositioned }: {
+export function CommentSelectionBubble({ range, source, children, owner, markerRanges, onPositioned, container }: {
   range: Range;
   source: HTMLElement;
   children: ReactNode;
@@ -13,6 +13,8 @@ export function CommentSelectionBubble({ range, source, children, owner, markerR
   markerRanges?: Range[];
   /** Called after the popup has a visible, usable position. */
   onPositioned?: () => void;
+  /** Hosts inside a modal keep the popup in their own tree, or the modal's focus trap and outside-press handling reject it. */
+  container?: HTMLElement | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const marker = !!markerRanges;
@@ -70,6 +72,6 @@ export function CommentSelectionBubble({ range, source, children, owner, markerR
       style={{ position: "fixed", zIndex: marker ? 20 : 50, visibility: "hidden", width: "max-content" }}>
       {children}
     </div>,
-    document.body,
+    container ?? document.body,
   );
 }

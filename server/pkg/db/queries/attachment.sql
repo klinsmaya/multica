@@ -301,3 +301,47 @@ ORDER BY id;
 DELETE FROM attachment
 WHERE workspace_id = sqlc.arg(workspace_id)
   AND source_context_id IS NOT NULL;
+
+-- name: ListProjectAttachments :many
+-- The project library: every attachment of every issue in the project. A
+-- comment attachment keeps its issue_id (it is bound with issue_id = the
+-- comment's issue), so joining on attachment.issue_id alone reaches issue-
+-- and comment-owned rows exactly once. Source-context snapshot copies are
+-- excluded (they duplicate the original rows), as are attachments whose
+-- comment became a tombstone.
+SELECT sqlc.embed(a), i.number AS issue_number, i.title AS issue_title
+FROM attachment a
+JOIN issue i ON i.id = a.issue_id AND i.workspace_id = a.workspace_id
+LEFT JOIN comment c ON c.id = a.comment_id
+WHERE i.project_id = sqlc.arg(project_id)
+  AND i.workspace_id = sqlc.arg(workspace_id)
+  AND a.source_context_id IS NULL
+  AND c.deleted_at IS NULL
+  AND (sqlc.narg(uploader_type)::text IS NULL OR a.uploader_type = sqlc.narg(uploader_type)::text)
+ORDER BY a.created_at DESC, a.id DESC
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: CountProjectAttachments :one
+-- Same row set as ListProjectAttachments, counted per uploader type so the
+-- library can label both groups from one round trip.
+SELECT
+  (count(*) FILTER (WHERE a.uploader_type = 'agent'))::bigint AS agent_count,
+  (count(*) FILTER (WHERE a.uploader_type = 'member'))::bigint AS member_count
+FROM attachment a
+JOIN issue i ON i.id = a.issue_id AND i.workspace_id = a.workspace_id
+LEFT JOIN comment c ON c.id = a.comment_id
+WHERE i.project_id = sqlc.arg(project_id)
+  AND i.workspace_id = sqlc.arg(workspace_id)
+  AND a.source_context_id IS NULL
+  AND c.deleted_at IS NULL;
+
+-- name: GetProjectLibraryIssue :one
+-- The top-level issue that holds files uploaded straight to a project. Found
+-- by its fixed title in any status, so closing it does not spawn a second one.
+SELECT * FROM issue
+WHERE project_id = sqlc.arg(project_id)
+  AND workspace_id = sqlc.arg(workspace_id)
+  AND parent_issue_id IS NULL
+  AND title = sqlc.arg(title)
+ORDER BY created_at ASC
+LIMIT 1;

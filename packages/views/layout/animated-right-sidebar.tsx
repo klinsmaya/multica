@@ -124,24 +124,28 @@ export function AnimatedRightSidebar({
   motionEnabled,
   children,
   className,
+  padded = true,
 }: {
   open: boolean;
   motionEnabled?: boolean;
   children: ReactNode;
   className?: string;
+  /** False lets the children own padding and scrolling (tabbed sidebars). */
+  padded?: boolean;
 }) {
   return (
     <motion.div
       animate={{ opacity: open ? 1 : 0, x: open ? 0 : 12 }}
       className={cn(
-        "h-full overflow-x-hidden overflow-y-auto border-l",
+        "h-full overflow-x-hidden border-l",
+        padded ? "overflow-y-auto" : "overflow-y-hidden",
         !open && "pointer-events-none",
         className,
       )}
       initial={false}
       transition={motionEnabled ? rightSidebarTransition : { duration: 0 }}
     >
-      <div className="p-4">{children}</div>
+      <div className={padded ? "p-4" : "h-full"}>{children}</div>
     </motion.div>
   );
 }

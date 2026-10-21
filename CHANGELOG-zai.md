@@ -1,6 +1,6 @@
 # Changelog (zai-beta)
 
-`zai-beta` 是 klinsmaya/multica 的集成分支，用于把尚未合入 `main` 的运营后台与 open-connector 相关 PR 合在一起，方便本地或测试环境整体验证。分支基线为上游 `main`，按 PR #7 → #8 → #9 的顺序合入。
+`zai-beta` 是 klinsmaya/multica 的集成分支，用于把尚未合入 `main` 的运营后台与 open-connector 相关 PR 合在一起，方便本地或测试环境整体验证。分支基线为上游 `main`，按 PR #7 → #8 → #9 → #6 的顺序合入。
 
 每次推送 `zai-beta` 都会由 `.github/workflows/zai-beta-image.yml` 构建镜像并推送到 GHCR：
 `ghcr.io/klinsmaya/multica-backend:zai-beta` 与 `ghcr.io/klinsmaya/multica-web:zai-beta`（同时打 `zai-beta-<short sha>` 标签）。
@@ -39,6 +39,17 @@
 - 后端：`handler/admin_openconnector.go`（`GET /api/admin/open-connector/{health,services,users}`，`POST …/services/{service}/{enable,disable}`，`PUT …/services/{service}/policy`）；`ErrUserNotAllowed` → 403 `open_connector_user_not_allowed`。
 - 前端：`packages/views/admin/connectors-page.tsx`、`apps/web/app/admin/connectors`、`admin` 命名空间多语言文案。
 - 文档：`open-connector-setup`（en/zh）改为从 `/admin/connectors` 发布服务。
+
+### 项目信息流视图与任务详情性能（PR #6）
+
+- 项目页布局菜单新增「信息流」视图：顶层任务按时间显示为消息流，每条下方是讨论串条（回复数、参与者、最后回复、未解决串数、状态、PR 芯片、交付物芯片、进度清单），点击打开现有的任务侧窥。底部输入框直接建任务（首行标题、其余描述，`@智能体` / `@小队` 指派，否则给项目负责人），快捷操作行提供继续 / 做计划 / 新任务。支持按创建或按活跃排序并随保存视图持久化。
+- 卡片带未读点（每用户阅读游标，`PUT /api/issues/{id}/read`）；智能体最新回复 @ 到当前用户的未解决串显示「等你回复」卡片，可勾选多个串一次性回复；带批注的引用回复链接回原评论。
+- 交付物全屏聚焦视图：左侧文件、右侧该任务的讨论，可翻页；Markdown 文件可选中文字加批注；`<!-- pending: … -->` 逐段写作占位与新增段落高亮；`canvas.json` 原型画布（缩放、拖拽、保存布局、Play 预览）。
+- 右侧栏仅在信息流视图下显示概览 / 自动化 / 文件库 / PR 四个页签；其他视图保持原属性栏。新增 `GET /api/projects/{id}/attachments`、`POST /api/projects/{id}/library-issue`、`GET /api/projects/{id}/pull-requests`。
+- 性能：任务详情不再订阅整个工作区任务列表；详情接口返回 `child_count` / `child_done_count`，子任务展开时按 50 条分页加载；`child-progress` 支持 `parent_ids` 过滤；时间线按根评论分页（`timeline?roots=N`），向上滚动加载更早一页。未带新参数的请求响应不变，旧客户端不受影响。
+- 智能体运行提示词新增三段可选约定：进度清单（`multica issue comment add --type progress_update`）、逐段上传文档、原型画布。
+- 迁移 `585`–`587`：`issue_read_cursor`（并发唯一索引独立文件）。编号低于本分支已有的 `590`–`606`，迁移运行器按版本逐条判断是否已应用，已部署的 zai-beta 库会补跑这三条。
+- 合并冲突仅两处，均为追加合并：`server/cmd/migrate/main.go` 的 `concurrentIndexCleanups` 与 `packages/core/api/schemas.ts`。
 
 ### 集成分支自身
 

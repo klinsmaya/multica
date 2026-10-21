@@ -52,6 +52,7 @@ import { configStore } from "../config";
 import type {
   Issue,
   IssuePriority,
+  IssueThreadSummary,
   CreateIssueRequest,
   MoveIssueRequest,
   UpdateIssueRequest,
@@ -134,6 +135,8 @@ import type {
   CreateRuntimeLocalSkillImportRequest,
   RuntimeLocalSkillImportRequest,
   TimelineEntry,
+  TimelinePage,
+  TimelinePageCursor,
   AssigneeFrequencyEntry,
   TaskMessagePayload,
   Attachment,
@@ -224,6 +227,8 @@ import type {
   PluginInstallRequest,
   PluginConfigRequest,
   IssuePullRequestsResponse,
+  ProjectPullRequestsResponse,
+  ProjectPullRequestState,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -288,6 +293,11 @@ import type {
   CreateCommentSubIssueAgentRequest,
   CreateCommentSubIssueRequest,
 } from "../types";
+import type {
+  ListProjectAttachmentsResponse,
+  ProjectAttachmentsParams,
+  ProjectLibraryIssue,
+} from "../types/project-library";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
   CreateFeedbackResponse,
@@ -310,6 +320,10 @@ import {
   AgentTaskPageSchema,
   AgentActivityBucketListSchema,
   AttachmentResponseSchema,
+  ProjectAttachmentsResponseSchema,
+  ProjectLibraryIssueSchema,
+  EMPTY_PROJECT_ATTACHMENTS_RESPONSE,
+  EMPTY_PROJECT_LIBRARY_ISSUE,
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
   ChatMessageListSchema,
@@ -321,6 +335,7 @@ import {
   SendChatMessageResponseSchema,
   StartMikaOnboardingResponseSchema,
   ChildIssuesResponseSchema,
+  ThreadSummariesResponseSchema,
   IssueDuplicatesResponseSchema,
   ChildIssueProgressResponseSchema,
   CommentsListSchema,
@@ -360,6 +375,7 @@ import {
   EMPTY_SQUAD_LIST,
   EMPTY_SQUAD_MEMBER_STATUS_LIST,
   EMPTY_TIMELINE_ENTRIES,
+  EMPTY_TIMELINE_PAGE,
   EMPTY_USER,
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
@@ -401,6 +417,7 @@ import {
   SubscribersListSchema,
   TaskMessageListSchema,
   TimelineEntriesSchema,
+  TimelinePageSchema,
   UserSchema,
   WebhookDeliveryResponseSchema,
   BillingBalanceSchema,
@@ -495,6 +512,8 @@ import {
   EMPTY_ISSUE_PROPERTIES_RESPONSE,
   EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
   IssuePullRequestsResponseSchema,
+  ProjectPullRequestsResponseSchema,
+  EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -554,6 +573,15 @@ import {
  *  Sent on every HTTP request as X-Client-Platform / X-Client-Version /
  *  X-Client-OS so the backend can log, gate, or split metrics by client.
  *  See server/internal/middleware/client.go for the receiving end. */
+/** Query of one root-paged timeline request; see `ApiClient.listTimeline`. */
+export interface ListTimelinePageParams extends Partial<TimelinePageCursor> {
+  /** Root comments per page, 1..200. Sent as `roots=`: `limit=` is the legacy
+   *  whole-timeline wrapper that installed clients still rely on. */
+  limit: number;
+  /** Land on the page that holds this comment instead of the newest page. */
+  around?: string;
+}
+
 export interface ApiClientIdentity {
   /** Logical client kind. Server expects: "web" | "desktop" | "cli" | "daemon". */
   platform?: string;
@@ -1644,8 +1672,13 @@ export class ApiClient {
     );
   }
 
-  async listChildIssues(id: string): Promise<{ issues: Issue[] }> {
-    const raw = await this.fetch<unknown>(`/api/issues/${id}/children`);
+  /** Without `page` the server returns every child (older servers ignore it). */
+  async listChildIssues(
+    id: string,
+    page?: { limit: number; offset: number },
+  ): Promise<{ issues: Issue[] }> {
+    const query = page ? `?limit=${page.limit}&offset=${page.offset}` : "";
+    const raw = await this.fetch<unknown>(`/api/issues/${id}/children${query}`);
     return parseWithFallback(raw, ChildIssuesResponseSchema, { issues: [] }, {
       endpoint: "GET /api/issues/:id/children",
     });
@@ -1664,10 +1697,32 @@ export class ApiClient {
     });
   }
 
-  async getChildIssueProgress(): Promise<{
+  /** Comment-thread rollups for the given issues (server cap: 100 ids). Issues
+   *  without counted comments have no row; callers treat a missing row as zeros. */
+  async listThreadSummaries(ids: string[]): Promise<{ summaries: IssueThreadSummary[] }> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/thread-summaries?ids=${ids.join(",")}`,
+    );
+    return parseWithFallback(raw, ThreadSummariesResponseSchema, { summaries: [] }, {
+      endpoint: "GET /api/issues/thread-summaries",
+    });
+  }
+
+  /** Sets the caller's read cursor on an issue to the server's now. No body, no
+   *  response to parse: the cursor only moves forward and stays private. */
+  async markIssueRead(issueId: string): Promise<void> {
+    await this.fetch(`/api/issues/${encodeURIComponent(issueId)}/read`, { method: "PUT" });
+  }
+
+  /** Workspace-wide when `parentIds` is omitted; otherwise only those parents. */
+  async getChildIssueProgress(parentIds?: string[]): Promise<{
     progress: { parent_issue_id: string; total: number; done: number }[];
   }> {
-    const raw = await this.fetch<unknown>("/api/issues/child-progress");
+    const raw = await this.fetch<unknown>(
+      parentIds
+        ? `/api/issues/child-progress?parent_ids=${parentIds.join(",")}`
+        : "/api/issues/child-progress",
+    );
     return parseWithFallback(
       raw,
       ChildIssueProgressResponseSchema,
@@ -1769,12 +1824,37 @@ export class ApiClient {
     });
   }
 
-  async listTimeline(issueId: string): Promise<TimelineEntry[]> {
+  /**
+   * Without `page` the whole timeline as a flat ascending array. With `page` one
+   * root-paged slice (`limit` root comments plus all their replies, newest
+   * first); `before`/`beforeId` continue from a previous page's cursor and
+   * `around` lands on the page that holds a comment.
+   */
+  async listTimeline(issueId: string): Promise<TimelineEntry[]>;
+  async listTimeline(issueId: string, page: ListTimelinePageParams): Promise<TimelinePage>;
+  async listTimeline(
+    issueId: string,
+    page?: ListTimelinePageParams,
+  ): Promise<TimelineEntry[] | TimelinePage> {
+    if (!page) {
+      const raw = await this.fetch<unknown>(
+        `/api/issues/${issueId}/timeline`,
+      );
+      return parseWithFallback(raw, TimelineEntriesSchema, EMPTY_TIMELINE_ENTRIES, {
+        endpoint: "GET /api/issues/:id/timeline",
+      });
+    }
+    const params = new URLSearchParams({ roots: String(page.limit) });
+    if (page.before && page.beforeId) {
+      params.set("before", page.before);
+      params.set("before_id", page.beforeId);
+    }
+    if (page.around) params.set("around", page.around);
     const raw = await this.fetch<unknown>(
-      `/api/issues/${issueId}/timeline`,
+      `/api/issues/${issueId}/timeline?${params.toString()}`,
     );
-    return parseWithFallback(raw, TimelineEntriesSchema, EMPTY_TIMELINE_ENTRIES, {
-      endpoint: "GET /api/issues/:id/timeline",
+    return parseWithFallback(raw, TimelinePageSchema, EMPTY_TIMELINE_PAGE, {
+      endpoint: "GET /api/issues/:id/timeline?roots",
     });
   }
 
@@ -4047,6 +4127,35 @@ export class ApiClient {
     await this.fetch(`/api/attachments/${id}`, { method: "DELETE" });
   }
 
+  // Project library: every attachment of every issue in the project.
+  async listProjectAttachments(
+    projectId: string,
+    params?: ProjectAttachmentsParams,
+  ): Promise<ListProjectAttachmentsResponse> {
+    const search = new URLSearchParams();
+    if (params?.source) search.set("source", params.source);
+    if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.offset) search.set("offset", String(params.offset));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${projectId}/attachments${query ? `?${query}` : ""}`,
+    );
+    return parseWithFallback(raw, ProjectAttachmentsResponseSchema, EMPTY_PROJECT_ATTACHMENTS_RESPONSE, {
+      endpoint: "GET /api/projects/{id}/attachments",
+    });
+  }
+
+  // The issue that holds files uploaded straight to a project; created on
+  // first use. An empty id means the response was unusable.
+  async getProjectLibraryIssue(projectId: string): Promise<ProjectLibraryIssue> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/library-issue`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, ProjectLibraryIssueSchema, EMPTY_PROJECT_LIBRARY_ISSUE, {
+      endpoint: "POST /api/projects/{id}/library-issue",
+    });
+  }
+
   // Fetches the raw bytes of a text-previewable attachment.
   //
   // The endpoint sidesteps CloudFront CORS (not configured on the CDN) and
@@ -5037,6 +5146,26 @@ export class ApiClient {
       IssuePullRequestsResponseSchema,
       EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
       { endpoint: "GET /api/issues/:id/pull-requests" },
+    );
+  }
+
+  async listProjectPullRequests(
+    projectId: string,
+    params?: { state?: ProjectPullRequestState; limit?: number; offset?: number },
+  ): Promise<ProjectPullRequestsResponse> {
+    const search = new URLSearchParams();
+    if (params?.state) search.set("state", params.state);
+    if (params?.limit != null) search.set("limit", String(params.limit));
+    if (params?.offset != null) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${projectId}/pull-requests${qs ? `?${qs}` : ""}`,
+    );
+    return parseWithFallback(
+      raw,
+      ProjectPullRequestsResponseSchema,
+      EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
+      { endpoint: "GET /api/projects/:id/pull-requests" },
     );
   }
 

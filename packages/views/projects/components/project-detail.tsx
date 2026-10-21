@@ -28,11 +28,13 @@ import { currentPath, useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectSidebarTabs } from "./project-sidebar-tabs";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { ProjectWorkflowControl } from "../../workflows/project-workflow-row";
 import { ProjectWorkflowMenu } from "../../workflows/project-workflow-menu";
 import { IssueSurface } from "../../issues/surface/issue-surface";
+import type { IssueSurfaceMode } from "../../issues/surface/types";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
@@ -186,6 +188,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     handleResize: handleDesktopSidebarResize,
   } = useAnimatedRightSidebarState(desktopSidebarInitialOpen);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // The project-wide panels (overview, automations, library, PRs) belong to
+  // the feed view; every other view keeps the plain properties column.
+  const [surfaceViewMode, setSurfaceViewMode] = useState<IssueSurfaceMode | null>(null);
+  const showSidebarPanels = surfaceViewMode === "feed";
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
   useEffect(() => {
@@ -565,7 +571,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
           <IssueSurface
             scope={issueScope}
-            modes={["board", "list", "table", "swimlane", "gantt"]}
+            modes={["board", "list", "table", "swimlane", "gantt", "feed"]}
+            onViewModeChange={setSurfaceViewMode}
           />
           </div>
         </ResizablePanel>
@@ -583,15 +590,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           panelRef={sidebarRef}
           onResize={handleDesktopSidebarResize}
         >
-          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled}>
-            {sidebarContent}
+          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled} padded={false}>
+            <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} panels={showSidebarPanels} />
           </AnimatedRightSidebar>
         </ResizablePanel>
         )}
         {isMobile && (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-            <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-              {sidebarContent}
+            <SheetContent side="right" showCloseButton={false} className="flex w-[320px] flex-col overflow-hidden p-0">
+              <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} panels={showSidebarPanels} />
             </SheetContent>
           </Sheet>
         )}

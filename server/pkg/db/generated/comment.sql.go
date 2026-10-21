@@ -394,6 +394,37 @@ func (q *Queries) DeleteReplylessCommentTombstone(ctx context.Context, arg Delet
 	return i, err
 }
 
+const existsCommentRootAfterForIssue = `-- name: ExistsCommentRootAfterForIssue :one
+SELECT EXISTS (
+    SELECT 1 FROM comment
+    WHERE issue_id = $1
+      AND workspace_id = $2
+      AND parent_id IS NULL
+      AND (created_at, id) > ($3::timestamptz, $4::uuid)
+)
+`
+
+type ExistsCommentRootAfterForIssueParams struct {
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AfterAt     pgtype.Timestamptz `json:"after_at"`
+	AfterID     pgtype.UUID        `json:"after_id"`
+}
+
+// Whether the issue has a top-level comment strictly newer than the
+// (@after_at, @after_id) pair. Backs has_more_after on an `around` timeline page.
+func (q *Queries) ExistsCommentRootAfterForIssue(ctx context.Context, arg ExistsCommentRootAfterForIssueParams) (bool, error) {
+	row := q.db.QueryRow(ctx, existsCommentRootAfterForIssue,
+		arg.IssueID,
+		arg.WorkspaceID,
+		arg.AfterAt,
+		arg.AfterID,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getComment = `-- name: GetComment :one
 SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
 WHERE id = $1
@@ -711,6 +742,96 @@ func (q *Queries) HasAgentRepliedInThread(ctx context.Context, arg HasAgentRepli
 	return has_replied, err
 }
 
+const listAgentQuestionsForIssues = `-- name: ListAgentQuestionsForIssues :many
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id
+    FROM comment c
+    WHERE c.workspace_id = $2
+      AND c.issue_id = ANY($3::uuid[])
+      AND c.parent_id IS NULL
+      AND c.resolved_at IS NULL
+      AND c.deleted_at IS NULL
+),
+membership(id, root_id) AS (
+    SELECT r.root_id, r.root_id
+    FROM roots r
+    UNION ALL
+    SELECT c.id, m.root_id
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.workspace_id = $2
+      AND c.issue_id = ANY($3::uuid[])
+),
+latest AS (
+    SELECT DISTINCT ON (m.root_id)
+           c.id, c.issue_id, c.author_type, c.author_id, c.content, c.created_at
+    FROM membership m
+    JOIN comment c ON c.id = m.id
+    WHERE c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY m.root_id, c.created_at DESC, c.id DESC
+)
+SELECT l.issue_id,
+       l.id AS comment_id,
+       l.author_id,
+       l.content,
+       l.created_at
+FROM latest l
+WHERE l.author_type = 'agent'
+  AND l.content ILIKE '%](mention://member/' || $1::uuid::text || ')%'
+ORDER BY l.issue_id, l.created_at DESC, l.id DESC
+`
+
+type ListAgentQuestionsForIssuesParams struct {
+	CallerID    pgtype.UUID   `json:"caller_id"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListAgentQuestionsForIssuesRow struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	CommentID pgtype.UUID        `json:"comment_id"`
+	AuthorID  pgtype.UUID        `json:"author_id"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Threads whose latest word is an agent @-mentioning the caller: the reader's
+// turn to answer. A thread is a top-level comment plus every descendant (same
+// notion of root as ListCommentRepliesForRoots); only unresolved, non-deleted
+// roots qualify. The latest comment is picked by (created_at, id) among
+// non-deleted, non-system rows, so a deleted tail hands the decision back to the
+// comment before it and platform notices never mask a pending question.
+//
+// The mention test runs only on one row per thread, after the latest comment is
+// chosen. Mentions serialize as [@Label](mention://member/<user-id>); ILIKE
+// tolerates an upper-case UUID written by an agent.
+func (q *Queries) ListAgentQuestionsForIssues(ctx context.Context, arg ListAgentQuestionsForIssuesParams) ([]ListAgentQuestionsForIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listAgentQuestionsForIssues, arg.CallerID, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAgentQuestionsForIssuesRow{}
+	for rows.Next() {
+		var i ListAgentQuestionsForIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.CommentID,
+			&i.AuthorID,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChildCommentsForParents = `-- name: ListChildCommentsForParents :many
 SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
 WHERE parent_id = ANY($1::uuid[])
@@ -875,6 +996,184 @@ func (q *Queries) ListCommentAncestorPath(ctx context.Context, arg ListCommentAn
 			&i.DeletedAt,
 			&i.Depth,
 			&i.Cycle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentRepliesForRoots = `-- name: ListCommentRepliesForRoots :many
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id, c.created_at AS root_created_at
+    FROM comment c
+    WHERE c.id = ANY($2::uuid[])
+      AND c.issue_id = $3
+      AND c.workspace_id = $4
+      AND c.parent_id IS NULL
+),
+membership(id, root_id, root_created_at) AS (
+    SELECT c.id, r.root_id, r.root_created_at
+    FROM comment c
+    JOIN roots r ON c.parent_id = r.root_id
+    WHERE c.issue_id = $3
+      AND c.workspace_id = $4
+    UNION ALL
+    SELECT c.id, m.root_id, m.root_created_at
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.issue_id = $3
+      AND c.workspace_id = $4
+)
+SELECT c.id, c.issue_id, c.author_type, c.author_id, c.content, c.type, c.created_at, c.updated_at, c.parent_id, c.workspace_id, c.resolved_at, c.resolved_by_type, c.resolved_by_id, c.source_task_id, c.quick_action_id, c.via_plugin_id, c.revision, c.recovery_settled_at, c.deleted_at, c.suppressed_agent_ids, m.root_id
+FROM membership m
+JOIN comment c ON c.id = m.id
+ORDER BY m.root_created_at DESC, m.root_id DESC, c.created_at ASC, c.id ASC
+LIMIT $1
+`
+
+type ListCommentRepliesForRootsParams struct {
+	RowLimit    int32         `json:"row_limit"`
+	RootIds     []pgtype.UUID `json:"root_ids"`
+	IssueID     pgtype.UUID   `json:"issue_id"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+}
+
+type ListCommentRepliesForRootsRow struct {
+	Comment Comment     `json:"comment"`
+	RootID  pgtype.UUID `json:"root_id"`
+}
+
+// Every descendant of the given root comments, at any reply depth, each labelled
+// with its thread root. Roots themselves are not returned.
+//
+// Rows come back grouped by root in the same order the roots page uses
+// ((created_at, id) DESC) and chronologically inside a root, so a LIMIT cuts
+// through at most one thread and a chronological prefix of a thread is closed
+// under "parent of" (a reply is never older than its parent). The caller probes
+// with limit + 1 and drops the trailing partial thread.
+//
+// Both tenant predicates apply at every level of the walk, and @root_ids only
+// matches top-level comments of this issue, so an id from elsewhere expands to
+// nothing.
+func (q *Queries) ListCommentRepliesForRoots(ctx context.Context, arg ListCommentRepliesForRootsParams) ([]ListCommentRepliesForRootsRow, error) {
+	rows, err := q.db.Query(ctx, listCommentRepliesForRoots,
+		arg.RowLimit,
+		arg.RootIds,
+		arg.IssueID,
+		arg.WorkspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCommentRepliesForRootsRow{}
+	for rows.Next() {
+		var i ListCommentRepliesForRootsRow
+		if err := rows.Scan(
+			&i.Comment.ID,
+			&i.Comment.IssueID,
+			&i.Comment.AuthorType,
+			&i.Comment.AuthorID,
+			&i.Comment.Content,
+			&i.Comment.Type,
+			&i.Comment.CreatedAt,
+			&i.Comment.UpdatedAt,
+			&i.Comment.ParentID,
+			&i.Comment.WorkspaceID,
+			&i.Comment.ResolvedAt,
+			&i.Comment.ResolvedByType,
+			&i.Comment.ResolvedByID,
+			&i.Comment.SourceTaskID,
+			&i.Comment.QuickActionID,
+			&i.Comment.ViaPluginID,
+			&i.Comment.Revision,
+			&i.Comment.RecoverySettledAt,
+			&i.Comment.DeletedAt,
+			&i.Comment.SuppressedAgentIds,
+			&i.RootID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentRootsForIssueBefore = `-- name: ListCommentRootsForIssueBefore :many
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
+WHERE issue_id = $1
+  AND workspace_id = $2
+  AND parent_id IS NULL
+  AND (
+      $3::boolean = FALSE
+      OR (created_at, id) < ($4::timestamptz, $5::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $6
+`
+
+type ListCommentRootsForIssueBeforeParams struct {
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	HasCursor   bool               `json:"has_cursor"`
+	BeforeAt    pgtype.Timestamptz `json:"before_at"`
+	BeforeID    pgtype.UUID        `json:"before_id"`
+	RowLimit    int32              `json:"row_limit"`
+}
+
+// Top-level comments (parent_id IS NULL) of an issue, newest first, strictly
+// older than the (@before_at, @before_id) cursor when @has_cursor is TRUE.
+//
+// Powers the root-paged timeline: a page is a set of whole threads, so the page
+// boundary can never split a reply thread (the reason time-based paging was
+// removed earlier). Tombstoned roots (deleted_at set) stay in the page like
+// ListCommentsForIssue returns them, because their replies still render under
+// them. Callers pass limit + 1 to probe for an older page.
+func (q *Queries) ListCommentRootsForIssueBefore(ctx context.Context, arg ListCommentRootsForIssueBeforeParams) ([]Comment, error) {
+	rows, err := q.db.Query(ctx, listCommentRootsForIssueBefore,
+		arg.IssueID,
+		arg.WorkspaceID,
+		arg.HasCursor,
+		arg.BeforeAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Comment{}
+	for rows.Next() {
+		var i Comment
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.Content,
+			&i.Type,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentID,
+			&i.WorkspaceID,
+			&i.ResolvedAt,
+			&i.ResolvedByType,
+			&i.ResolvedByID,
+			&i.SourceTaskID,
+			&i.QuickActionID,
+			&i.ViaPluginID,
+			&i.Revision,
+			&i.RecoverySettledAt,
+			&i.DeletedAt,
+			&i.SuppressedAgentIds,
 		); err != nil {
 			return nil, err
 		}
@@ -1189,6 +1488,464 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 			&i.RecoverySettledAt,
 			&i.DeletedAt,
 			&i.SuppressedAgentIds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueDeliverableSummaries = `-- name: ListIssueDeliverableSummaries :many
+WITH files AS (
+    SELECT c.issue_id,
+           lower(btrim(split_part(a.content_type, ';', 1))) AS media_type,
+           btrim(a.filename) AS file_name,
+           MAX(a.created_at) AS latest_at
+    FROM attachment a
+    JOIN comment c ON c.id = a.comment_id
+    WHERE c.workspace_id = $1
+      AND a.workspace_id = $1
+      AND c.issue_id = ANY($2::uuid[])
+      AND c.deleted_at IS NULL
+    GROUP BY c.issue_id, 2, 3
+)
+SELECT issue_id,
+       COUNT(*)::bigint AS deliverable_count,
+       MAX(latest_at)::timestamptz AS last_deliverable_at
+FROM files
+GROUP BY issue_id
+`
+
+type ListIssueDeliverableSummariesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueDeliverableSummariesRow struct {
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	DeliverableCount  int64              `json:"deliverable_count"`
+	LastDeliverableAt pgtype.Timestamptz `json:"last_deliverable_at"`
+}
+
+// Per-issue deliverable rollup for the project feed's output strip. A
+// deliverable is a file uploaded in a live comment; description attachments
+// are inputs, not output. Uploads with the same media type (parameters
+// dropped, case-insensitive) and filename are versions of ONE file, so each
+// group counts once and the group's newest upload dates it. This is the SQL
+// twin of deliverableKey / collectDeliverableFiles in
+// packages/core/attachments/deliverables.ts.
+func (q *Queries) ListIssueDeliverableSummaries(ctx context.Context, arg ListIssueDeliverableSummariesParams) ([]ListIssueDeliverableSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueDeliverableSummaries, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueDeliverableSummariesRow{}
+	for rows.Next() {
+		var i ListIssueDeliverableSummariesRow
+		if err := rows.Scan(&i.IssueID, &i.DeliverableCount, &i.LastDeliverableAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadParticipants = `-- name: ListIssueThreadParticipants :many
+SELECT issue_id, author_type, author_id, MAX(created_at)::timestamptz AS last_at
+FROM comment
+WHERE workspace_id = $1
+  AND issue_id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+  AND author_type <> 'system'
+GROUP BY issue_id, author_type, author_id
+ORDER BY issue_id, last_at DESC
+`
+
+type ListIssueThreadParticipantsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueThreadParticipantsRow struct {
+	IssueID    pgtype.UUID        `json:"issue_id"`
+	AuthorType string             `json:"author_type"`
+	AuthorID   pgtype.UUID        `json:"author_id"`
+	LastAt     pgtype.Timestamptz `json:"last_at"`
+}
+
+// Distinct commenters per issue, most recently active first; the caller keeps
+// the first few per issue.
+func (q *Queries) ListIssueThreadParticipants(ctx context.Context, arg ListIssueThreadParticipantsParams) ([]ListIssueThreadParticipantsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadParticipants, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadParticipantsRow{}
+	for rows.Next() {
+		var i ListIssueThreadParticipantsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.LastAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadPullRequests = `-- name: ListIssueThreadPullRequests :many
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_pull_request ipr
+    JOIN github_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY($1::uuid[])
+      AND i.workspace_id = $2
+      AND pr.workspace_id = $2
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= $3::int
+),
+checks AS (
+    SELECT
+        cr.pr_id,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('failure','cancelled','timed_out','action_required','startup_failure','stale','error')
+            THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('success','neutral','skipped')
+            THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cr.status <> 'completed' OR cr.conclusion IS NULL
+            THEN 1 ELSE 0 END)::bigint AS running
+    FROM github_pull_request_check_run cr
+    JOIN github_pull_request pr ON pr.id = cr.pr_id
+    WHERE cr.pr_id IN (SELECT pr_id FROM top)
+      AND pr.snapshot_head_sha <> ''
+      AND cr.head_sha = pr.snapshot_head_sha
+    GROUP BY cr.pr_id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    pr.head_sha, pr.snapshot_head_sha, pr.snapshot_fetched_at, pr.checks_rollup_state,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.running, 0)::bigint AS checks_running
+FROM top
+JOIN github_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC
+`
+
+type ListIssueThreadPullRequestsParams struct {
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	PrLimit     int32         `json:"pr_limit"`
+}
+
+type ListIssueThreadPullRequestsRow struct {
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	ID                pgtype.UUID        `json:"id"`
+	PrNumber          int32              `json:"pr_number"`
+	Title             string             `json:"title"`
+	State             string             `json:"state"`
+	HtmlUrl           string             `json:"html_url"`
+	Additions         int32              `json:"additions"`
+	Deletions         int32              `json:"deletions"`
+	PrCreatedAt       pgtype.Timestamptz `json:"pr_created_at"`
+	HeadSha           string             `json:"head_sha"`
+	SnapshotHeadSha   string             `json:"snapshot_head_sha"`
+	SnapshotFetchedAt pgtype.Timestamptz `json:"snapshot_fetched_at"`
+	ChecksRollupState pgtype.Text        `json:"checks_rollup_state"`
+	ChecksPassed      int64              `json:"checks_passed"`
+	ChecksFailed      int64              `json:"checks_failed"`
+	ChecksRunning     int64              `json:"checks_running"`
+}
+
+// The newest linked GitHub PRs for a batch of issues, at most pr_limit per
+// issue, for the project feed's output strip. Same snapshot and check-run
+// aggregation as ListPullRequestsByIssue (current snapshot head only), but
+// narrowed to the ranked PR ids first so check rows are read for those PRs
+// alone. Rows arrive ordered by issue, then newest PR first.
+func (q *Queries) ListIssueThreadPullRequests(ctx context.Context, arg ListIssueThreadPullRequestsParams) ([]ListIssueThreadPullRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadPullRequests, arg.IssueIds, arg.WorkspaceID, arg.PrLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadPullRequestsRow{}
+	for rows.Next() {
+		var i ListIssueThreadPullRequestsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ID,
+			&i.PrNumber,
+			&i.Title,
+			&i.State,
+			&i.HtmlUrl,
+			&i.Additions,
+			&i.Deletions,
+			&i.PrCreatedAt,
+			&i.HeadSha,
+			&i.SnapshotHeadSha,
+			&i.SnapshotFetchedAt,
+			&i.ChecksRollupState,
+			&i.ChecksPassed,
+			&i.ChecksFailed,
+			&i.ChecksRunning,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadSummaries = `-- name: ListIssueThreadSummaries :many
+SELECT s.issue_id,
+       s.reply_count,
+       s.last_reply_at,
+       s.open_thread_count,
+       l.content AS last_reply_content
+FROM (
+    SELECT cm.issue_id,
+           COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at)::timestamptz AS last_reply_at,
+           COUNT(*) FILTER (WHERE cm.parent_id IS NULL AND cm.resolved_at IS NULL)::bigint AS open_thread_count
+    FROM comment cm
+    WHERE cm.workspace_id = $1
+      AND cm.issue_id = ANY($2::uuid[])
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+    GROUP BY cm.issue_id
+) s
+CROSS JOIN LATERAL (
+    SELECT LEFT(c.content, 2000)::text AS content
+    FROM comment c
+    WHERE c.issue_id = s.issue_id
+      AND c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY c.created_at DESC, c.id DESC
+    LIMIT 1
+) l
+`
+
+type ListIssueThreadSummariesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueThreadSummariesRow struct {
+	IssueID          pgtype.UUID        `json:"issue_id"`
+	ReplyCount       int64              `json:"reply_count"`
+	LastReplyAt      pgtype.Timestamptz `json:"last_reply_at"`
+	OpenThreadCount  int64              `json:"open_thread_count"`
+	LastReplyContent string             `json:"last_reply_content"`
+}
+
+// Per-issue comment rollup for the project feed. System rows (platform
+// notices) and soft-deleted comments are not conversation, so they are not
+// counted. A thread is open when its root comment is unresolved. The newest
+// counted comment's body is returned (capped) for the caller to flatten into
+// a one-line excerpt.
+func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThreadSummariesParams) ([]ListIssueThreadSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadSummaries, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadSummariesRow{}
+	for rows.Next() {
+		var i ListIssueThreadSummariesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ReplyCount,
+			&i.LastReplyAt,
+			&i.OpenThreadCount,
+			&i.LastReplyContent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadVCSPullRequests = `-- name: ListIssueThreadVCSPullRequests :many
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_vcs_pull_request ipr
+    JOIN vcs_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY($1::uuid[])
+      AND i.workspace_id = $2
+      AND pr.workspace_id = $2
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= $3::int
+),
+checks AS (
+    SELECT
+        pr.id AS pr_id,
+        COUNT(*)::bigint AS total,
+        SUM(CASE WHEN cs.state = 'failed'  THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cs.state = 'passed'  THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cs.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
+    FROM vcs_pull_request pr
+    JOIN vcs_commit_status cs
+        ON cs.connection_id = pr.connection_id
+       AND cs.sha = pr.head_sha
+    WHERE pr.id IN (SELECT pr_id FROM top)
+      AND pr.head_sha <> ''
+    GROUP BY pr.id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    COALESCE(c.total, 0)::bigint   AS checks_total,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.pending, 0)::bigint AS checks_pending
+FROM top
+JOIN vcs_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC
+`
+
+type ListIssueThreadVCSPullRequestsParams struct {
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	PrLimit     int32         `json:"pr_limit"`
+}
+
+type ListIssueThreadVCSPullRequestsRow struct {
+	IssueID       pgtype.UUID        `json:"issue_id"`
+	ID            pgtype.UUID        `json:"id"`
+	PrNumber      int32              `json:"pr_number"`
+	Title         string             `json:"title"`
+	State         string             `json:"state"`
+	HtmlUrl       string             `json:"html_url"`
+	Additions     int32              `json:"additions"`
+	Deletions     int32              `json:"deletions"`
+	PrCreatedAt   pgtype.Timestamptz `json:"pr_created_at"`
+	ChecksTotal   int64              `json:"checks_total"`
+	ChecksPassed  int64              `json:"checks_passed"`
+	ChecksFailed  int64              `json:"checks_failed"`
+	ChecksPending int64              `json:"checks_pending"`
+}
+
+// ListIssueThreadPullRequests for token-based providers (Forgejo / Gitea /
+// GitLab): commit statuses for the PR's current head sha, folded into
+// passed/failed/pending counts like ListVCSPullRequestsByIssue.
+func (q *Queries) ListIssueThreadVCSPullRequests(ctx context.Context, arg ListIssueThreadVCSPullRequestsParams) ([]ListIssueThreadVCSPullRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadVCSPullRequests, arg.IssueIds, arg.WorkspaceID, arg.PrLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadVCSPullRequestsRow{}
+	for rows.Next() {
+		var i ListIssueThreadVCSPullRequestsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ID,
+			&i.PrNumber,
+			&i.Title,
+			&i.State,
+			&i.HtmlUrl,
+			&i.Additions,
+			&i.Deletions,
+			&i.PrCreatedAt,
+			&i.ChecksTotal,
+			&i.ChecksPassed,
+			&i.ChecksFailed,
+			&i.ChecksPending,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLatestProgressCommentsForIssues = `-- name: ListLatestProgressCommentsForIssues :many
+SELECT DISTINCT ON (issue_id) issue_id, id AS comment_id, content, created_at
+FROM comment
+WHERE workspace_id = $1
+  AND issue_id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+  AND type = 'progress_update'
+  AND author_type = 'agent'
+  AND content ~ '(^|\n)[ \t]*[-*+][ \t]+\[[ xX]\]'
+ORDER BY issue_id, created_at DESC, id DESC
+`
+
+type ListLatestProgressCommentsForIssuesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListLatestProgressCommentsForIssuesRow struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	CommentID pgtype.UUID        `json:"comment_id"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// The newest agent progress report per issue: a non-deleted progress_update
+// comment whose body holds a Markdown task list (a "- [ ]" / "- [x]" item,
+// any bullet marker and indentation). Reports without a checklist are not
+// progress the feed can render, so they never shadow an older checklist.
+func (q *Queries) ListLatestProgressCommentsForIssues(ctx context.Context, arg ListLatestProgressCommentsForIssuesParams) ([]ListLatestProgressCommentsForIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listLatestProgressCommentsForIssues, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestProgressCommentsForIssuesRow{}
+	for rows.Next() {
+		var i ListLatestProgressCommentsForIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.CommentID,
+			&i.Content,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

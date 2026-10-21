@@ -1,5 +1,5 @@
 import { createStore } from "zustand/vanilla";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -8,7 +8,10 @@ import {
 } from "@multica/core/issues/stores/view-store";
 import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
 import { renderWithI18n } from "../../test/i18n";
+import type { IssueView } from "@multica/core/api/schemas";
 import { DraftDefinitionFields, SaveViewDialog } from "./save-view-dialog";
+
+const mutations = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn() }));
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
@@ -20,8 +23,8 @@ vi.mock("@multica/core/hooks", () => ({
 }));
 
 vi.mock("@multica/core/issue-views/mutations", () => ({
-  useCreateIssueView: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateIssueView: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateIssueView: () => ({ mutate: mutations.create, isPending: false }),
+  useUpdateIssueView: () => ({ mutate: mutations.update, isPending: false }),
 }));
 
 vi.mock("./issues-header", () => ({
@@ -100,5 +103,70 @@ describe("SaveViewDialog draft lifecycle", () => {
     rerender(dialog(true));
 
     expect(screen.getByLabelText("Name")).toHaveValue("");
+  });
+});
+
+describe("SaveViewDialog feed sort", () => {
+  beforeEach(() => {
+    mutations.create.mockClear();
+    mutations.update.mockClear();
+  });
+
+  it("saves the live panel's feed sort in the view display", async () => {
+    const user = userEvent.setup();
+    const liveStore = createStore<IssueViewState>()(viewStoreSlice);
+    liveStore.setState({ viewMode: "feed", feedSort: "activity" });
+    renderWithI18n(
+      <ViewStoreProvider store={liveStore}>
+        <SaveViewDialog
+          open
+          onOpenChange={() => {}}
+          scope={{ kind: "project", projectId: "p-1" }}
+        />
+      </ViewStoreProvider>,
+    );
+
+    await user.type(screen.getByLabelText("Name"), "Recent");
+    await user.click(screen.getByRole("button", { name: "Create view" }));
+
+    expect(mutations.create).toHaveBeenCalledTimes(1);
+    expect(mutations.create.mock.calls[0]![0].display).toMatchObject({
+      viewMode: "feed",
+      feedSort: "activity",
+    });
+  });
+
+  it("seeds an edit draft from the stored display, defaulting an older view to creation order", async () => {
+    const user = userEvent.setup();
+    const liveStore = createStore<IssueViewState>()(viewStoreSlice);
+    const editView = {
+      id: "view-1",
+      name: "Legacy",
+      visibility: "private",
+      scope_type: "project",
+      scope_id: "p-1",
+      scope_variant: null,
+      revision: 3,
+      query: {},
+      display: { viewMode: "feed" },
+    } as unknown as IssueView;
+    renderWithI18n(
+      <ViewStoreProvider store={liveStore}>
+        <SaveViewDialog
+          open
+          onOpenChange={() => {}}
+          scope={{ kind: "project", projectId: "p-1" }}
+          editView={editView}
+          seedFromDefinition
+        />
+      </ViewStoreProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(mutations.update.mock.calls[0]![0].display).toMatchObject({
+      viewMode: "feed",
+      feedSort: "created",
+    });
   });
 });

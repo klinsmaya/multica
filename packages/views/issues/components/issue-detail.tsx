@@ -75,9 +75,10 @@ import { contentReferencesAttachment } from "@multica/core/types";
 import { isBuiltInIssueStatus } from "@multica/core/issue-statuses";
 import { commentLandingTarget, isDeletedComment } from "@multica/core/issues/comment-deletion";
 import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
-import { useUpdateIssue } from "@multica/core/issues/mutations";
+import { useMarkIssueRead, useUpdateIssue } from "@multica/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@multica/core/api";
+import { PeekProgressCard } from "./feed-progress-card";
 import { StatusIcon } from "./status-icon";
 import { PriorityIcon } from "./priority-icon";
 import { StatusPicker } from "./pickers/status-picker";
@@ -125,7 +126,7 @@ import {
 } from "./deliverables/deliverable-details";
 import { collectDeliverableFiles } from "@multica/core/attachments/deliverables";
 import { AttachmentVersionsProvider } from "./deliverables/attachment-versions";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@multica/core/auth";
 import { useWorkspacePaths } from "@multica/core/paths";
 import { useActorName } from "@multica/core/workspace/hooks";
@@ -135,7 +136,7 @@ import {
 } from "@multica/core/issue-workflows";
 import { useRecentContextStore } from "@multica/core/chat";
 import { useModalStore } from "@multica/core/modals";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
+import { findIssueInListCache, issueDetailOptions, childIssuesOptions, childIssueProgressForParentsOptions, issueAttachmentsOptions } from "@multica/core/issues/queries";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { issueLabelsOptions } from "@multica/core/labels";
@@ -155,6 +156,7 @@ import {
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
+import { usePrependedFirstItemIndex } from "../hooks/use-prepended-first-item-index";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
 import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
@@ -485,6 +487,19 @@ function ActivityText({ entry, text }: { entry: TimelineEntry; text: string }) {
 // Stable reference for threads with no replies. Inline `[]` would create a
 // new array on every render and bust React.memo on CommentCard / ResolvedThreadBar.
 const EMPTY_REPLIES: TimelineEntry[] = [];
+
+// Sub-issues load a page at a time once the section is expanded.
+const CHILD_PAGE_SIZE = 50;
+const EMPTY_CHILD_ISSUES: Issue[] = [];
+
+// Module-level so useQueries can memoize the combined result: the flat list
+// below must keep a stable identity between renders.
+function combineChildPages(results: { data?: Issue[]; isFetching: boolean }[]) {
+  return {
+    issues: results.flatMap((r) => r.data ?? EMPTY_CHILD_ISSUES),
+    fetching: results.some((r) => r.isFetching),
+  };
+}
 
 // Sidebar progressive disclosure
 //
@@ -1154,10 +1169,20 @@ interface IssueDetailProps {
    * `"peek"` renders the detail inside the board's side peek (`IssuePeekHost`):
    * a single column with the core properties as pills under the title, no
    * properties sidebar, and `trailingActions` where the sidebar toggle sits.
+   *
+   * `"thread"` is the peek reduced to the discussion, for hosts that show the
+   * issue's content elsewhere (the deliverable focus): the title row, the
+   * comment timeline and the reply box.
    */
-  variant?: "page" | "peek";
-  /** Peek only: host controls at the end of the header (open full page, close). */
+  variant?: "page" | "peek" | "thread";
+  /** Peek and thread: host controls at the end of the header (open full page, close). */
   trailingActions?: ReactNode;
+  /** Peek only: a full-width strip between the header and the content. */
+  belowHeader?: ReactNode;
+  /** Thread only: the deliverable the host is showing; the reply box offers to reference it. */
+  replyContext?: { attachmentId: string; filename: string };
+  /** Thread: returns an annotation chip to a source the host renders (a file beside the thread). */
+  onEditAnnotationSource?: (annotationId: string) => boolean;
 }
 
 // Not found
@@ -1286,13 +1311,30 @@ export function IssueDetailSkeleton({
 
 // IssueDetail
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions }: IssueDetailProps) {
-  const isPeek = variant === "peek";
+/** How long an issue must stay open before it counts as read. */
+const MARK_READ_DELAY_MS = 1500;
+
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader, replyContext, onEditAnnotationSource }: IssueDetailProps) {
+  const isThread = variant === "thread";
+  // The thread is a peek with the content sections removed, so every
+  // single-column switch below applies to it as well.
+  const isPeek = variant === "peek" || isThread;
   const { t } = useT("issues");
   const locale = useLocale();
   const timeAgo = useTimeAgo();
   const id = issueId;
   const user = useAuthStore((s) => s.user);
+
+  // Opening an issue records the read cursor, but only once the user has
+  // stayed on it: flicking through issues records nothing. Keyed on the id so
+  // a switch restarts the wait, and the cleanup cancels it on switch/unmount.
+  const { mutate: markIssueRead } = useMarkIssueRead();
+  const markIssueReadRef = useRef(markIssueRead);
+  markIssueReadRef.current = markIssueRead;
+  useEffect(() => {
+    const timer = setTimeout(() => markIssueReadRef.current(id), MARK_READ_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [id]);
   const paths = useWorkspacePaths();
   const openModal = useModalStore((state) => state.open);
 
@@ -1307,7 +1349,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     members.find((m) => m.user_id === user?.id)?.role ?? null;
   const canModerateComments =
     currentUserRole === "owner" || currentUserRole === "admin";
-  const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
+  const qc = useQueryClient();
   const { getActorName } = useActorName();
   const resolveStatusLabel = useStatusLabel(wsId);
   // Activity and issue visuals share the catalog's custom geometry and color;
@@ -1392,7 +1434,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // detail.
   // The peek gets its own key: it is an overlay on the board's route, and
   // must neither restore the full page's offset nor leave one behind for it.
-  const scrollContainerKey = `${isPeek ? "peek" : "main"}:${id}`;
+  const scrollContainerKey = `${isThread ? "thread" : isPeek ? "peek" : "main"}:${id}`;
   const restoredScrollTop = useRestoredScrollOffset(scrollContainerKey);
   const restoreScrollRef = useRestoredScrollRef(scrollContainerKey);
   // Whether this issue's comment-highlight deep link already landed here
@@ -1509,7 +1551,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Issue data from TQ — uses detail query, seeded from list cache if available.
   // Only seed when description is present; the list API omits it, so a partial
   // list row must not masquerade as a hydrated issue detail.
-  const { data: issue = null, isLoading: issueLoading, refetch: refetchIssue } = useQuery({
+  const {
+    data: issue = null,
+    isLoading: issueLoading,
+    isFetching: issueFetching,
+    refetch: refetchIssue,
+  } = useQuery({
     ...issueDetailOptions(wsId, id),
     // List rows and issue-created realtime payloads intentionally omit the
     // detail-only source-context snapshot. They can still seed this query via
@@ -1518,7 +1565,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // hides source context until a full page refresh.
     refetchOnMount: "always",
     initialData: () => {
-      const cached = allIssues.find((i) => i.id === id);
+      const cached = findIssueInListCache(qc, wsId, id);
       return cached?.description != null ? cached : undefined;
     },
   });
@@ -1588,11 +1635,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   }, [issue, issueLoading, onDelete]);
 
   // Custom hooks — encapsulate timeline, reactions, subscribers
+  // The timeline loads in pages of root comments, newest first. A deep link to
+  // a comment keeps loading older pages until that comment is on screen.
   const {
     timeline, loading: timelineLoading,
+    hasOlder: hasOlderTimeline, loadOlder: loadOlderTimeline,
     submitComment, submitReply,
     editComment, deleteComment, toggleResolveComment, toggleReaction: handleToggleReaction,
-  } = useIssueTimeline(id, user?.id);
+  } = useIssueTimeline(id, user?.id, { ensureCommentId: highlightCommentId });
 
   const { data: commentTasks } = useQuery(issueTasksOptions(id));
   const enteringRunIds = useNewRunIds(id, commentTasks);
@@ -1635,8 +1685,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const timelineView = useMemo(() => {
     // Group entries: top-level = activities + root comments; replies are
     // bucketed under their parent's id and rendered nested inside CommentCard.
-    // No orphan rescue needed: the timeline is fetched in full, so every
-    // reply's parent is always in the same array.
+    // No orphan rescue needed: a timeline page always carries every reply of
+    // its root comments, so every reply's parent is in the same array.
     const topLevel = displayTimeline.filter(
       (e) => e.type === "activity" || !e.parent_id,
     );
@@ -1740,6 +1790,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [timelineView.groups, expandedResolved],
   );
 
+  // Virtuoso keeps the viewport on the same row when an older page lands above
+  // it as long as `firstItemIndex` drops by the number of prepended rows.
+  const itemKeys = useMemo(
+    () => items.map((it) => `${it.kind}:${it.kind === "run" ? it.run.task.id : it.id}`),
+    [items],
+  );
+  const firstItemIndex = usePrependedFirstItemIndex(itemKeys, `${wsId}:${id}`);
+
   // In-page find (Cmd/Ctrl+F). `items.length` is the content signal that
   // triggers a match recompute when comments are added/removed; text edits
   // are caught by the hook's own MutationObserver. Opening find forces the
@@ -1755,6 +1813,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   useEffect(() => {
     closeFind();
   }, [id, closeFind]);
+  // Find walks the DOM, so it can only match comments that are loaded: pull in
+  // every older page while it is open (one page per render, via the effect).
+  useEffect(() => {
+    if (find.open && hasOlderTimeline) loadOlderTimeline();
+  }, [find.open, hasOlderTimeline, loadOlderTimeline]);
 
   // ID of the trailing activity block — the only one expanded by default.
   const lastActivityGroupId = useMemo(() => {
@@ -2029,7 +2092,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: parentIssue = null } = useQuery({
     ...issueDetailOptions(wsId, parentIssueId ?? ""),
     enabled: !!parentIssueId,
-    initialData: () => allIssues.find((i) => i.id === parentIssueId),
+    initialData: () =>
+      parentIssueId ? findIssueInListCache(qc, wsId, parentIssueId) : undefined,
   });
 
   // Project segment in the breadcrumb. The issue's project_id is the source of
@@ -2039,45 +2103,72 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ...projectDetailOptions(wsId, issueProjectId ?? ""),
     enabled: !!issueProjectId,
   });
+  // The detail response carries sub-issue progress, so a collapsed section
+  // needs no list fetch. A detail seeded from a list row has no counts until
+  // its authoritative fetch lands; a backend that predates them never sends
+  // any, and then the whole list is loaded as before.
+  const serverChildCount = issue?.child_count;
+  const serverChildDoneCount = issue?.child_done_count;
+  const hasServerChildCounts =
+    serverChildCount !== undefined && serverChildDoneCount !== undefined;
+  const loadFullChildList = !!issue && !issueFetching && !hasServerChildCounts;
+  // Store-backed (not useState) so the collapsed state survives leaving the
+  // issue and navigating back within the session.
+  const subIssuesCollapsed = useSubIssuesCollapseStore((s) =>
+    s.collapsedIssueIds.has(issueId),
+  );
   const {
-    data: childIssues = [],
-    isSuccess: childIssuesLoaded,
-    isFetching: childIssuesFetching,
+    data: fullChildIssues = EMPTY_CHILD_ISSUES,
+    isSuccess: fullChildIssuesLoaded,
+    isFetching: fullChildIssuesFetching,
   } = useQuery({
     ...childIssuesOptions(wsId, id),
-    enabled: !!issue,
+    enabled: loadFullChildList,
   });
+  // Pages are only read while the section is expanded; "load more" adds one.
+  // Keyed by issue so navigating to another issue starts from the first page.
+  const [childPageState, setChildPageState] = useState({ id, count: 1 });
+  const childPageCount = childPageState.id === id ? childPageState.count : 1;
+  const { issues: pagedChildIssues, fetching: childPagesFetching } = useQueries({
+    queries: Array.from({ length: childPageCount }, (_, i) => ({
+      ...childIssuesOptions(wsId, id, {
+        limit: CHILD_PAGE_SIZE,
+        offset: i * CHILD_PAGE_SIZE,
+      }),
+      enabled:
+        !!issue &&
+        hasServerChildCounts &&
+        serverChildCount > 0 &&
+        !subIssuesCollapsed,
+    })),
+    combine: combineChildPages,
+  });
+  const childIssues = hasServerChildCounts ? pagedChildIssues : fullChildIssues;
+  const childTotal = hasServerChildCounts ? serverChildCount : childIssues.length;
   // Whether this issue has sub-issues, as opposed to "we have not looked yet".
-  // childIssuesOptions sets refetchOnMount: "always", so a cached snapshot is
-  // re-fetched on every mount and isSuccess alone still describes the previous
-  // visit. The unsubscribe control below picks a different server write from
-  // this answer, so a defaulted or stale empty array must not count as "no
+  // The unsubscribe control below picks a different server write from this
+  // answer, so a defaulted or stale empty array must not count as "no
   // sub-issues" (MUL-5714).
-  const childCountKnown = childIssuesLoaded && !childIssuesFetching;
+  const childCountKnown =
+    hasServerChildCounts || (fullChildIssuesLoaded && !fullChildIssuesFetching);
   // Parent's children — used to render the "x/y" progress next to the
   // "Sub-issue of …" breadcrumb under the title.
   const { data: parentChildIssues = [] } = useQuery({
     ...childIssuesOptions(wsId, parentIssueId ?? ""),
     enabled: !!parentIssueId,
   });
-  // Workspace-wide parent→(done/total) map; lets each sub-issue row show its
-  // OWN nested progress ring without opening it. Same query the list
-  // surfaces use, so it's usually already cached.
-  const { data: subIssueProgress } = useQuery({
-    ...childIssueProgressOptions(wsId),
-    enabled: childIssues.length > 0,
-  });
+  const childIssueIds = useMemo(() => childIssues.map((c) => c.id), [childIssues]);
+  // Child→(done/total) for the loaded sub-issues only; lets each row show its
+  // OWN nested progress ring without opening it.
+  const { data: subIssueProgress } = useQuery(
+    childIssueProgressForParentsOptions(wsId, childIssueIds),
+  );
   // User-level display preference for sub-issue rows (built-in field toggles
   // + opted-in workspace custom properties). `subIssueCustomProps` resolves
   // the persisted ids against this workspace's live, non-archived property
   // definitions — ids from other workspaces or archived properties drop out.
   const subIssueRowProps = useSubIssueDisplayStore((s) => s.rowProperties);
   const subIssueRowPropertyIds = useSubIssueDisplayStore((s) => s.rowPropertyIds);
-  // Store-backed (not useState) so the collapsed state survives leaving the
-  // issue and navigating back within the session.
-  const subIssuesCollapsed = useSubIssuesCollapseStore((s) =>
-    s.collapsedIssueIds.has(issueId),
-  );
   const setSubIssuesCollapsedFor = useSubIssuesCollapseStore(
     (s) => s.setCollapsed,
   );
@@ -2106,7 +2197,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     return clearSelection;
   }, [id, clearSelection]);
 
-  const childIssueIds = useMemo(() => childIssues.map((c) => c.id), [childIssues]);
   const childSelectedCount = childIssueIds.filter((cid) =>
     selectedIds.has(cid),
   ).length;
@@ -2376,10 +2466,15 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     jumpToThread(locateRootRequest);
   }, [locateRootRequest, jumpToThread]);
 
+  const openDeliverableFocus = useCallback(
+    (attachmentId: string) => openModal("deliverable-focus", { issueId: id, attachmentId }),
+    [openModal, id],
+  );
   const describeDeliverable = useDeliverableDetails({
     files: deliverableFiles,
     commentById,
     onLocate: locateOrigin,
+    onOpenFocus: isThread ? undefined : openDeliverableFocus,
   });
   // The overview remembers the file the viewer was showing, so `G` can go
   // back to it.
@@ -2923,7 +3018,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
       {/* Deliverables — the files this issue's comments delivered. Hidden
           while there are none. */}
-      <DeliverablesSection files={deliverableFiles} onOpenOverview={openOverview} />
+      <DeliverablesSection files={deliverableFiles} onOpenOverview={openOverview} onOpenFocus={openDeliverableFocus} />
 
       {/* Execution log — active runs + collapsed past runs, each carrying its
           own token spend, with the issue total on the section header.
@@ -3135,8 +3230,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         )}
         <BreadcrumbHeader
           leading={leadingAction}
-          segments={breadcrumbSegments}
+          segments={isThread ? [] : breadcrumbSegments}
           leaf={
+            isThread ? (
+              <span className="truncate font-medium text-foreground">
+                {`${issue.identifier} ${issue.title}`}
+              </span>
+            ) : (
             <AppLink
               href={paths.issueDetail(issue.id)}
               className="flex min-w-0 transition-opacity hover:opacity-80"
@@ -3145,8 +3245,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 {isPeek ? issue.identifier : `${issue.identifier} ${issue.title}`}
               </span>
             </AppLink>
+            )
           }
-          actions={
+          actions={isThread ? trailingActions : (
             <>
             {/* Live "agent is working" chip, leftmost in the right cluster so
                 it never overlaps the title (which truncates to make room).
@@ -3235,8 +3336,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </Tooltip>
             )}
             </>
-          }
+          )}
         />
+        {isPeek ? belowHeader : null}
 
         {/* scrollbar-gutter both-edges: with classic (space-taking) scrollbars —
             macOS with a mouse or "always show", Windows, Linux — the global
@@ -3263,6 +3365,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             isPeek ? "px-6 py-5" : "max-w-4xl px-3 py-6 max-md:pb-chat-launcher md:px-8 md:py-8",
           )}
         >
+          {!isThread && (<>
           <IssueDuplicateBanner
             issue={issue}
             onUnmark={() =>
@@ -3407,6 +3510,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </AppLink>
           )}
 
+          {isPeek && <PeekProgressCard issue={issue} />}
+
           {isPeek && (
             <div className="mt-3">
               <IssuePropertyPills
@@ -3514,7 +3619,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>
 
           {/* Sub-issues — Linear-style */}
-          {childIssues.length === 0 && (
+          {childTotal === 0 && (
             <div className="mt-6">
               <button
                 type="button"
@@ -3526,8 +3631,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </button>
             </div>
           )}
-          {childIssues.length > 0 && (() => {
-            const doneCount = childIssues.filter((c) => issueBehavesAs(c, "done")).length;
+          {childTotal > 0 && (() => {
+            const doneCount = hasServerChildCounts
+              ? serverChildDoneCount
+              : childIssues.filter((c) => issueBehavesAs(c, "done")).length;
             return (
               // Provider hosts the shared right-click actions menu the rows
               // delegate to (one singleton menu, not one per row).
@@ -3549,9 +3656,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     <span>{t(($) => $.detail.sub_issues_label)}</span>
                   </button>
                   <div className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5">
-                    <ProgressRing done={doneCount} total={childIssues.length} size={11} />
+                    <ProgressRing done={doneCount} total={childTotal} size={11} />
                     <span className="text-micro text-muted-foreground tabular-nums font-medium">
-                      {doneCount}/{childIssues.length}
+                      {doneCount}/{childTotal}
                     </span>
                   </div>
                   {/* issue.id, not the route param — the endpoint takes a
@@ -3597,7 +3704,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <BatchActionToolbar issues={childIssues} placement="inline" />
 
                 {/* List */}
-                {!subIssuesCollapsed && (() => {
+                {!subIssuesCollapsed && childIssues.length > 0 && (() => {
                   const groups = groupSubIssuesByStage(childIssues);
                   const staged = childIssues.some((c) => c.stage != null);
                   return (
@@ -3622,6 +3729,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                           ))}
                         </Fragment>
                       ))}
+                      {hasServerChildCounts && childIssues.length < childTotal && (
+                        <div className="px-3 py-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={childPagesFetching}
+                            onClick={() =>
+                              setChildPageState({ id, count: childPageCount + 1 })
+                            }
+                          >
+                            {t(($) => $.detail.load_more_sub_issues)}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -3631,6 +3752,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           })()}
 
           <div className="my-8 border-t" />
+          </>)}
 
           {/* Activity / Comments */}
           <div>
@@ -3665,7 +3787,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     unresolved state is better shown as no control than as the
                     wrong one (MUL-5714). */}
                 {subscriptionKnown &&
-                  (!isSubscribed || (childCountKnown && childIssues.length === 0) ? (
+                  (!isSubscribed || (childCountKnown && childTotal === 0) ? (
                     /* One button, no menu, when there is nothing for the
                        subtree option to cover. This is the root-only path
                        (opt_out_scope='issue'), NOT the subtree one: even at
@@ -3807,6 +3929,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       ref={virtuosoRef}
                       customScrollParent={scrollContainerEl}
                       data={items}
+                      firstItemIndex={firstItemIndex}
+                      startReached={loadOlderTimeline}
                       initialScrollTop={restoredScrollTop}
                       increaseViewportBy={{ top: 800, bottom: 800 }}
                       computeItemKey={(_i, item) => `${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}
@@ -3821,6 +3945,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 )
               ) : (
                 <div className="mt-4">
+                  {hasOlderTimeline && (
+                    <div className="pb-3">
+                      <Button variant="ghost" size="sm" onClick={loadOlderTimeline}>
+                        {t(($) => $.timeline.load_earlier)}
+                      </Button>
+                    </div>
+                  )}
                   {items.map((item, i) => (
                     <Fragment key={`${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}>
                       {renderItem(i, item)}
@@ -3863,7 +3994,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               issueId={id}
               onSubmit={submitComment}
               onAccepted={scrollToTimelineBottom}
-              onEditAnnotation={(annotationId) => descriptionAnnotations.editAnnotation(annotationId, true)}
+              onEditAnnotation={(annotationId) => descriptionAnnotations.editAnnotation(annotationId, true) || !!onEditAnnotationSource?.(annotationId)}
+              replyContext={isThread ? replyContext : undefined}
             />
           </div>
         </div>

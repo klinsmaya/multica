@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { api } from "@multica/core/api";
 import { chatKeys } from "@multica/core/chat/queries";
 import { issueKeys } from "@multica/core/issues/queries";
+import { singleTimelinePage } from "@multica/core/issues/timeline-pages";
 import type { AgentTask, TimelineEntry } from "@multica/core/types";
 import type { TaskMessagePayload } from "@multica/core/types/events";
 import { renderWithI18n } from "../../test/i18n";
@@ -58,11 +59,11 @@ describe("InlineCommentRun", () => {
       { task_id: id, issue_id: "issue", seq: 3, type: "text", content: "Only touching web now.", created_at: "2026-09-07T00:00:20Z" },
     ]);
     const { client } = setup(task());
-    client.setQueryData<TimelineEntry[]>(issueKeys.timeline("issue"), [{
+    client.setQueryData(issueKeys.timelinePages("issue"), singleTimelinePage([{
       id: "steer", type: "comment", actor_type: "member", actor_id: "user",
       content: "Leave desktop alone.", created_at: "2026-09-07T00:00:08Z",
       supplements: [{ task_id: id, agent_id: "agent", status: "delivered", delivered_at: "2026-09-07T00:00:10Z" }],
-    }]);
+    } satisfies TimelineEntry]));
     await screen.findByText("Only touching web now.");
     fireEvent.click(screen.getByRole("button", { name: /View activity/ }));
     const steer = await screen.findByText("Reviewer added");

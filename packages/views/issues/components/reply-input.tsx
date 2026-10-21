@@ -21,6 +21,7 @@ import { SteerAttachmentNotice } from "./steer-attachment-notice";
 import { useStopRunsBeforeSend } from "./use-stop-runs-before-send";
 import { useCommentUploads } from "./use-comment-uploads";
 import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
+import { useAnnotationSourceLink } from "../hooks/use-annotation-source-link";
 
 // Types
 
@@ -77,6 +78,7 @@ function ReplyInput({
   // behavior as the top-level composer. A reply posts to the same issue, so
   // `/` has to offer the same thing here (MUL-5588).
   const quickActionMenu = useQuickActionMenu(issueId);
+  const annotationSourceLink = useAnnotationSourceLink(issueId);
   // If a draft key is provided, hydrate from store on mount (defaultValue is
   // the only injection point on ContentEditorRef) and flush on every onUpdate.
   const [initialDraft] = useState(() =>
@@ -86,7 +88,7 @@ function ReplyInput({
   const setDraft = useCommentDraftStore((s) => s.setDraft);
   const [isEmpty, setIsEmpty] = useState(!initialDraft?.trim());
   const annotations = useCommentDraftStore((s) => draftKey ? s.getAnnotations(draftKey) : EMPTY_REPLY_ANNOTATIONS);
-  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations), [content, annotations]);
+  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations, annotationSourceLink), [content, annotations, annotationSourceLink]);
   const canSend = !targetMissing && (annotations.length ? hasReplyIntent(content, annotations) : !isEmpty);
   const triggerPreview = useCommentTriggerPreview({ issueId, parentId, content: canSend ? composedContent : "" });
   // Uploads for this reply session (MUL-5181) — owned by the coordinator. With
@@ -164,7 +166,7 @@ function ReplyInput({
     containerRef: composerRef,
     normalize: (raw) => {
       const current = draftKey ? useCommentDraftStore.getState().getAnnotations(draftKey) : EMPTY_REPLY_ANNOTATIONS;
-      return !targetMissing && hasReplyIntent(raw, current) ? composeAnnotatedReply(raw, current) : "";
+      return !targetMissing && hasReplyIntent(raw, current) ? composeAnnotatedReply(raw, current, annotationSourceLink) : "";
     },
     // A thread reply is rarely the last thing the user has to say, so the caret
     // stays in the box for the next one. Unlike a top-level comment, the posted

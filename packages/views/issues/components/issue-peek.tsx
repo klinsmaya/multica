@@ -25,6 +25,7 @@ import { PAGE_GUTTER } from "../../layout/page-header";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 import { IssueDetail } from "./issue-detail";
+import { IssuePeekOutputStrip } from "./issue-peek-output-strip";
 import {
   IssuePeekActionsContext,
   IssuePeekIdContext,
@@ -52,6 +53,12 @@ const ARROW_STEPS: Record<string, Step> = {
   ArrowRight: "rightId",
 };
 
+interface PeekTarget {
+  issueId: string;
+  commentId?: string;
+  token: number;
+}
+
 /**
  * Owns the surface's side peek: which issue is open, the current view's order
  * for keyboard stepping, and the floating panel itself. Wraps the surface
@@ -65,19 +72,30 @@ const ARROW_STEPS: Record<string, Step> = {
  * issue under the pointer, so mouse users need not Tab to it first.
  */
 export function IssuePeekHost({ children }: { children: ReactNode }) {
-  const [peekId, setPeekId] = useState<string | null>(null);
+  const [peeked, setPeeked] = useState<PeekTarget | null>(null);
   const [columns, setColumns] = useState<IssuePeekColumns | null>(null);
 
   const actions = useMemo<IssuePeekActions>(
     () => ({
-      open: (issueId) => setPeekId(issueId),
-      toggle: (issueId) => setPeekId((current) => (current === issueId ? null : issueId)),
-      close: () => setPeekId(null),
+      open: (issueId, options) =>
+        setPeeked((current) => {
+          const commentId = options?.commentId;
+          // Reopening what is already shown changes nothing, so stepping or
+          // re-clicking never re-renders the panel.
+          if (current?.issueId === issueId && !current.commentId && !commentId) return current;
+          // Each comment landing bumps the token so a repeat of the same
+          // comment replays on the mounted detail.
+          const token = (current?.token ?? 0) + (commentId ? 1 : 0);
+          return { issueId, commentId, token };
+        }),
+      toggle: (issueId) =>
+        setPeeked((current) => (current?.issueId === issueId ? null : { issueId, token: current?.token ?? 0 })),
+      close: () => setPeeked(null),
       publishColumns: setColumns,
     }),
     [],
   );
-  const openId = peekId;
+  const openId = peeked?.issueId ?? null;
   const position = useMemo(() => locateInColumns(columns, openId), [columns, openId]);
 
   // Tracked from pointer events rather than queried with `:hover`, so the
@@ -121,7 +139,14 @@ export function IssuePeekHost({ children }: { children: ReactNode }) {
                 (J / K is keyboard navigation — it must not animate); only
                 opening and closing the panel does. */}
             <AnimatePresence initial={false}>
-              {openId && <IssuePeekPanel key="issue-peek" issueId={openId} />}
+              {openId && (
+                <IssuePeekPanel
+                  key="issue-peek"
+                  issueId={openId}
+                  highlightCommentId={peeked?.commentId}
+                  highlightRequestToken={peeked?.token}
+                />
+              )}
             </AnimatePresence>
           </div>
         </IssuePeekPositionContext.Provider>
@@ -133,7 +158,15 @@ export function IssuePeekHost({ children }: { children: ReactNode }) {
 // Memoized, and blind to the column order: the host re-renders on every board
 // reorder (a drag publishes columns on each hover), and none of that may reach
 // IssueDetail. What does follow the order lives in IssuePeekFollow.
-const IssuePeekPanel = memo(function IssuePeekPanel({ issueId }: { issueId: string }) {
+const IssuePeekPanel = memo(function IssuePeekPanel({
+  issueId,
+  highlightCommentId,
+  highlightRequestToken,
+}: {
+  issueId: string;
+  highlightCommentId?: string;
+  highlightRequestToken?: number;
+}) {
   const { t } = useT("issues");
   const actions = useIssuePeekActions()!;
   const panelRef = useRef<HTMLElement>(null);
@@ -189,9 +222,12 @@ const IssuePeekPanel = memo(function IssuePeekPanel({ issueId }: { issueId: stri
           key={issueId}
           issueId={issueId}
           variant="peek"
+          highlightCommentId={highlightCommentId}
+          highlightRequestToken={highlightRequestToken}
           defaultSidebarOpen={false}
           leadingAction={<IssuePeekNav />}
           trailingActions={<IssuePeekTrailingActions issueId={issueId} />}
+          belowHeader={<IssuePeekOutputStrip issueId={issueId} />}
           onDelete={actions.close}
         />
       </ErrorBoundary>

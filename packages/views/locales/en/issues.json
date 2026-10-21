@@ -246,12 +246,14 @@
     "tooltip_table": "Table view",
     "tooltip_gantt": "Gantt view",
     "tooltip_swimlane": "Swimlane view",
+    "tooltip_feed": "Feed view",
     "section": "View",
     "board": "Board",
     "list": "List",
     "table": "Table",
     "gantt": "Gantt",
-    "swimlane": "Swimlane"
+    "swimlane": "Swimlane",
+    "feed": "Feed"
   },
   "table": {
     "select_all": "Select all visible issues",
@@ -393,6 +395,7 @@
     "sub_issues_label": "Sub-issues",
     "sub_issue_of": "Sub-issue of",
     "add_sub_issues": "Add sub-issues",
+    "load_more_sub_issues": "Load more sub-issues",
     "add_sub_issue_tooltip": "Add sub-issue",
     "add_sub_issue_aria": "Add sub-issue",
     "select_all_sub_issues_aria": "Select all sub-issues",
@@ -493,7 +496,8 @@
     "pull_requests_empty_title": "No linked pull requests."
   },
   "timeline": {
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "load_earlier": "Load earlier comments"
   },
   "activity": {
     "created": "created this issue",
@@ -658,6 +662,7 @@
     "recipient_count_other": "{{count}} agents will receive this",
     "steer_attachment_notice": "Only text can join a running run, so a message with files is handled after it.",
     "restart_send": "Stop and send",
+    "reply_context_remove": "Remove {{name}} from this reply",
     "restart_failed": "Couldn't stop the current run. Your message wasn't sent."
   },
   "reply": {
@@ -666,6 +671,7 @@
       "confirm_add": "Add annotation",
       "save": "Save annotation",
       "add_comment": "Add to comment",
+      "add_document": "Annotate",
       "add": "Add to reply",
       "note_label": "Comment",
       "count_one": "{{count}} annotation",
@@ -701,6 +707,68 @@
     "issues_count_one": "{{count}} issue",
     "issues_count_other": "{{count}} issues",
     "chip_agents_working_unknown": "Agents working: —"
+  },
+  "feed": {
+    "reply_count_one": "{{count}} reply",
+    "reply_count_other": "{{count}} replies",
+    "last_reply": "Last reply {{time}}",
+    "open_threads_one": "{{count}} open thread",
+    "open_threads_other": "{{count}} open threads",
+    "open_thread": "Open thread",
+    "unread": "Unread",
+    "awaiting_reply": "Awaiting your reply",
+    "decision": {
+      "title": "Waiting on you",
+      "open_thread": "View thread",
+      "reply_here": "Reply here"
+    },
+    "progress": {
+      "label": "Latest progress",
+      "count": "{{done}}/{{total}} done",
+      "more": "+{{number}} more",
+      "item_done": "Done:",
+      "item_open": "To do:"
+    },
+    "empty": "No issues in this feed",
+    "quick": {
+      "continue": "Continue recent work",
+      "plan": "Make a plan",
+      "plan_title": "Make a plan",
+      "new": "New issue"
+    },
+    "sort": {
+      "created": "By created",
+      "activity": "By recent activity"
+    },
+    "new_messages": "New messages",
+    "output": {
+      "pull_request": "Pull request #{{number}}, {{state}}",
+      "state_open": "Open",
+      "checks_failed": "Checks failed",
+      "checks_pending": "Checks running",
+      "deliverables_one": "{{count}} deliverable",
+      "deliverables_other": "{{count}} deliverables",
+      "deliverables_updated": "Last updated {{time}}"
+    },
+    "composer": {
+      "placeholder": "Send a message — first line is the title, @ to assign",
+      "send": "Send",
+      "sending": "Sending…",
+      "failed": "Couldn't send",
+      "retry": "Retry",
+      "reply_to_one": "Reply to {{count}} thread",
+      "reply_to_other": "Reply to {{count}} threads",
+      "reply_placeholder_one": "Reply to {{count}} thread — posts a comment there",
+      "reply_placeholder_other": "Reply to {{count}} threads — posts a comment in each",
+      "reply_clear": "Clear all",
+      "reply_remove": "Remove {{identifier}}",
+      "reply_marker": "From project chat · {{name}}"
+    },
+    "forward": {
+      "title_one": "Sent to {{count}} thread",
+      "title_other": "Sent to {{count}} threads",
+      "dismiss": "Dismiss"
+    }
   },
   "filtered_empty": {
     "title": "No issues match these filters",
@@ -1482,7 +1550,31 @@
     "overview_summary_with_size_other": "{{count}} deliverables · {{size}} total",
     "overview_close": "Close",
     "overview_empty": "No deliverables of this type.",
-    "group_comment_by": "Comment by {{name}}"
+    "group_comment_by": "Comment by {{name}}",
+    "open_focus": "Open full screen",
+    "open_focus_named": "Open {{name}} full screen",
+    "focus_comments": "Comments",
+    "focus_unavailable": "This deliverable is no longer available.",
+    "progressive": {
+      "pending": "Pending",
+      "changed_label": "Claude",
+      "writing": "Writing · {{done}}/{{total}} sections",
+      "unfinished": "Unfinished · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "Fit all",
+      "prototypes": "Prototypes",
+      "play": "Play",
+      "play_named": "Play {{name}}",
+      "back": "Back to canvas",
+      "save_layout": "Save layout",
+      "saving": "Saving…",
+      "save_failed": "Couldn't save the layout",
+      "file_not_found": "File not found: {{name}}",
+      "load_failed": "Couldn't load {{name}}",
+      "invalid": "This canvas can't be read",
+      "page": "Page"
+    }
   },
   "workflows": {
     "default_name": "Default",

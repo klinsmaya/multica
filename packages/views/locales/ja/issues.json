@@ -242,12 +242,14 @@
     "tooltip_table": "テーブル表示",
     "tooltip_gantt": "ガント表示",
     "tooltip_swimlane": "スイムレーン表示",
+    "tooltip_feed": "フィード表示",
     "section": "表示",
     "board": "ボード",
     "list": "リスト",
     "table": "テーブル",
     "gantt": "ガント",
-    "swimlane": "スイムレーン"
+    "swimlane": "スイムレーン",
+    "feed": "フィード"
   },
   "table": {
     "select_all": "表示中のタスクをすべて選択",
@@ -389,6 +391,7 @@
     "sub_issues_label": "サブタスク",
     "sub_issue_of": "親タスク",
     "add_sub_issues": "サブタスクを追加",
+    "load_more_sub_issues": "さらにサブタスクを表示",
     "add_sub_issue_tooltip": "サブタスクを追加",
     "add_sub_issue_aria": "サブタスクを追加",
     "select_all_sub_issues_aria": "すべてのサブタスクを選択",
@@ -487,7 +490,8 @@
     "pull_requests_empty_title": "関連する PR はありません。"
   },
   "timeline": {
-    "loading": "読み込み中..."
+    "loading": "読み込み中...",
+    "load_earlier": "以前のコメントを読み込む"
   },
   "activity": {
     "created": "このタスクを作成しました",
@@ -638,6 +642,7 @@
     "recipient_count_other": "{{count}} 個のエージェントが受け取ります",
     "steer_attachment_notice": "実行中に追加できるのはテキストのみのため、ファイル付きのメッセージはこの実行の後に処理されます。",
     "restart_send": "停止して送信",
+    "reply_context_remove": "この返信から {{name}} を外す",
     "restart_failed": "現在の実行を停止できませんでした。メッセージは送信されていません。"
   },
   "reply": {
@@ -646,6 +651,7 @@
       "confirm_add": "注釈を追加",
       "save": "注釈を保存",
       "add_comment": "コメントに追加",
+      "add_document": "注釈を付ける",
       "add": "返信に追加",
       "note_label": "コメント",
       "count_other": "{{count}} 件の注釈",
@@ -674,6 +680,62 @@
     "chip_agents_working_other": "作業中のエージェント {{count}} 件",
     "issues_count_other": "タスク {{count}} 件",
     "chip_agents_working_unknown": "作業中のエージェント: —"
+  },
+  "feed": {
+    "reply_count_other": "返信 {{count}} 件",
+    "last_reply": "最終返信 {{time}}",
+    "open_threads_other": "未解決のスレッド {{count}} 件",
+    "open_thread": "スレッドを開く",
+    "unread": "未読",
+    "awaiting_reply": "返信待ち",
+    "decision": {
+      "title": "あなたの判断待ち",
+      "open_thread": "スレッドを見る",
+      "reply_here": "ここに返信"
+    },
+    "progress": {
+      "label": "最新の進捗",
+      "count": "{{done}}/{{total}} 完了",
+      "more": "ほか {{number}} 件",
+      "item_done": "完了：",
+      "item_open": "未完了："
+    },
+    "empty": "フィードに表示するタスクはありません",
+    "quick": {
+      "continue": "最近の作業を続ける",
+      "plan": "計画を立てる",
+      "plan_title": "計画を立てる",
+      "new": "新規タスク"
+    },
+    "sort": {
+      "created": "作成順",
+      "activity": "最近の活動順"
+    },
+    "new_messages": "新着メッセージ",
+    "output": {
+      "pull_request": "Pull request #{{number}}、{{state}}",
+      "state_open": "オープン",
+      "checks_failed": "チェック失敗",
+      "checks_pending": "チェック実行中",
+      "deliverables_other": "成果物 {{count}} 件",
+      "deliverables_updated": "最終更新 {{time}}"
+    },
+    "composer": {
+      "placeholder": "メッセージを送信。1行目がタイトル、@ で担当者を指定",
+      "send": "送信",
+      "sending": "送信中…",
+      "failed": "送信できませんでした",
+      "retry": "再試行",
+      "reply_to_other": "{{count}} 件のスレッドに返信",
+      "reply_placeholder_other": "{{count}} 件のスレッドに返信 — それぞれにコメントを投稿します",
+      "reply_clear": "すべて解除",
+      "reply_remove": "{{identifier}} を外す",
+      "reply_marker": "プロジェクトの会話から · {{name}}"
+    },
+    "forward": {
+      "title_other": "{{count}} 件のスレッドに送信しました",
+      "dismiss": "閉じる"
+    }
   },
   "filtered_empty": {
     "title": "フィルター条件に一致するタスクがありません",
@@ -1432,7 +1494,31 @@
     "overview_summary_with_size_other": "成果物 {{count}} 件 · 合計 {{size}}",
     "overview_close": "閉じる",
     "overview_empty": "この種類の成果物はありません。",
-    "group_comment_by": "{{name}} のコメント"
+    "group_comment_by": "{{name}} のコメント",
+    "open_focus": "全画面で開く",
+    "open_focus_named": "{{name}} を全画面で開く",
+    "focus_comments": "コメント",
+    "focus_unavailable": "この成果物は利用できなくなりました。",
+    "progressive": {
+      "pending": "未執筆",
+      "changed_label": "Claude",
+      "writing": "執筆中 · {{done}}/{{total}} 節",
+      "unfinished": "未完了 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "すべて表示",
+      "prototypes": "プロトタイプ",
+      "play": "再生",
+      "play_named": "{{name}} を再生",
+      "back": "キャンバスに戻る",
+      "save_layout": "レイアウトを保存",
+      "saving": "保存中…",
+      "save_failed": "レイアウトを保存できませんでした",
+      "file_not_found": "ファイルが見つかりません: {{name}}",
+      "load_failed": "{{name}} を読み込めませんでした",
+      "invalid": "このキャンバスを読み取れません",
+      "page": "ページ"
+    }
   },
   "workflows": {
     "default_name": "Default",

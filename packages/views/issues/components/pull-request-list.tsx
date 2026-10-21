@@ -36,6 +36,7 @@ import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import type {
   GitHubPullRequest,
   GitHubPullRequestState,
+  IssueThreadPullRequestChecksState,
   PRAutoComplete,
 } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
@@ -69,6 +70,41 @@ const STATE_ICON: Record<
   merged: { icon: GitMerge, className: "text-violet-600 dark:text-violet-400" },
   closed: { icon: GitPullRequestClosed, className: "text-rose-600 dark:text-rose-400" },
 };
+
+/** A PR's state icon in the list's palette; a state this build does not know gets the plain PR icon. */
+export function PullRequestStateIcon({ state, className }: { state: string; className?: string }) {
+  const cfg = STATE_ICON[state as GitHubPullRequestState] ?? { icon: GitPullRequest, className: "" };
+  const Icon = cfg.icon;
+  return <Icon className={cn(cfg.className, className)} aria-hidden="true" />;
+}
+
+const CHECKS_ICON: Record<
+  Exclude<IssueThreadPullRequestChecksState, "none">,
+  { icon: React.ComponentType<{ className?: string }>; className: string; spin?: boolean }
+> = {
+  passed: { icon: CheckCircle2, className: "text-emerald-600 dark:text-emerald-400" },
+  failed: { icon: XCircle, className: "text-rose-600 dark:text-rose-400" },
+  pending: { icon: LoaderCircle, className: "text-amber-600 dark:text-amber-400", spin: true },
+};
+
+/** The CI icon of a coarse checks verdict, matching the verdict pill's icons; nothing for `none`. */
+export function PullRequestChecksIcon({
+  state,
+  className,
+}: {
+  state: IssueThreadPullRequestChecksState;
+  className?: string;
+}) {
+  if (state === "none") return null;
+  const cfg = CHECKS_ICON[state];
+  const Icon = cfg.icon;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn(cfg.className, cfg.spin ? "motion-safe:animate-spin" : null, className)}
+    />
+  );
+}
 
 export function PullRequestList({
   issueId,

@@ -116,6 +116,135 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
+  describe("listTimeline (root-paged)", () => {
+    const entry = {
+      type: "comment",
+      id: "e-1",
+      actor_type: "member",
+      actor_id: "u-1",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    const emptyPage = {
+      entries: [],
+      has_more_before: false,
+      has_more_after: false,
+      next_before: null,
+      next_before_id: null,
+    };
+
+    it("sends the page size as roots and encodes the composite cursor", async () => {
+      stubFetchJson(emptyPage);
+      const client = new ApiClient("https://api.example.test");
+      await client.listTimeline("issue-1", {
+        limit: 50,
+        before: "2026-01-01T08:00:00.123456+08:00",
+        beforeId: "root-7",
+      });
+      const url = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      expect(url.pathname).toBe("/api/issues/issue-1/timeline");
+      expect(url.searchParams.get("roots")).toBe("50");
+      // '+' must survive as a plus sign, not decode to a space.
+      expect(url.searchParams.get("before")).toBe("2026-01-01T08:00:00.123456+08:00");
+      expect(url.searchParams.get("before_id")).toBe("root-7");
+      expect(url.searchParams.has("around")).toBe(false);
+    });
+
+    it("sends only roots for a first page and around for an anchor", async () => {
+      const client = new ApiClient("https://api.example.test");
+      stubFetchJson(emptyPage);
+      await client.listTimeline("issue-1", { limit: 50 });
+      const first = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      stubFetchJson(emptyPage);
+      await client.listTimeline("issue-1", { limit: 50, around: "c-9" });
+      const second = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      expect([...first.searchParams.keys()]).toEqual(["roots"]);
+      expect(second.searchParams.get("around")).toBe("c-9");
+      expect(second.searchParams.has("before")).toBe(false);
+    });
+
+    it("keeps the unpaged request unchanged", async () => {
+      stubFetchJson([]);
+      const client = new ApiClient("https://api.example.test");
+      await client.listTimeline("issue-1");
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/issue-1/timeline",
+      );
+    });
+
+    it("parses a full page", async () => {
+      stubFetchJson({
+        entries: [entry],
+        has_more_before: true,
+        has_more_after: false,
+        next_before: "2026-01-01T00:00:00.000001Z",
+        next_before_id: "e-1",
+        target_index: 0,
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page.has_more_before).toBe(true);
+      expect(page.next_before).toBe("2026-01-01T00:00:00.000001Z");
+      expect(page.next_before_id).toBe("e-1");
+      expect(page.target_index).toBe(0);
+    });
+
+    it("defaults every optional field of a minimal page", async () => {
+      stubFetchJson({ entries: [entry] });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page).toMatchObject({
+        has_more_before: false,
+        has_more_after: false,
+        next_before: null,
+        next_before_id: null,
+      });
+      expect(page.target_index).toBeUndefined();
+    });
+
+    it("treats a wrongly typed cursor or flag as absent instead of failing the page", async () => {
+      stubFetchJson({
+        entries: [entry],
+        has_more_before: "yes",
+        next_before: 12,
+        next_before_id: { id: "e-1" },
+        target_index: "0",
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page).toMatchObject({ has_more_before: false, next_before: null, next_before_id: null });
+      expect(page.target_index).toBeUndefined();
+    });
+
+    it("falls back to an empty page for a malformed body", async () => {
+      const client = new ApiClient("https://api.example.test");
+      for (const body of [null, JSON.stringify("nope"), 7, { entries: "not-an-array" }, { entries: [{ id: 1 }] }]) {
+        stubFetchJson(body);
+        await expect(client.listTimeline("issue-1", { limit: 50 })).resolves.toEqual(emptyPage);
+      }
+    });
+
+    it("reads a bare timeline array from an older server as one page with nothing older", async () => {
+      stubFetchJson([entry]);
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page).toMatchObject({ has_more_before: false, next_before: null });
+    });
+
+    it("preserves fields the schema does not list", async () => {
+      stubFetchJson({
+        entries: [{ ...entry, future_field: 1 }],
+        future_page_field: "kept",
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = (await client.listTimeline("issue-1", { limit: 50 })) as unknown as Record<string, unknown>;
+      expect(page.future_page_field).toBe("kept");
+      expect((page.entries as Array<Record<string, unknown>>)[0]!.future_field).toBe(1);
+    });
+  });
+
   describe("listIssues", () => {
     it("falls back to an empty list when the response is malformed", async () => {
       // `issues` having the wrong type triggers the fallback. An object
@@ -981,6 +1110,236 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
+  describe("listThreadSummaries", () => {
+    it("falls back to no summaries when the body is malformed", async () => {
+      stubFetchJson({ summaries: "invalid" });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
+    });
+
+    it("defaults missing counters, participants and last reply", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1" }] });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toEqual([
+        {
+          issue_id: "issue-1",
+          reply_count: 0,
+          last_reply_at: null,
+          last_reply_excerpt: null,
+          open_thread_count: 0,
+          participants: [],
+          last_read_at: null,
+          awaiting_me: [],
+          latest_progress: null,
+          pull_requests: [],
+          deliverable_count: 0,
+          last_deliverable_at: null,
+        },
+      ]);
+    });
+
+    it("keeps the output strip fields and defaults a PR's optional ones", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            deliverable_count: 2,
+            last_deliverable_at: "2026-05-01T10:00:00.5Z",
+            pull_requests: [
+              {
+                id: "pr-1",
+                number: 12,
+                title: "Fix it",
+                url: "https://github.com/o/r/pull/12",
+                state: "merged",
+                additions: 40,
+                deletions: 3,
+                checks_state: "passed",
+              },
+              { id: "pr-2" },
+            ],
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries[0]?.deliverable_count).toBe(2);
+      expect(res.summaries[0]?.last_deliverable_at).toBe("2026-05-01T10:00:00.5Z");
+      expect(res.summaries[0]?.pull_requests).toEqual([
+        {
+          id: "pr-1",
+          number: 12,
+          title: "Fix it",
+          url: "https://github.com/o/r/pull/12",
+          state: "merged",
+          additions: 40,
+          deletions: 3,
+          checks_state: "passed",
+        },
+        {
+          id: "pr-2",
+          number: 0,
+          title: "",
+          url: "",
+          state: "open",
+          additions: 0,
+          deletions: 0,
+          checks_state: "none",
+        },
+      ]);
+    });
+
+    it("keeps the rows when a PR carries an unknown state or checks_state", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            reply_count: 4,
+            pull_requests: [
+              { id: "pr-1", state: "queued", checks_state: "flaky" },
+              { id: "pr-2", state: "open", checks_state: null },
+            ],
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toHaveLength(1);
+      expect(res.summaries[0]?.reply_count).toBe(4);
+      expect(res.summaries[0]?.pull_requests.map((p) => [p.state, p.checks_state])).toEqual([
+        ["queued", "none"],
+        ["open", "none"],
+      ]);
+    });
+
+    it("keeps the last reply excerpt and nulls an explicit null", async () => {
+      stubFetchJson({
+        summaries: [
+          { issue_id: "issue-1", last_reply_excerpt: "Looks good" },
+          { issue_id: "issue-2", last_reply_excerpt: null },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries.map((s) => s.last_reply_excerpt)).toEqual(["Looks good", null]);
+    });
+
+    it("falls back to no summaries when last_reply_excerpt is malformed", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", last_reply_excerpt: 5 }] });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
+    });
+
+    it("keeps an explicit null last_deliverable_at", async () => {
+      stubFetchJson({
+        summaries: [{ issue_id: "issue-1", last_deliverable_at: null, deliverable_count: 1 }],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries[0]?.last_deliverable_at).toBeNull();
+      expect(res.summaries[0]?.deliverable_count).toBe(1);
+    });
+
+    it("falls back to no summaries when pull_requests is malformed", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", pull_requests: "invalid" }] });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
+    });
+
+    it("keeps the caller's read cursor and nulls an explicit null", async () => {
+      stubFetchJson({
+        summaries: [
+          { issue_id: "issue-1", last_read_at: "2026-05-01T10:00:00.123456789Z" },
+          { issue_id: "issue-2", last_read_at: null },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries.map((s) => s.last_read_at)).toEqual([
+        "2026-05-01T10:00:00.123456789Z",
+        null,
+      ]);
+    });
+
+    it("keeps the caller's awaiting_me entries and defaults their optional fields", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            awaiting_me: [
+              {
+                comment_id: "c-1",
+                actor_id: "agent-1",
+                excerpt: "Ship @Me?",
+                created_at: "2026-05-01T10:00:00Z",
+              },
+              { comment_id: "c-2", actor_id: "agent-2" },
+            ],
+          },
+          { issue_id: "issue-2" },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries[0]?.awaiting_me).toEqual([
+        {
+          comment_id: "c-1",
+          actor_id: "agent-1",
+          excerpt: "Ship @Me?",
+          created_at: "2026-05-01T10:00:00Z",
+        },
+        { comment_id: "c-2", actor_id: "agent-2", excerpt: "", created_at: "" },
+      ]);
+      expect(res.summaries[1]?.awaiting_me).toEqual([]);
+    });
+
+    it("keeps latest_progress and nulls a missing, null or content-less one", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            latest_progress: {
+              comment_id: "c-1",
+              content: "- [x] a\n- [ ] b",
+              created_at: "2026-05-01T10:00:00Z",
+            },
+          },
+          { issue_id: "issue-2" },
+          { issue_id: "issue-3", latest_progress: null },
+          { issue_id: "issue-4", latest_progress: { comment_id: "c-4" } },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2", "issue-3", "issue-4"]);
+      expect(res.summaries[0]?.latest_progress).toEqual({
+        comment_id: "c-1",
+        content: "- [x] a\n- [ ] b",
+        created_at: "2026-05-01T10:00:00Z",
+      });
+      expect(res.summaries[1]?.latest_progress).toBeNull();
+      expect(res.summaries[2]?.latest_progress).toBeNull();
+      expect(res.summaries[3]?.latest_progress).toEqual({
+        comment_id: "c-4",
+        content: "",
+        created_at: "",
+      });
+    });
+
+    it("falls back to an empty list for a malformed latest_progress", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", latest_progress: "oops" }] });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toEqual([]);
+    });
+  });
+
   describe("getChildIssueProgress", () => {
     it("validates the response before query selectors iterate it", async () => {
       stubFetchJson({ progress: "invalid" });
@@ -989,6 +1348,29 @@ describe("ApiClient schema fallback", () => {
       await expect(client.getChildIssueProgress()).resolves.toEqual({
         progress: [],
       });
+    });
+
+    it("requests the workspace-wide map when no parent ids are given", async () => {
+      stubFetchJson({ progress: [] });
+      const client = new ApiClient("https://api.example.test");
+
+      await client.getChildIssueProgress();
+
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/child-progress",
+      );
+    });
+
+    it("narrows the request with parent_ids and falls back on a malformed body", async () => {
+      stubFetchJson({ progress: "invalid" });
+      const client = new ApiClient("https://api.example.test");
+
+      await expect(client.getChildIssueProgress(["p-1", "p-2"])).resolves.toEqual({
+        progress: [],
+      });
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/child-progress?parent_ids=p-1,p-2",
+      );
     });
   });
 

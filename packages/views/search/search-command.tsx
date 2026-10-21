@@ -38,7 +38,8 @@ import {
   useRecentIssuesStore,
   useResolvedExpandStore,
 } from "@multica/core/issues/stores";
-import { issueDetailOptions, issueTimelineOptions } from "@multica/core/issues/queries";
+import { issueDetailOptions, issueTimelineInfiniteOptions } from "@multica/core/issues/queries";
+import { flattenTimelinePages } from "@multica/core/issues/timeline-pages";
 import { useWorkspaceId } from "@multica/core";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { paths, useWorkspacePaths, WORKSPACE_PAGES } from "@multica/core/paths";
@@ -488,15 +489,16 @@ export function SearchCommand() {
           keywords: ["fold", "collapse", "comments", "收起", "折叠", "评论"],
           onSelect: () => {
             // The timeline is already cached whenever the issue page has
-            // rendered; ensureQueryData only fetches on a cold cache. If it
-            // still can't load, no comments are on screen — dropping the
-            // action matches the visible state.
+            // rendered; ensureInfiniteQueryData only loads on a cold cache. If
+            // it still can't load, no comments are on screen — dropping the
+            // action matches the visible state. Only the loaded pages are
+            // folded; older pages open unfolded.
             void queryClient
-              .ensureQueryData(issueTimelineOptions(issueId))
-              .then((entries) => {
+              .ensureInfiniteQueryData(issueTimelineInfiniteOptions(issueId))
+              .then((data) => {
                 useCommentCollapseStore
                   .getState()
-                  .collapseAll(issueId, rootCommentIds(entries));
+                  .collapseAll(issueId, rootCommentIds(flattenTimelinePages(data)));
                 useResolvedExpandStore.getState().collapseAll(issueId);
               })
               .catch(() => {});
@@ -510,12 +512,12 @@ export function SearchCommand() {
           keywords: ["unfold", "expand", "comments", "展开", "评论"],
           onSelect: () => {
             void queryClient
-              .ensureQueryData(issueTimelineOptions(issueId))
-              .then((entries) => {
+              .ensureInfiniteQueryData(issueTimelineInfiniteOptions(issueId))
+              .then((data) => {
                 useCommentCollapseStore.getState().expandAll(issueId);
                 useResolvedExpandStore
                   .getState()
-                  .expandAll(issueId, resolvedThreadRootIds(entries));
+                  .expandAll(issueId, resolvedThreadRootIds(flattenTimelinePages(data)));
               })
               .catch(() => {});
             setOpen(false);

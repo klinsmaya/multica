@@ -32,6 +32,7 @@ import {
 import type { Issue } from "@multica/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
+import { FeedView } from "../components/feed-view";
 import { GanttView } from "../components/gantt-view";
 import { IssuesHeader } from "../components/issues-header";
 import { ListView } from "../components/list-view";
@@ -89,6 +90,7 @@ export function IssueSurface({
   showClientEmpty,
   batchToolbar = "always",
   contentClassName,
+  onViewModeChange,
 }: IssueSurfaceComponentProps) {
   const wsId = useWorkspaceId();
   // Saved views exist on workspace / my / project surfaces only.
@@ -172,6 +174,7 @@ export function IssueSurface({
         createDefaults={createDefaults}
         search={search}
         renderHeader={renderHeader}
+        onViewModeChange={onViewModeChange}
         renderEmpty={renderEmpty}
         renderLoading={renderLoading}
         clientFilter={clientFilter}
@@ -196,6 +199,7 @@ function IssueSurfaceContent({
   showClientEmpty,
   batchToolbar,
   contentClassName,
+  onViewModeChange,
 }: Omit<IssueSurfaceComponentProps, "surfaceKey">) {
   const workspaceId = useWorkspaceId();
   // One polling owner for the whole surface; individual cards only select cache data.
@@ -219,6 +223,9 @@ function IssueSurfaceContent({
   useEffect(() => {
     if (controller.viewMode !== "table") setTableLoadedIssues([]);
   }, [controller.viewMode]);
+  useEffect(() => {
+    onViewModeChange?.(controller.viewMode);
+  }, [controller.viewMode, onViewModeChange]);
   const issues = useMemo(
     () =>
       clientFilter
@@ -268,6 +275,7 @@ function IssueSurfaceContent({
             scopedIssues={controller.surfaceIssues}
             workingAgents={controller.workingAgents}
             allowGantt={controller.allowGantt}
+            allowFeed={controller.allowFeed}
             isRefreshing={controller.isRefreshing}
             facetCountsExact={
               controller.facetCountsExact
@@ -372,6 +380,7 @@ function IssueSurfaceContent({
             {controller.viewMode === "gantt" && (
               <GanttView issues={controller.filteredGanttIssues} />
             )}
+            {controller.viewMode === "feed" && <FeedView issues={issues} projectId={scope.type === "project" ? scope.projectId : null} />}
             {controller.viewMode === "swimlane" && (
               <SwimLaneView
                 issues={issues}
@@ -463,7 +472,7 @@ function FilteredEmptyState() {
 // any data is — a surface-level stand-in would replace all of that with bars
 // of a different shape and then jump when the rows arrived.
 function IssueSurfaceSkeleton({ mode }: { mode: string }) {
-  if (mode === "list") {
+  if (mode === "list" || mode === "feed") {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {Array.from({ length: 4 }).map((_, i) => (

@@ -104,6 +104,7 @@ const LAYOUT_LABEL_KEY = {
   table: "table",
   swimlane: "swimlane",
   gantt: "gantt",
+  feed: "feed",
 } as const;
 
 const GROUPING_LABEL_KEY = {
@@ -245,7 +246,7 @@ export function DraftDefinitionFields() {
             <div className="flex items-center gap-3">
               <Label className={ROW_LABEL}>{t(($) => $.save_view.layout_label)}</Label>
               <Select
-                items={(["list", "board", "table", "swimlane"] as const).map((mode) => ({
+                items={(["list", "board", "table", "swimlane", "feed"] as const).map((mode) => ({
                   value: mode as string,
                   label: t(($) => $.view[LAYOUT_LABEL_KEY[mode]]),
                 }))}
@@ -259,7 +260,7 @@ export function DraftDefinitionFields() {
                 </SelectTrigger>
                 <SelectContent align="start">
                   <SelectGroup>
-                    {(["list", "board", "table", "swimlane"] as const).map((mode) => (
+                    {(["list", "board", "table", "swimlane", "feed"] as const).map((mode) => (
                       <SelectItem key={mode} value={mode}>
                         {t(($) => $.view[LAYOUT_LABEL_KEY[mode]])}
                       </SelectItem>
@@ -602,6 +603,7 @@ export function SaveViewDialog({
         // first-open default, freely adjustable per user afterwards.
         showSubIssues: state.showSubIssues,
         viewMode: state.viewMode,
+        feedSort: state.feedSort,
         grouping: state.grouping,
         sortBy: state.sortBy,
         sortDirection: state.sortDirection,

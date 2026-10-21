@@ -4,11 +4,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AgentTask, Attachment, Issue, IssueStatusEntry, Label, TimelineEntry } from "@multica/core/types";
 import { issueKeys } from "@multica/core/issues/queries";
+import { flattenTimelinePages, singleTimelinePage } from "@multica/core/issues/timeline-pages";
 import { issueStatusKeys } from "@multica/core/issue-statuses";
 import { I18nProvider } from "@multica/core/i18n/react";
 import { toast } from "sonner";
 import { useResolvedExpandStore } from "@multica/core/issues/stores/resolved-expand-store";
-import { useCommentCollapseStore } from "@multica/core/issues/stores";
+import { useCommentCollapseStore, useSubIssuesCollapseStore } from "@multica/core/issues/stores";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
@@ -307,7 +308,13 @@ vi.mock("../../projects/components/project-picker", () => ({
 // Mock api
 const mockApiObj = vi.hoisted(() => ({
   getIssue: vi.fn(),
-  listTimeline: vi.fn().mockResolvedValue([]),
+  listTimeline: vi.fn().mockResolvedValue({
+    entries: [],
+    has_more_before: false,
+    has_more_after: false,
+    next_before: null,
+    next_before_id: null,
+  }),
   listComments: vi.fn().mockResolvedValue([]),
   createComment: vi.fn(),
   updateComment: vi.fn(),
@@ -330,6 +337,7 @@ const mockApiObj = vi.hoisted(() => ({
   listProperties: vi.fn().mockResolvedValue({ properties: [], total: 0 }),
   listIssues: vi.fn().mockResolvedValue({ issues: [], total: 0 }),
   uploadFile: vi.fn(),
+  markIssueRead: vi.fn().mockResolvedValue(undefined),
   listIssueReactions: vi.fn().mockResolvedValue([]),
   addIssueReaction: vi.fn(),
   removeIssueReaction: vi.fn(),
@@ -343,6 +351,19 @@ const mockApiObj = vi.hoisted(() => ({
   getProject: vi.fn(),
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
+
+// The issue timeline loads as pages of root comments; most tests only care
+// about the entries on the single page they stub.
+function mockTimelineEntries(entries: Array<Partial<TimelineEntry>>) {
+  mockApiObj.listTimeline.mockResolvedValue({
+    entries,
+    has_more_before: false,
+    has_more_after: false,
+    next_before: null,
+    next_before_id: null,
+  });
+}
+
 
 vi.mock("@multica/core/api", () => ({
   api: mockApiObj,
@@ -476,10 +497,12 @@ const scrollToIndexSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("react-virtuoso", () => ({
   Virtuoso: forwardRef(function MockVirtuoso(
-    { data, itemContent, computeItemKey }: {
+    { data, itemContent, computeItemKey, firstItemIndex, startReached }: {
       data: unknown[];
       itemContent: (i: number, item: unknown) => unknown;
       computeItemKey: (i: number, item: unknown) => React.Key;
+      firstItemIndex?: number;
+      startReached?: () => void;
     },
     ref: any,
   ) {
@@ -491,7 +514,9 @@ vi.mock("react-virtuoso", () => ({
       scrollToIndex: scrollToIndexSpy,
     }));
     return (
-      <div data-testid="virtuoso-mock">
+      <div data-testid="virtuoso-mock" data-first-item-index={firstItemIndex}>
+        {/* Stands in for the user scrolling to the top of the list. */}
+        <button type="button" data-testid="virtuoso-start-reached" onClick={() => startReached?.()} />
         {data.map((item, i) => (
           <div key={computeItemKey(i, item)}>{itemContent(i, item) as React.ReactElement}</div>
         ))}
@@ -675,7 +700,7 @@ function renderIssueDetailWithHighlight(
     // the issue itself has finished loading, so the effect that scrolls to
     // the comment fires once with `loading=true` (skeleton still rendered,
     // no comment DOM) and must re-fire when `loading` flips to false.
-    queryClient.setQueryData(["issues", "timeline", issueId], mockTimeline);
+    queryClient.setQueryData(issueKeys.timelinePages(issueId), singleTimelinePage(mockTimeline));
   }
   const result = render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
@@ -716,7 +741,7 @@ describe("IssueDetail (shared)", () => {
     // Default: issue loads successfully
     mockApiObj.getIssue.mockResolvedValue(mockIssue);
     // /timeline returns the entries flat in chronological order (oldest first).
-    mockApiObj.listTimeline.mockResolvedValue(mockTimeline);
+    mockTimelineEntries(mockTimeline);
     mockApiObj.listIssueReactions.mockResolvedValue([]);
     mockApiObj.listIssueSubscribers.mockResolvedValue([]);
     mockApiObj.listChildIssues.mockResolvedValue({ issues: [] });
@@ -762,7 +787,7 @@ describe("IssueDetail (shared)", () => {
     const v2 = file("report-v2", { comment_id: "comment-2", created_at: "2026-01-17T00:00:00Z" });
     mockApiObj.getIssue.mockResolvedValue({ ...mockIssue, description: "!file[brief.pdf](https://cdn.example.test/brief)" });
     mockApiObj.listAttachments.mockResolvedValue([brief, v1, v2]);
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       { ...mockTimeline[0]!, attachments: [v1] },
       { ...mockTimeline[1]!, attachments: [v2] },
     ]);
@@ -777,7 +802,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("opens source-context creation from both a root comment and a reply", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       { ...mockTimeline[0], id: "source-root", parent_id: null },
       { ...mockTimeline[1], id: "source-reply", parent_id: "source-root" },
     ]);
@@ -809,7 +834,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("does not offer source-context creation for system comments", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([{
+    mockTimelineEntries([{
       ...mockTimeline[0],
       id: "system-comment",
       comment_type: "system",
@@ -982,6 +1007,13 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getAllByText("Sub-issue of")).toHaveLength(1);
     expect(screen.queryByText(/From TES-7/)).not.toBeInTheDocument();
     expect(mockApiObj.getIssue).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("does not fetch or subscribe to the whole workspace issue list", async () => {
+    renderIssueDetail();
+
+    await screen.findByDisplayValue("Add JWT auth to the backend");
+    expect(mockApiObj.listIssues).not.toHaveBeenCalled();
   });
 
   it("opts the description editor into the unmount flush", async () => {
@@ -1217,6 +1249,37 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByRole("link", { name: mockIssue.identifier })).toBeInTheDocument();
   });
 
+  it("renders the thread variant as the title row, the timeline and the reply box only", async () => {
+    mockApiObj.listChildIssues.mockResolvedValue({
+      issues: [{ ...mockIssue, id: "child-1", identifier: "TES-2", title: "Child task", parent_issue_id: mockIssue.id }],
+    });
+    const queryClient = createTestQueryClient();
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail issueId="issue-1" variant="thread" />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    // The title row names the issue in full, as plain text.
+    await screen.findByText(`${mockIssue.identifier} ${mockIssue.title}`);
+    expect(screen.queryByRole("link", { name: mockIssue.identifier })).not.toBeInTheDocument();
+    // The timeline is the point of the variant.
+    expect(await screen.findByText("Started working on this")).toBeInTheDocument();
+    expect(screen.getByText("I can help with this")).toBeInTheDocument();
+    // The reply box stays.
+    expect(screen.getByLabelText("Leave a comment...")).toBeInTheDocument();
+    // Everything the focused file's host already shows is gone.
+    expect(screen.queryByDisplayValue("Add JWT auth to the backend")).not.toBeInTheDocument();
+    expect(contentEditorMounts.count).toBe(0);
+    expect(screen.queryByText("Properties")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-picker")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("panel-group")).not.toBeInTheDocument();
+    expect(screen.queryByText("Child task")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Deliverables/ })).not.toBeInTheDocument();
+  });
+
   it("pins the comment composer to the scroll viewport on a wide screen", async () => {
     const { container } = renderIssueDetail();
 
@@ -1347,7 +1410,7 @@ describe("IssueDetail (shared)", () => {
       trigger_comment_id: "comment-1", delivered_comment_ids: [],
     };
     const root = mockTimeline[0]!;
-    mockApiObj.listTimeline.mockResolvedValue([]);
+    mockTimelineEntries([]);
     mockApiObj.listTasksByIssue.mockResolvedValue([task]);
     mockApiObj.listTaskMessages.mockResolvedValue([
       { task_id: taskId, issue_id: "issue-1", seq: 1, type: "tool_use", tool: "exec_command", input: { command: "pnpm test" } },
@@ -1361,10 +1424,10 @@ describe("IssueDetail (shared)", () => {
       </I18nProvider>,
     );
     await waitFor(() => expect(client.getQueryData(issueKeys.tasks("issue-1"))).toEqual([task]));
-    await waitFor(() => expect(client.getQueryData(issueKeys.timeline("issue-1"))).toEqual([]));
+    await waitFor(() => expect(flattenTimelinePages(client.getQueryData(issueKeys.timelinePages("issue-1")))).toEqual([]));
     expect(container.querySelector(`[data-run-id="${taskId}"]`)).toBeNull();
-    mockApiObj.listTimeline.mockResolvedValue([root]);
-    act(() => client.setQueryData(issueKeys.timeline("issue-1"), [root]));
+    mockTimelineEntries([root]);
+    act(() => client.setQueryData(issueKeys.timelinePages("issue-1"), singleTimelinePage([root])));
     await screen.findByText("Waiting for an available agent.");
     const userBlock = container.querySelector(`#comment-body-${root.id}`)!.parentElement!;
     const agentBlock = container.querySelector(`[data-run-comment-id="${taskId}"]`)!;
@@ -1387,9 +1450,9 @@ describe("IssueDetail (shared)", () => {
     };
     const completed: AgentTask = { ...running, status: "completed", completed_at: "2026-01-16T00:01:00Z" };
     mockApiObj.listTasksByIssue.mockResolvedValue([running]);
-    mockApiObj.listTimeline.mockResolvedValue([root, reply]);
+    mockTimelineEntries([root, reply]);
     act(() => {
-      client.setQueryData(issueKeys.timeline("issue-1"), [root, reply]);
+      client.setQueryData(issueKeys.timelinePages("issue-1"), singleTimelinePage([root, reply]));
     });
     const body = await screen.findByText(reply.content!);
     const replyRow = container.querySelector("#comment-run-reply")!;
@@ -1427,7 +1490,7 @@ describe("IssueDetail (shared)", () => {
       started_at: null, dispatched_at: null, completed_at: null, result: null, error: null,
       trigger_comment_id: latest.id, coalesced_comment_ids: [first.id], delivered_comment_ids: [],
     };
-    mockApiObj.listTimeline.mockResolvedValue([root, first, latest]);
+    mockTimelineEntries([root, first, latest]);
     mockApiObj.listTasksByIssue.mockResolvedValue([task]);
     const { container } = renderIssueDetail();
 
@@ -1460,7 +1523,7 @@ describe("IssueDetail (shared)", () => {
       status: "queued", started_at: null, dispatched_at: null,
       trigger_comment_id: latest.id, coalesced_comment_ids: [first.id], delivered_comment_ids: [],
     };
-    mockApiObj.listTimeline.mockResolvedValue([root, first, latest]);
+    mockTimelineEntries([root, first, latest]);
     mockApiObj.listTasksByIssue.mockResolvedValue([running, queued]);
     const { container } = renderIssueDetail();
 
@@ -1493,7 +1556,7 @@ describe("IssueDetail (shared)", () => {
       delivered_comment_ids: [],
     };
     const existing = { ...mockTimeline[0]!, id: "comment-1" };
-    mockApiObj.listTimeline.mockResolvedValue([existing]);
+    mockTimelineEntries([existing]);
     mockApiObj.listTasksByIssue.mockResolvedValue([task]);
     mockApiObj.listTaskMessages.mockResolvedValue([
       { task_id: task.id, issue_id: "issue-1", seq: 1, type: "tool_use", tool: "exec_command", input: { command: "pnpm test" } },
@@ -1519,9 +1582,9 @@ describe("IssueDetail (shared)", () => {
     };
     const completed: AgentTask = { ...running, status: "completed", completed_at: reply.created_at };
     mockApiObj.listTasksByIssue.mockResolvedValue([running]);
-    mockApiObj.listTimeline.mockResolvedValue([existing, reply]);
+    mockTimelineEntries([existing, reply]);
     act(() => {
-      queryClient.setQueryData(issueKeys.timeline("issue-1"), [existing, reply]);
+      queryClient.setQueryData(issueKeys.timelinePages("issue-1"), singleTimelinePage([existing, reply]));
     });
     await waitFor(() => expect(screen.getAllByText(reply.content!)).toHaveLength(1));
     await waitFor(() => expect(container.querySelector(`[data-run-comment-id="${task.id}"]`)).toBeNull());
@@ -1556,7 +1619,7 @@ describe("IssueDetail (shared)", () => {
       trigger_comment_id: trigger.id, delivered_comment_ids: [],
     }));
     let timeline = [root, second, third];
-    mockApiObj.listTimeline.mockResolvedValue(timeline);
+    mockTimelineEntries(timeline);
     mockApiObj.listTasksByIssue.mockResolvedValue(tasks);
     const client = createTestQueryClient();
     const { container } = render(<I18nProvider locale="en" resources={TEST_RESOURCES}>
@@ -1577,10 +1640,10 @@ describe("IssueDetail (shared)", () => {
         delivered_comment_ids: [tasks[index]!.trigger_comment_id!] };
       timeline = [...timeline, reply];
       mockApiObj.listTasksByIssue.mockResolvedValue([...tasks]);
-      mockApiObj.listTimeline.mockResolvedValue(timeline);
+      mockTimelineEntries(timeline);
       act(() => {
         client.setQueryData(issueKeys.tasks("issue-1"), [...tasks]);
-        client.setQueryData(issueKeys.timeline("issue-1"), timeline);
+        client.setQueryData(issueKeys.timelinePages("issue-1"), singleTimelinePage(timeline));
       });
       await screen.findByText(reply.content!);
       expect(container.querySelector(`[data-run-slot-id="${tasks[index]!.id}"]`)).toBe(slots[index]);
@@ -1606,7 +1669,7 @@ describe("IssueDetail (shared)", () => {
     const answer = { ...mockTimeline[1]!, id: "answer-a", parent_id: null, source_task_id: first.id, content: "Agent A response" };
     const second: AgentTask = { ...first, id: "ba2e8d1c-7f9b-4e2a-9c1d-123456789ab1", agent_id: "agent-2", status: "queued",
       started_at: null, completed_at: null, trigger_comment_id: answer.id };
-    mockApiObj.listTimeline.mockResolvedValue([root, answer]);
+    mockTimelineEntries([root, answer]);
     mockApiObj.listTasksByIssue.mockResolvedValue([first, second]);
     const { container } = renderIssueDetail();
     await screen.findByText(answer.content);
@@ -1632,7 +1695,7 @@ describe("IssueDetail (shared)", () => {
     const steve = run("ba2e8d1c-7f9b-4e2a-9c1d-123456789ab1", askSteve);
     const answer = (id: string, task: AgentTask, content: string, created_at: string): TimelineEntry =>
       ({ ...mockTimeline[1]!, id, parent_id: root.id, source_task_id: task.id, content, created_at, updated_at: created_at });
-    mockApiObj.listTimeline.mockResolvedValue([root, askElon, askSteve,
+    mockTimelineEntries([root, askElon, askSteve,
       answer("steve-fixed", steve, "Fixed the CI failure", "2026-01-16T00:23:41Z"),
       answer("elon-review", elon, "Review complete", "2026-01-16T00:32:29Z"),
       request("follow-up", "Fix it, then ask for another review", "2026-01-16T00:35:05Z")]);
@@ -1659,7 +1722,7 @@ describe("IssueDetail (shared)", () => {
       started_at: null, dispatched_at: null, completed_at: "2026-01-16T00:01:00Z", result: null, error: null,
       trigger_comment_id: trigger.id, delivered_comment_ids: [],
     };
-    mockApiObj.listTimeline.mockResolvedValue([root, trigger]);
+    mockTimelineEntries([root, trigger]);
     mockApiObj.listTasksByIssue.mockResolvedValue([task]);
     const { container } = renderIssueDetail();
     await screen.findByText(trigger.content);
@@ -1700,7 +1763,7 @@ describe("IssueDetail (shared)", () => {
       const root = mockTimeline[0]!;
       const trigger = { ...root, id: "user-reply", parent_id: root.id, content: "Please try this task" };
       const task = failedRun({ trigger_comment_id: trigger.id, delivered_comment_ids: [trigger.id] });
-      mockApiObj.listTimeline.mockResolvedValue([root, trigger, notice(task, trigger.id)]);
+      mockTimelineEntries([root, trigger, notice(task, trigger.id)]);
       mockApiObj.listTasksByIssue.mockResolvedValue([task]);
       const { container } = renderIssueDetail();
 
@@ -1714,7 +1777,7 @@ describe("IssueDetail (shared)", () => {
 
     it("renders a top-level notice as the run block", async () => {
       const task = failedRun();
-      mockApiObj.listTimeline.mockResolvedValue([...mockTimeline, notice(task, null)]);
+      mockTimelineEntries([...mockTimeline, notice(task, null)]);
       mockApiObj.listTasksByIssue.mockResolvedValue([task]);
       const { container } = renderIssueDetail();
 
@@ -1726,7 +1789,7 @@ describe("IssueDetail (shared)", () => {
       const task = failedRun();
       const reply: TimelineEntry = { ...mockTimeline[0]!, id: "reply-to-notice", parent_id: "failure-notice",
         content: "Retrying after the deploy", created_at: "2026-01-18T00:20:00Z", updated_at: "2026-01-18T00:20:00Z" };
-      mockApiObj.listTimeline.mockResolvedValue([...mockTimeline, notice(task, null), reply]);
+      mockTimelineEntries([...mockTimeline, notice(task, null), reply]);
       mockApiObj.listTasksByIssue.mockResolvedValue([task]);
       const { container } = renderIssueDetail();
 
@@ -1819,7 +1882,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("prefers timeline identity when the actor is absent from the member directory", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "comment",
         id: "former-member-comment",
@@ -1842,7 +1905,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("reruns the source task from an agent failure comment", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       ...mockTimeline,
       {
         type: "comment",
@@ -1869,7 +1932,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("does not show retry for child-done system comments", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       ...mockTimeline,
       {
         type: "comment",
@@ -1891,7 +1954,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("does not show retry for successful agent task comments", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       ...mockTimeline,
       {
         type: "comment",
@@ -1914,7 +1977,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   it("does not show retry for agent system comments without a source task", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       ...mockTimeline,
       {
         type: "comment",
@@ -1941,7 +2004,7 @@ describe("IssueDetail (shared)", () => {
     //   [comment-1]
     //   [activities: due_date_changed]                  ← block B (latest)
     // Block A should be collapsed; block B should be expanded.
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-1",
@@ -2005,7 +2068,7 @@ describe("IssueDetail (shared)", () => {
   // Duplicate marks (MUL-7349) name another issue; the identifier is a link
   // to it, and a mark removed because its original was deleted is plain text.
   it("links a duplicate mark to the issue it names", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-dup-marked",
@@ -2049,7 +2112,7 @@ describe("IssueDetail (shared)", () => {
   // MUL-7429: an automatic status change says why, and the per-issue switch
   // shows on the timeline.
   it("explains PR merge automation activity", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-pr-done",
@@ -2081,7 +2144,7 @@ describe("IssueDetail (shared)", () => {
   // MUL-7680: the child-done system rule's comment is the woken agent's
   // instruction; people read one timeline line that can reveal it.
   it("renders activity rows with unknown status values without crashing", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-unknown-status",
@@ -2141,7 +2204,7 @@ describe("IssueDetail (shared)", () => {
   }
 
   it("paints a status-change activity in the custom status's own colour", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-custom-status",
@@ -2166,7 +2229,7 @@ describe("IssueDetail (shared)", () => {
   it("leaves a built-in status-change activity on its semantic token colour", async () => {
     // The catalog seeds a colour for the built-ins too, but those are theme
     // tokens in the UI — painting the seeded hex would hard-code one theme.
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "activity",
         id: "act-built-in-status",
@@ -2205,7 +2268,7 @@ describe("IssueDetail (shared)", () => {
       { type: "activity", id: "act-9", actor_type: "member", actor_id: "user-1", action: "status_changed", details: { from: "blocked", to: "todo" }, created_at: "2026-01-18T00:08:00Z" },
       { type: "activity", id: "act-10", actor_type: "member", actor_id: "user-1", action: "due_date_changed", details: { to: "2026-02-01T00:00:00Z" }, created_at: "2026-01-18T00:09:00Z" },
     ] as TimelineEntry[];
-    mockApiObj.listTimeline.mockResolvedValue(trailingBlock);
+    mockTimelineEntries(trailingBlock);
 
     renderIssueDetail();
 
@@ -2247,7 +2310,7 @@ describe("IssueDetail (shared)", () => {
       { type: "activity", id: "act-7", actor_type: "member", actor_id: "user-1", action: "status_changed", details: { from: "done", to: "blocked" }, created_at: "2026-01-18T00:06:00Z" },
       { type: "activity", id: "act-8", actor_type: "member", actor_id: "user-1", action: "due_date_changed", details: { to: "2026-02-01T00:00:00Z" }, created_at: "2026-01-18T00:07:00Z" },
     ] as TimelineEntry[];
-    mockApiObj.listTimeline.mockResolvedValue(trailingBlock);
+    mockTimelineEntries(trailingBlock);
 
     renderIssueDetail();
 
@@ -2290,7 +2353,7 @@ describe("IssueDetail (shared)", () => {
       },
       { type: "activity", id: "last-1", actor_type: "member", actor_id: "user-1", action: "due_date_changed", details: { to: "2026-02-01T00:00:00Z" }, created_at: "2026-01-18T00:00:00Z" },
     ] as TimelineEntry[];
-    mockApiObj.listTimeline.mockResolvedValue(timeline);
+    mockTimelineEntries(timeline);
 
     renderIssueDetail();
 
@@ -2330,7 +2393,7 @@ describe("IssueDetail (shared)", () => {
       const root = { ...mockTimeline[0]!, resolved_at: "2026-01-17T00:00:00Z" };
       const target = { ...mockTimeline[1]!, id: "assigned-reply", parent_id: root.id, source_task_id: run.id,
         content: "Assignment reply in the resolved discussion" };
-      mockApiObj.listTimeline.mockResolvedValue([root, target]);
+      mockTimelineEntries([root, target]);
       mockApiObj.listTasksByIssue.mockResolvedValue([run]);
       const client = createTestQueryClient();
       const { container, rerender } = render(<I18nProvider locale="en" resources={TEST_RESOURCES}>
@@ -2364,7 +2427,7 @@ describe("IssueDetail (shared)", () => {
         content: "Assignment answer", resolved_at: resolved === "root" ? "2026-01-17T00:00:00Z" : null };
       const target = { ...mockTimeline[0]!, id: "hidden-target", parent_id: root.id, content: "Hidden notification target" };
       const resolution = { ...target, id: "resolution", content: "Resolved reply", resolved_at: "2026-01-17T00:00:00Z" };
-      mockApiObj.listTimeline.mockResolvedValue([root, target, ...(resolved === "reply" ? [resolution] : [])]);
+      mockTimelineEntries([root, target, ...(resolved === "reply" ? [resolution] : [])]);
       mockApiObj.listTasksByIssue.mockResolvedValue([run]);
       renderIssueDetailWithHighlight(target.id);
       await waitFor(() => expect(document.getElementById(`comment-${target.id}`)).not.toBeNull());
@@ -2382,7 +2445,7 @@ describe("IssueDetail (shared)", () => {
         content: "", deleted_at: "2026-01-19T00:00:00Z", created_at: "2026-01-19T00:00:00Z" };
       const kept = { ...mockTimeline[1]!, id: "reply-under-deleted", parent_id: target.id,
         content: "Kept below it", created_at: "2026-01-20T00:00:00Z" };
-      mockApiObj.listTimeline.mockResolvedValue([root, previous, target, kept]);
+      mockTimelineEntries([root, previous, target, kept]);
       mockApiObj.listTasksByIssue.mockResolvedValue([]);
       renderIssueDetailWithHighlight(target.id);
 
@@ -2418,7 +2481,7 @@ describe("IssueDetail (shared)", () => {
     });
 
     it("highlights only the target root comment, not the whole thread", async () => {
-      mockApiObj.listTimeline.mockResolvedValue([
+      mockTimelineEntries([
         {
           type: "comment",
           id: "comment-root",
@@ -2525,7 +2588,7 @@ describe("IssueDetail (shared)", () => {
           comment_type: "comment",
         } as TimelineEntry,
       ];
-      mockApiObj.listTimeline.mockResolvedValue(timelineWithResolvedThread);
+      mockTimelineEntries(timelineWithResolvedThread);
 
       const queryClient = createTestQueryClient();
       render(
@@ -2558,7 +2621,7 @@ describe("IssueDetail (shared)", () => {
     // plain `comment` item, not a `resolved-bar`. The rail must still read it
     // as resolved — proof the flag comes from deriveThreadResolution and not
     // from the fold state.
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       ...mockTimeline,
       {
         type: "comment",
@@ -2588,7 +2651,7 @@ describe("IssueDetail (shared)", () => {
     const highlightTint = "bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]";
 
     it("unfolds a resolved thread and lands on the reply picked from the rail", async () => {
-      mockApiObj.listTimeline.mockResolvedValue([
+      mockTimelineEntries([
         ...mockTimeline,
         {
           type: "comment",
@@ -2654,7 +2717,7 @@ describe("IssueDetail (shared)", () => {
         size_bytes: 2048,
         created_at: "2026-01-16T01:00:00Z",
       };
-      mockApiObj.listTimeline.mockResolvedValue([
+      mockTimelineEntries([
         ...mockTimeline,
         {
           type: "comment",
@@ -2701,7 +2764,7 @@ describe("IssueDetail (shared)", () => {
         size_bytes: 2048,
         created_at: "2026-01-18T00:00:00Z",
       };
-      mockApiObj.listTimeline.mockResolvedValue([
+      mockTimelineEntries([
         ...mockTimeline,
         {
           type: "comment",
@@ -2734,7 +2797,7 @@ describe("IssueDetail (shared)", () => {
 
     it("reopens a thread the reader collapsed before landing on its reply", async () => {
       useCommentCollapseStore.setState({ collapsedByIssue: { "issue-1": ["comment-1"] } });
-      mockApiObj.listTimeline.mockResolvedValue([
+      mockTimelineEntries([
         ...mockTimeline,
         {
           type: "comment",
@@ -2977,6 +3040,100 @@ describe("IssueDetail (shared)", () => {
     expect(mockApiObj.updateIssue).toHaveBeenCalledTimes(callsBeforeDiscard);
   });
 
+  describe("paged timeline", () => {
+    const commentAt = (id: string, at: string, content: string): TimelineEntry => ({
+      ...mockTimeline[0]!,
+      id,
+      parent_id: null,
+      content,
+      created_at: at,
+      updated_at: at,
+    });
+    const newestRoot = commentAt("root-new", "2026-02-02T00:00:00Z", "Newest root");
+    const oldRoot = commentAt("root-old", "2026-02-01T00:00:00Z", "Older root");
+    const NEWEST_CURSOR = "2026-02-02T00:00:00.000001Z";
+
+    // The newest page points at one older page, which is the last.
+    function serveTwoPages() {
+      mockApiObj.listTimeline.mockImplementation(async (_issueId: string, page?: { before?: string }) =>
+        page?.before
+          ? { entries: [oldRoot], has_more_before: false, has_more_after: false, next_before: null, next_before_id: null }
+          : { entries: [newestRoot], has_more_before: true, has_more_after: false, next_before: NEWEST_CURSOR, next_before_id: "root-new" },
+      );
+    }
+
+    afterEach(() => {
+      mockTimelineEntries([]);
+    });
+
+    it("asks for the newest page first and shows only what it holds", async () => {
+      serveTwoPages();
+      renderIssueDetail();
+
+      await screen.findByText("Newest root");
+      expect(screen.queryByText("Older root")).toBeNull();
+      expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.listTimeline).toHaveBeenCalledWith("issue-1", { limit: 50 });
+    });
+
+    it("loads the older page when the list reports its start was reached and keeps the viewport anchored", async () => {
+      serveTwoPages();
+      renderIssueDetail();
+      await screen.findByText("Newest root");
+      const firstItemIndex = () =>
+        Number(screen.getByTestId("virtuoso-mock").getAttribute("data-first-item-index"));
+      const before = firstItemIndex();
+
+      fireEvent.click(screen.getByTestId("virtuoso-start-reached"));
+
+      await screen.findByText("Older root");
+      expect(mockApiObj.listTimeline).toHaveBeenLastCalledWith("issue-1", {
+        limit: 50,
+        before: NEWEST_CURSOR,
+        beforeId: "root-new",
+      });
+      // One row landed above the previous first row.
+      expect(firstItemIndex()).toBe(before - 1);
+      // Both pages read oldest first.
+      const text = screen.getByTestId("virtuoso-mock").textContent ?? "";
+      expect(text.indexOf("Older root")).toBeLessThan(text.indexOf("Newest root"));
+    });
+
+    it("does not ask for another page when the timeline is complete", async () => {
+      mockTimelineEntries([newestRoot]);
+      renderIssueDetail();
+      await screen.findByText("Newest root");
+
+      fireEvent.click(screen.getByTestId("virtuoso-start-reached"));
+
+      expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(1);
+    });
+
+    it("walks older pages until a deep-linked comment is loaded", async () => {
+      serveTwoPages();
+      renderIssueDetailWithHighlight("root-old");
+
+      await waitFor(() => expect(document.getElementById("comment-root-old")).not.toBeNull());
+      expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
+      expect(mockApiObj.listTimeline).toHaveBeenLastCalledWith("issue-1", {
+        limit: 50,
+        before: NEWEST_CURSOR,
+        beforeId: "root-new",
+      });
+    });
+
+    it("offers to load earlier comments while the flat deep-link view has older pages", async () => {
+      serveTwoPages();
+      renderIssueDetailWithHighlight("root-new");
+      await screen.findByText("Newest root");
+
+      fireEvent.click(await screen.findByRole("button", { name: "Load earlier comments" }));
+
+      await screen.findByText("Older root");
+      expect(screen.queryByRole("button", { name: "Load earlier comments" })).toBeNull();
+    });
+  });
+
   describe("sub-issues list", () => {
     beforeEach(() => {
       useSubIssueDisplayStore.setState({
@@ -3044,6 +3201,36 @@ describe("IssueDetail (shared)", () => {
       // Bare row shows no due date / no progress chip of its own.
       const bareRow = screen.getByText("Ship dashboards").closest("a");
       expect(bareRow?.textContent).not.toContain("/");
+    });
+
+    it("fetches nested progress for exactly the loaded sub-issues, never workspace-wide", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [
+          subIssue({ id: "child-2", number: 12, identifier: "TES-12", title: "Ship dashboards" }),
+          subIssue({ id: "child-1", number: 11, identifier: "TES-11", title: "Fix login flow" }),
+        ],
+      });
+
+      renderIssueDetail();
+
+      await screen.findByText("Fix login flow");
+      await waitFor(() =>
+        expect(mockApiObj.getChildIssueProgress).toHaveBeenCalledWith(["child-1", "child-2"]),
+      );
+      expect(mockApiObj.getChildIssueProgress).toHaveBeenCalledTimes(1);
+      for (const call of mockApiObj.getChildIssueProgress.mock.calls) {
+        expect(call[0]).toBeDefined();
+      }
+    });
+
+    it("does not fetch child progress when the issue has no sub-issues", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({ issues: [] });
+
+      renderIssueDetail();
+
+      await screen.findByText("Implement authentication");
+      await waitFor(() => expect(mockApiObj.listChildIssues).toHaveBeenCalled());
+      expect(mockApiObj.getChildIssueProgress).not.toHaveBeenCalled();
     });
 
     it("hides fields the user toggled off in the display preference", async () => {
@@ -3224,6 +3411,143 @@ describe("IssueDetail (shared)", () => {
       const control = await screen.findByText("Unsubscribe");
 
       expect(control.getAttribute("aria-haspopup")).toBe("menu");
+    });
+  });
+
+  // Sub-issues are fetched on demand: the detail response carries the progress
+  // counts, so the list is only requested once the section is expanded.
+  describe("sub-issues on demand", () => {
+    beforeEach(() => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set() });
+      useSubIssueDisplayStore.setState({
+        rowProperties: { ...DEFAULT_SUB_ISSUE_ROW_PROPERTIES },
+        rowPropertyIds: [],
+      });
+    });
+
+    const child = (n: number, overrides: Partial<Issue> = {}): Issue => ({
+      ...mockIssue,
+      id: `child-${n}`,
+      number: 100 + n,
+      identifier: `TES-${100 + n}`,
+      title: `Child task ${n}`,
+      parent_issue_id: "issue-1",
+      assignee_type: null,
+      assignee_id: null,
+      due_date: null,
+      priority: "none",
+      status: "todo",
+      ...overrides,
+    });
+
+    it("does not list children while collapsed and shows the server counts", async () => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set(["issue-1"]) });
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 4,
+        child_done_count: 3,
+      });
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("3/4")).toBeInTheDocument();
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
+    });
+
+    it("requests the first page when the section is expanded", async () => {
+      useSubIssuesCollapseStore.setState({ collapsedIssueIds: new Set(["issue-1"]) });
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 2,
+        child_done_count: 1,
+      });
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [child(1, { status: "done" }), child(2)],
+      });
+
+      renderIssueDetail();
+      await screen.findByText("1/2");
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Sub-issues" }));
+
+      await screen.findByText("Child task 1");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1", {
+        limit: 50,
+        offset: 0,
+      });
+      expect(screen.queryByRole("button", { name: "Load more sub-issues" })).toBeNull();
+    });
+
+    it("falls back to the full list when the backend sends no counts", async () => {
+      mockApiObj.listChildIssues.mockResolvedValue({
+        issues: [child(1, { status: "done" }), child(2)],
+      });
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("1/2")).toBeInTheDocument();
+      await screen.findByText("Child task 2");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1");
+    });
+
+    it("loads the next page on demand when there are more than one page of children", async () => {
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 60,
+        child_done_count: 0,
+      });
+      mockApiObj.listChildIssues.mockImplementation(
+        async (_id: string, page?: { limit: number; offset: number }) => ({
+          issues: Array.from(
+            { length: page?.offset === 50 ? 10 : 50 },
+            (_, i) => child((page?.offset ?? 0) + i + 1),
+          ),
+        }),
+      );
+
+      renderIssueDetail();
+
+      expect(await screen.findByText("0/60")).toBeInTheDocument();
+      await screen.findByText("Child task 50");
+      expect(screen.queryByText("Child task 51")).toBeNull();
+
+      fireEvent.click(await screen.findByRole("button", { name: "Load more sub-issues" }));
+
+      await screen.findByText("Child task 60");
+      expect(mockApiObj.listChildIssues).toHaveBeenCalledWith("issue-1", {
+        limit: 50,
+        offset: 50,
+      });
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Load more sub-issues" })).toBeNull(),
+      );
+    });
+
+    it("offers the direct unsubscribe button for a childless issue without listing children", async () => {
+      mockApiObj.listIssueSubscribers.mockResolvedValue([
+        {
+          issue_id: "issue-1",
+          user_type: "member" as const,
+          user_id: "user-1",
+          reason: "manual" as const,
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ]);
+      mockApiObj.getIssue.mockResolvedValue({
+        ...mockIssue,
+        child_count: 0,
+        child_done_count: 0,
+      });
+
+      renderIssueDetail();
+
+      await waitFor(() => {
+        const el = screen.getByText("Unsubscribe");
+        expect(el.getAttribute("aria-haspopup")).toBeNull();
+      });
+      expect(mockApiObj.listChildIssues).not.toHaveBeenCalled();
     });
   });
 
@@ -3473,7 +3797,7 @@ describe("IssueDetail (shared)", () => {
       created_at: "2026-01-16T00:00:00Z", started_at: "2026-01-16T00:00:00Z",
       dispatched_at: null, completed_at: null, result: null, error: null, delivered_comment_ids: [],
     };
-    mockApiObj.listTimeline.mockResolvedValue([]);
+    mockTimelineEntries([]);
     mockApiObj.listTasksByIssue.mockResolvedValue([assignment]);
     const client = createTestQueryClient();
     const { container } = render(
@@ -3493,10 +3817,10 @@ describe("IssueDetail (shared)", () => {
       ...assignment, id: "mentioned-run", agent_id: "agent-2", trigger_comment_id: mention.id,
       created_at: "2026-01-16T00:01:01Z", delivered_comment_ids: [mention.id],
     };
-    mockApiObj.listTimeline.mockResolvedValue([mention]);
+    mockTimelineEntries([mention]);
     mockApiObj.listTasksByIssue.mockResolvedValue([assignment, mentionedRun]);
     act(() => {
-      client.setQueryData(issueKeys.timeline("issue-1"), [mention]);
+      client.setQueryData(issueKeys.timelinePages("issue-1"), singleTimelinePage([mention]));
       client.setQueryData(issueKeys.tasks("issue-1"), [assignment, mentionedRun]);
     });
     await screen.findByText(mention.content!);
@@ -3512,7 +3836,7 @@ describe("IssueDetail (shared)", () => {
   // card showed the reply time, pushing it above every comment written while
   // the run worked. Ordering matrix lives in comment-runs.test.ts.
   it("renders an assignment run's reply after the comments it followed", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "comment", id: "midway", actor_type: "member", actor_id: "user-1",
         content: "Remember the E2E pass", parent_id: null,
@@ -3553,7 +3877,7 @@ describe("IssueDetail (shared)", () => {
       type: "comment", id, actor_type: "agent", actor_id: "agent-1", content, parent_id: parentId,
       source_task_id: "task-steps", created_at, updated_at: created_at, comment_type: "comment",
     });
-    mockApiObj.listTimeline.mockResolvedValue([
+    mockTimelineEntries([
       {
         type: "comment", id: "confirm", actor_type: "member", actor_id: "user-1",
         content: "Confirmed", parent_id: null,
@@ -3582,6 +3906,103 @@ describe("IssueDetail (shared)", () => {
     const rendered = Array.from(container.querySelectorAll("[id^='comment-']")).map((el) => el.id)
       .filter((id) => ["comment-confirm", "comment-step2", "comment-aside", "comment-step3"].includes(id));
     expect(rendered).toEqual(["comment-confirm", "comment-step2", "comment-aside", "comment-step3"]);
+  });
+
+  describe("read cursor", () => {
+    // Only the timer pair is faked: testing-library's waitFor and react-query
+    // keep their real scheduling, and nothing here waits on the issue loading.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      mockApiObj.markIssueRead.mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const advance = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+
+    function renderWithRerender(issueId: string) {
+      const queryClient = createTestQueryClient();
+      const tree = (id: string) => (
+        <I18nProvider locale="en" resources={TEST_RESOURCES}>
+          <QueryClientProvider client={queryClient}>
+            <IssueDetail issueId={id} />
+          </QueryClientProvider>
+        </I18nProvider>
+      );
+      const result = render(tree(issueId));
+      return { ...result, switchTo: (id: string) => result.rerender(tree(id)) };
+    }
+
+    it("marks the issue read once, 1.5 s after it opens", async () => {
+      renderIssueDetail("issue-1");
+
+      await advance(1499);
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+
+      await advance(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-1");
+
+      await advance(10_000);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks the issue read as soon as the user posts a comment", async () => {
+      // Real timers here: the send path is awaited through waitFor, and the
+      // 1.5 s open timer must not be what records the read.
+      vi.useRealTimers();
+      mockApiObj.createComment.mockResolvedValue({
+        id: "comment-new",
+        issue_id: "issue-1",
+        content: "A new update",
+        author_type: "member",
+        author_id: "user-1",
+        parent_id: null,
+        type: "comment",
+        created_at: "2026-08-13T00:00:00Z",
+        updated_at: "2026-08-13T00:00:00Z",
+      });
+      renderIssueDetail("issue-1");
+
+      await screen.findByText("Implement authentication");
+      fireEvent.click(screen.getByTestId("comment-composer-shell"));
+      const editor = await screen.findByPlaceholderText("Leave a comment...");
+      fireEvent.change(editor, { target: { value: "A new update" } });
+      const composer = editor.closest<HTMLElement>("[aria-busy], .relative.flex.flex-col.rounded-lg")!;
+      fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+
+      await waitFor(() => {
+        expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-1");
+      });
+    });
+
+    it("records nothing when the detail closes before the delay", async () => {
+      const { unmount } = renderIssueDetail("issue-1");
+
+      await advance(1000);
+      unmount();
+      await advance(5000);
+
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+    });
+
+    it("restarts the wait when the issue changes, recording only the last one", async () => {
+      const { switchTo } = renderWithRerender("issue-1");
+
+      await advance(1000);
+      switchTo("issue-2");
+      await advance(1000);
+      expect(mockApiObj.markIssueRead).not.toHaveBeenCalled();
+
+      await advance(500);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledTimes(1);
+      expect(mockApiObj.markIssueRead).toHaveBeenCalledWith("issue-2");
+    });
   });
 
 });

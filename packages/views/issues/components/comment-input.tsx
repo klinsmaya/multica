@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, useMemo } from "react";
+import { FileText, X } from "lucide-react";
 import { cn } from "@multica/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
 import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
@@ -10,6 +11,7 @@ import { contentReferencesAttachment, type AgentTask } from "@multica/core/types
 import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
 import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { composeAnnotatedReply, hasReplyIntent } from "@multica/core/drafts/reply-annotation";
+import { composeDeliverableReply, type DeliverableReplyRef } from "@multica/core/issues/deliverable-reply";
 import { ReplyAnnotations } from "./reply-annotations";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
@@ -19,6 +21,7 @@ import { SteerAttachmentNotice } from "./steer-attachment-notice";
 import { useStopRunsBeforeSend } from "./use-stop-runs-before-send";
 import { useCommentUploads } from "./use-comment-uploads";
 import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
+import { useAnnotationSourceLink } from "../hooks/use-annotation-source-link";
 import { useStickyComposer } from "../hooks/use-sticky-composer";
 
 interface CommentInputProps {
@@ -30,6 +33,10 @@ interface CommentInputProps {
   /** Called after the server accepts the comment and the composer is cleared. */
   onAccepted?: (commentId: string) => void;
   onEditAnnotation?: (id: string) => boolean;
+  /** The deliverable this reply is about. Shown as a chip; while it is there,
+   *  the comment starts with a reference to the file. Dismissing hides it until
+   *  the deliverable changes. */
+  replyContext?: DeliverableReplyRef;
 }
 
 // A top-level comment belongs to no thread, so it takes a running turn by
@@ -38,8 +45,14 @@ function steerTopLevelByDefault(task: AgentTask): boolean {
   return !task.trigger_comment_id;
 }
 
-function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: CommentInputProps) {
+function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation, replyContext }: CommentInputProps) {
   const { t } = useT("issues");
+  const [dismissedContextId, setDismissedContextId] = useState<string | null>(null);
+  const contextId = replyContext?.attachmentId ?? null;
+  useEffect(() => {
+    setDismissedContextId((dismissed) => (dismissed === contextId ? dismissed : null));
+  }, [contextId]);
+  const activeContext = replyContext && replyContext.attachmentId !== dismissedContextId ? replyContext : null;
   const { t: tEditor } = useT("editor");
   const sendShortcut = useShortcut("send");
   const editorRef = useRef<ContentEditorRef>(null);
@@ -51,6 +64,7 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   // Quick actions in the `/` menu: picking one inserts the server-rendered
   // body so the user can edit before sending, instead of firing immediately.
   const quickActionMenu = useQuickActionMenu(issueId);
+  const annotationSourceLink = useAnnotationSourceLink(issueId);
   const draftKey = `new:${issueId}` as const;
   const [initialDraft] = useState(() =>
     useCommentDraftStore.getState().getDraft(draftKey),
@@ -59,7 +73,7 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   const [content, setContent] = useState(initialDraft ?? "");
   const [isEmpty, setIsEmpty] = useState(() => !initialDraft?.trim());
   const annotations = useCommentDraftStore((s) => s.getAnnotations(draftKey));
-  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations), [content, annotations]);
+  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations, annotationSourceLink), [content, annotations, annotationSourceLink]);
   const canSend = annotations.length ? hasReplyIntent(content, annotations) : !isEmpty;
   const triggerPreview = useCommentTriggerPreview({ issueId, content: canSend ? composedContent : "" });
   // Uploads for this composer session (MUL-5181). Owned by the module-level
@@ -161,7 +175,8 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
     uploadGate: gate,
     normalize: (raw) => {
       const current = useCommentDraftStore.getState().getAnnotations(draftKey);
-      return hasReplyIntent(raw, current) ? composeAnnotatedReply(raw, current) : "";
+      if (!hasReplyIntent(raw, current)) return "";
+      return composeDeliverableReply(composeAnnotatedReply(raw, current, annotationSourceLink), activeContext);
     },
     // A top-level comment ends a turn: the caret is dropped rather than kept,
     // so the composer stops reading as "still writing" once the comment is
@@ -225,6 +240,21 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
     >
       {attachmentsBlockSteer && <div className="px-3 pt-2">
         <SteerAttachmentNotice />
+      </div>}
+      {activeContext && <div className="px-3 pt-2">
+        <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted py-0.5 pl-1.5 pr-0.5 text-caption text-muted-foreground">
+          <FileText aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{activeContext.filename}</span>
+          <button
+            type="button"
+            aria-label={t(($) => $.comment.reply_context_remove, { name: activeContext.filename })}
+            disabled={submitting}
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            onClick={() => setDismissedContextId(activeContext.attachmentId)}
+          >
+            <X aria-hidden="true" className="size-3" />
+          </button>
+        </span>
       </div>}
       {annotations.length > 0 && <div className="px-3 pt-2">
         <ReplyAnnotations draftKey={draftKey} annotations={annotations} disabled={submitting}

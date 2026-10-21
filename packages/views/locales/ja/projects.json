@@ -151,6 +151,16 @@
     "ref_default_label": "デフォルトブランチ",
     "ref_default_tooltip": "ブランチ未設定 — タスクはその時点のリポジトリのデフォルトブランチを使用します。"
   },
+  "pull_requests": {
+    "group_open": "オープン",
+    "group_merged": "マージ済み",
+    "group_closed": "クローズ",
+    "empty": "PR はまだありません",
+    "load_more": "さらに読み込む",
+    "loading": "読み込み中…",
+    "load_failed": "PR を読み込めませんでした",
+    "retry": "再試行"
+  },
   "delete_dialog": {
     "title": "プロジェクトを削除",
     "description": "プロジェクトが削除されます。タスクは削除されませんが、リンクが解除されます。",
@@ -180,5 +190,49 @@
     "direction_desc": "降順",
     "section_columns": "列",
     "view": "ビュー"
+  },
+  "sidebar": {
+    "tab_properties": "プロパティ",
+    "tab_overview": "概要",
+    "tab_autopilots": "自動化",
+    "tab_library": "ライブラリ",
+    "tab_pull_requests": "PR",
+    "tabs_label": "プロジェクトパネル"
+  },
+  "automations": {
+    "new": "新規",
+    "empty": "このプロジェクトにはまだ自動化がありません",
+    "next_run": "次回 {{time}}",
+    "last_run": "前回の実行 {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "対応待ち",
+    "group_running": "実行中",
+    "group_idle": "待機中",
+    "group_resolved": "解決済み",
+    "empty_needs_you": "対応待ちのタスクはありません",
+    "empty_running": "作業中のエージェントはいません",
+    "empty_idle": "待機中のタスクはありません",
+    "empty_resolved": "解決済みのタスクはまだありません",
+    "empty_project": "このプロジェクトにはまだタスクがありません",
+    "load_failed": "タスクを読み込めませんでした",
+    "truncated": "最近動きのあった {{limit}} 件のタスクを表示しています",
+    "sub_issue_progress": "サブタスク {{done}}/{{total}} 完了",
+    "deliverables": "ファイル: {{count}}"
+  },
+  "library": {
+    "add": "追加",
+    "add_failed": "ファイルをアップロードできませんでした",
+    "deliverables": "成果物",
+    "files": "ファイル",
+    "view_list": "リスト表示",
+    "view_grid": "グリッド表示",
+    "filter_label": "種類で絞り込み",
+    "load_more": "さらに読み込む",
+    "empty": "ファイルはまだありません",
+    "empty_filtered": "条件に一致するファイルはありません",
+    "load_failed": "ファイルを読み込めませんでした",
+    "retry": "再試行",
+    "open_issue": "タスク {{identifier}} を開く"
   }
 }

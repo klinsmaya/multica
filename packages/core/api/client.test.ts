@@ -2040,6 +2040,20 @@ describe("ApiClient", () => {
     );
   });
 
+  it("marks an issue read with a bodiless PUT", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      new ApiClient("https://api.example.test").markIssueRead("issue-1"),
+    ).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.example.test/api/issues/issue-1/read");
+    expect(init?.method).toBe("PUT");
+    expect(init?.body).toBeUndefined();
+  });
+
   describe("chat attachment wiring", () => {
     it("uploadFile includes chat_session_id in the FormData body", async () => {
       const fetchMock = vi.fn().mockResolvedValue(

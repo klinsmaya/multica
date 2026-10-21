@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { WSClient } from "../api/ws-client";
 import { issueKeys, type IssueSortParam } from "../issues/queries";
-import type { Issue, ListIssuesCache } from "../types";
+import { projectAttachmentKeys } from "../projects/queries";
+import type { Issue, IssueThreadSummary, ListIssuesCache } from "../types";
 import { useRealtimeSync, type RealtimeSyncStores } from "./use-realtime-sync";
 
 vi.mock("../platform/workspace-storage", () => ({
@@ -110,6 +111,39 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     ).toBe(true);
   });
 
+  it("invalidates the project libraries when files are added or removed", () => {
+    const libraryKey = projectAttachmentKeys.list("ws-1", "project-1", {});
+    const { ws, handlers } = createRecordingWs();
+    renderHook(() => useRealtimeSync(ws, createStores()), {
+      wrapper: createWrapper(qc),
+    });
+    // Writing fresh data clears the invalidated flag.
+    const settled = () => qc.setQueryData(libraryKey, { attachments: [] });
+
+    settled();
+    handlers["comment:created"]?.({ comment: { id: "c1", issue_id: "issue-1", attachments: [] } });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(false);
+
+    handlers["comment:created"]?.({
+      comment: { id: "c1", issue_id: "issue-1", attachments: [{ id: "a1" }] },
+    });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["issue_attachments:changed"]?.({ issue_id: "issue-1" });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["comment:deleted"]?.({ comment_id: "c1", issue_id: "issue-1" });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["comment:updated"]?.({
+      comment: { id: "c1", issue_id: "issue-1", deleted_at: "2026-01-01T00:00:00Z" },
+    });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+  });
+
   it("uses update/delete owner revisions and re-sorts only last_activity", () => {
     const detailKey = issueKeys.detail("ws-1", "issue-1");
     qc.setQueryData<Issue>(detailKey, {
@@ -168,5 +202,74 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     handlers["comment:created"]?.({ comment: { id: "c1" } });
 
     expect(qc.getQueryState(updatedBoardKey)?.isInvalidated).toBe(false);
+  });
+
+  describe("thread summaries", () => {
+    const key = issueKeys.threadSummaries("ws-1", "issue-1");
+    const otherKey = issueKeys.threadSummaries("ws-1", "issue-2");
+    const row: IssueThreadSummary = {
+      issue_id: "issue-1",
+      reply_count: 1,
+      last_reply_at: "2026-10-01T00:00:00Z",
+      last_reply_excerpt: null,
+      open_thread_count: 1,
+      participants: [{ type: "member", id: "u1" }],
+      last_read_at: null,
+      awaiting_me: [],
+      latest_progress: null,
+      pull_requests: [],
+      deliverable_count: 0,
+      last_deliverable_at: null,
+    };
+
+    function mount() {
+      qc.setQueryData<IssueThreadSummary[]>(key, [row]);
+      qc.setQueryData<IssueThreadSummary[]>(otherKey, []);
+      const { ws, handlers } = createRecordingWs();
+      renderHook(() => useRealtimeSync(ws, createStores()), {
+        wrapper: createWrapper(qc),
+      });
+      return handlers;
+    }
+
+    it("patches the matching summary cache on comment:created", () => {
+      const handlers = mount();
+
+      handlers["comment:created"]?.({
+        comment: {
+          id: "c2",
+          issue_id: "issue-1",
+          author_type: "agent",
+          author_id: "a1",
+          type: "comment",
+          parent_id: "c1",
+          created_at: "2026-10-02T00:00:00Z",
+          resolved_at: null,
+        },
+      });
+
+      expect(qc.getQueryData<IssueThreadSummary[]>(key)?.[0]).toMatchObject({
+        reply_count: 2,
+        open_thread_count: 1,
+        participants: [
+          { type: "agent", id: "a1" },
+          { type: "member", id: "u1" },
+        ],
+      });
+      expect(qc.getQueryData(otherKey)).toEqual([]);
+    });
+
+    it.each([
+      ["comment:deleted", { issue_id: "issue-1", comment_id: "c1" }],
+      ["comment:resolved", { comment: { id: "c1", issue_id: "issue-1" } }],
+      ["comment:unresolved", { comment: { id: "c1", issue_id: "issue-1" } }],
+    ])("invalidates every summary cache on %s", (event, payload) => {
+      const handlers = mount();
+
+      handlers[event]?.(payload);
+
+      expect(qc.getQueryState(key)?.isInvalidated).toBe(true);
+      expect(qc.getQueryState(otherKey)?.isInvalidated).toBe(true);
+    });
   });
 });

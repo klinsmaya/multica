@@ -152,6 +152,16 @@
     "ref_default_label": "Branche par défaut",
     "ref_default_tooltip": "Aucune branche définie — les tâches utilisent la branche par défaut du dépôt au moment voulu."
   },
+  "pull_requests": {
+    "group_open": "Ouvertes",
+    "group_merged": "Fusionnées",
+    "group_closed": "Fermées",
+    "empty": "Aucune pull request pour l'instant",
+    "load_more": "Afficher plus",
+    "loading": "Chargement…",
+    "load_failed": "Impossible de charger les pull requests",
+    "retry": "Réessayer"
+  },
   "delete_dialog": {
     "title": "Supprimer le projet",
     "description": "Le projet sera supprimé. Les tâches ne seront pas supprimées, mais elles seront détachées.",
@@ -182,5 +192,49 @@
     "direction_desc": "Décroissant",
     "section_columns": "Colonnes",
     "view": "Vue"
+  },
+  "sidebar": {
+    "tab_properties": "Propriétés",
+    "tab_overview": "Aperçu",
+    "tab_autopilots": "Automatisations",
+    "tab_library": "Bibliothèque",
+    "tab_pull_requests": "PR",
+    "tabs_label": "Panneaux du projet"
+  },
+  "automations": {
+    "new": "Nouvelle",
+    "empty": "Aucune automatisation dans ce projet",
+    "next_run": "Prochaine : {{time}}",
+    "last_run": "Dernière exécution : {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "À traiter",
+    "group_running": "En cours",
+    "group_idle": "Inactives",
+    "group_resolved": "Résolues",
+    "empty_needs_you": "Rien n'attend votre réponse",
+    "empty_running": "Aucun agent au travail",
+    "empty_idle": "Aucune tâche inactive",
+    "empty_resolved": "Aucune tâche résolue pour l'instant",
+    "empty_project": "Ce projet n'a pas encore de tâches",
+    "load_failed": "Impossible de charger les tâches",
+    "truncated": "Affichage des {{limit}} tâches les plus récemment actives",
+    "sub_issue_progress": "Sous-tâches terminées : {{done}} sur {{total}}",
+    "deliverables": "Fichiers : {{count}}"
+  },
+  "library": {
+    "add": "Ajouter",
+    "add_failed": "Impossible d'importer le fichier",
+    "deliverables": "Livrables",
+    "files": "Fichiers",
+    "view_list": "Vue en liste",
+    "view_grid": "Vue en grille",
+    "filter_label": "Filtrer par type",
+    "load_more": "Afficher plus",
+    "empty": "Aucun fichier pour l'instant",
+    "empty_filtered": "Aucun fichier ne correspond à ce filtre",
+    "load_failed": "Impossible de charger les fichiers",
+    "retry": "Réessayer",
+    "open_issue": "Ouvrir la tâche {{identifier}}"
   }
 }

@@ -12,6 +12,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  MessagesSquare,
   Rows3,
   SignalHigh,
   SlidersHorizontal,
@@ -81,6 +82,7 @@ import { ProjectIcon } from "../../projects/components/project-icon";
 import { useProjectStatusLabels } from "../../projects/components/labels";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
+import { SegmentedToggle } from "../../common/segmented-toggle";
 import { sortDirectionLabelKey } from "../utils/sort-direction";
 import { LabelChip } from "../../labels/label-chip";
 import {
@@ -1181,6 +1183,7 @@ export function IssuesHeader({
   scopedIssues,
   workingAgents,
   allowGantt = false,
+  allowFeed = false,
   dateFilter = null,
   onDateFilterChange,
   isRefreshing,
@@ -1194,6 +1197,7 @@ export function IssuesHeader({
    *  behind the agents-working chip. */
   workingAgents: WorkingAgentSummary[] | undefined;
   allowGantt?: boolean;
+  allowFeed?: boolean;
   dateFilter?: IssueDateFilter | null;
   onDateFilterChange?: (filter: IssueDateFilter | null) => void;
   /** Omit when the page title already displays refresh feedback. */
@@ -1370,6 +1374,7 @@ export function IssuesHeader({
           <IssueDisplayControls
             scopedIssues={scopedIssues}
             allowGantt={allowGantt}
+            allowFeed={allowFeed}
             dateFilter={dateFilter}
             onDateFilterChange={onDateFilterChange}
             facetCountsExact={facetCountsExact}
@@ -1872,6 +1877,7 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  allowFeed = false,
   dateFilter = null,
   onDateFilterChange,
   facetCountsExact = true,
@@ -1890,6 +1896,8 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  // Feed is Project-detail-only for the same reason as Gantt.
+  allowFeed?: boolean;
   /**
    * Whether `scopedIssues` covers the surface's full window. Table does not
    * use loaded rows for counts; server-paged List, Board, and Swimlane follow
@@ -1904,6 +1912,7 @@ export function IssueDisplayControls({
   const [tableGroupMenuOpen, setTableGroupMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const viewMode = useViewStore((s) => s.viewMode);
+  const feedSort = useViewStore((s) => s.feedSort);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
   const assigneeFilters = useViewStore((s) => s.assigneeFilters);
@@ -2271,74 +2280,80 @@ export function IssueDisplayControls({
                   />
                 </label>
               )}
-              <div>
-                <span className="text-caption font-medium text-muted-foreground">
-                  {t(($) => $.display.ordering_section)}
-                </span>
-                {/* Direction labels run up to "Reverse workflow order", so the
-                    pair gets the full popover width (w-72 keeps "Status" beside
-                    it untruncated): the field select absorbs the slack and
-                    truncates, the direction label never does. */}
-                <div className="mt-2 flex items-center gap-1.5">
-                  <Select
-                    items={[
-                      ...availableSortOptions.map((opt) => ({
-                        value: opt.value as string,
-                        label: t(($) => $.display[SORT_LABEL_KEY[opt.value as keyof typeof SORT_LABEL_KEY]]),
-                      })),
-                      ...sortableProperties.map((p) => ({
-                        value: `property:${p.id}`,
-                        label: p.name,
-                      })),
-                    ]}
-                    value={sortBy}
-                    onValueChange={(v) => {
-                      if (v) act.setSortBy(v as SortField);
-                    }}
-                  >
-                    <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t(($) => $.display.ordering_section)}>
-                      <SelectValue>{sortLabel}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectGroup>
-                      {availableSortOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {t(($) => $.display[SORT_LABEL_KEY[opt.value as keyof typeof SORT_LABEL_KEY]])}
-                        </SelectItem>
-                      ))}
-                      {sortableProperties.map((property) => (
-                        <SelectItem key={property.id} value={`property:${property.id}`}>
-                          {property.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {sortBy !== "position" && (
-                    <Button
-                      variant="outline"
+              {/* Feed shows top-level issues only, oldest first; its two orders
+                  live in the header toggle, not in the sort/group settings. */}
+              {viewMode !== "feed" && (
+                <>
+                  <div>
+                    <span className="text-caption font-medium text-muted-foreground">
+                      {t(($) => $.display.ordering_section)}
+                    </span>
+                    {/* Direction labels run up to "Reverse workflow order", so the
+                        pair gets the full popover width (w-72 keeps "Status" beside
+                        it untruncated): the field select absorbs the slack and
+                        truncates, the direction label never does. */}
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <Select
+                        items={[
+                          ...availableSortOptions.map((opt) => ({
+                            value: opt.value as string,
+                            label: t(($) => $.display[SORT_LABEL_KEY[opt.value as keyof typeof SORT_LABEL_KEY]]),
+                          })),
+                          ...sortableProperties.map((p) => ({
+                            value: `property:${p.id}`,
+                            label: p.name,
+                          })),
+                        ]}
+                        value={sortBy}
+                        onValueChange={(v) => {
+                          if (v) act.setSortBy(v as SortField);
+                        }}
+                      >
+                        <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t(($) => $.display.ordering_section)}>
+                          <SelectValue>{sortLabel}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                          <SelectGroup>
+                          {availableSortOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {t(($) => $.display[SORT_LABEL_KEY[opt.value as keyof typeof SORT_LABEL_KEY]])}
+                            </SelectItem>
+                          ))}
+                          {sortableProperties.map((property) => (
+                            <SelectItem key={property.id} value={`property:${property.id}`}>
+                              {property.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {sortBy !== "position" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            act.setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+                          }
+                          aria-label={sortDirectionLabel}
+                          title={sortDirectionLabel}
+                        >
+                          {sortDirectionLabel}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <label className="flex cursor-pointer items-center justify-between gap-3">
+                    <span className="text-caption font-medium text-muted-foreground">
+                      {t(($) => $.display.show_sub_issues)}
+                    </span>
+                    <Switch
                       size="sm"
-                      onClick={() =>
-                        act.setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-                      }
-                      aria-label={sortDirectionLabel}
-                      title={sortDirectionLabel}
-                    >
-                      {sortDirectionLabel}
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <label className="flex cursor-pointer items-center justify-between gap-3">
-                <span className="text-caption font-medium text-muted-foreground">
-                  {t(($) => $.display.show_sub_issues)}
-                </span>
-                <Switch
-                  size="sm"
-                  checked={showSubIssues}
-                  onCheckedChange={() => act.toggleShowSubIssues()}
-                />
-              </label>
+                      checked={showSubIssues}
+                      onCheckedChange={() => act.toggleShowSubIssues()}
+                    />
+                  </label>
+                </>
+              )}
               {availableCardPropertyOptions.length > 0 && (
                 <div>
                   <span className="text-caption font-medium text-muted-foreground">
@@ -2378,6 +2393,18 @@ export function IssueDisplayControls({
           </PopoverContent>
         </Popover>
 
+        {viewMode === "feed" && allowFeed && (
+          <SegmentedToggle
+            value={feedSort}
+            options={[
+              ["created", t(($) => $.feed.sort.created)],
+              ["activity", t(($) => $.feed.sort.activity)],
+            ]}
+            onChange={(sort) => act.setFeedSort(sort)}
+            buttonClassName="px-2 py-0.5 text-caption"
+          />
+        )}
+
         {/* View toggle. If a store has `viewMode === "gantt"` persisted but
             this surface doesn't render Gantt, fall back to "list" so the
             trigger icon matches what's actually on screen. */}
@@ -2397,6 +2424,8 @@ export function IssueDisplayControls({
                           <Waves className="size-3.5" />
                         ) : viewMode === "gantt" && allowGantt ? (
                           <ChartGantt className="size-3.5" />
+                        ) : viewMode === "feed" && allowFeed ? (
+                          <MessagesSquare className="size-3.5" />
                         ) : (
                           <List className="size-3.5" />
                         )}
@@ -2409,6 +2438,8 @@ export function IssueDisplayControls({
                             ? t(($) => $.view.swimlane)
                             : viewMode === "gantt" && allowGantt
                             ? t(($) => $.view.gantt)
+                            : viewMode === "feed" && allowFeed
+                            ? t(($) => $.view.feed)
                             : t(($) => $.view.list)}
                         </span>
                       </Button>
@@ -2425,6 +2456,8 @@ export function IssueDisplayControls({
                   ? t(($) => $.view.tooltip_swimlane)
                   : viewMode === "gantt" && allowGantt
                   ? t(($) => $.view.tooltip_gantt)
+                  : viewMode === "feed" && allowFeed
+                  ? t(($) => $.view.tooltip_feed)
                   : t(($) => $.view.tooltip_list)}
               </TooltipContent>
             </Tooltip>
@@ -2459,6 +2492,12 @@ export function IssueDisplayControls({
                   <DropdownMenuRadioItem value="gantt">
                     <ChartGantt />
                     {t(($) => $.view.gantt)}
+                  </DropdownMenuRadioItem>
+                )}
+                {allowFeed && (
+                  <DropdownMenuRadioItem value="feed">
+                    <MessagesSquare />
+                    {t(($) => $.view.feed)}
                   </DropdownMenuRadioItem>
                 )}
               </DropdownMenuRadioGroup>
