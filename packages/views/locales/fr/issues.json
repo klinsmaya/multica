@@ -720,6 +720,10 @@
       "plan_title": "Établir un plan",
       "new": "Nouvelle tâche"
     },
+    "sort": {
+      "created": "Par création",
+      "activity": "Par activité récente"
+    },
     "new_messages": "Nouveaux messages",
     "composer": {
       "placeholder": "Écrire un message : la première ligne est le titre, @ pour assigner",

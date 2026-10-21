@@ -691,6 +691,10 @@
       "plan_title": "制定计划",
       "new": "新建任务"
     },
+    "sort": {
+      "created": "按创建时间",
+      "activity": "按最近活跃"
+    },
     "new_messages": "有新消息",
     "composer": {
       "placeholder": "发消息，首行是标题，@ 可指派",

@@ -2,6 +2,12 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { forwardRef, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createStore } from "zustand/vanilla";
+import {
+  type IssueViewState,
+  viewStoreSlice,
+} from "@multica/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
 import type { Issue, IssueThreadSummary } from "@multica/core/types";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { renderWithI18n } from "../../test/i18n";
@@ -135,6 +141,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
 }
 
 function renderFeed(issues: Issue[], projectId: string | null = null) {
+  const store = createStore<IssueViewState>()(viewStoreSlice);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -142,13 +149,16 @@ function renderFeed(issues: Issue[], projectId: string | null = null) {
     <QueryClientProvider client={queryClient}>
       <NavigationProvider value={navigation}>
         <IssuePeekActionsContext.Provider value={peek}>
-          <FeedView issues={current} projectId={projectId} />
+          <ViewStoreProvider store={store}>
+            <FeedView issues={current} projectId={projectId} />
+          </ViewStoreProvider>
         </IssuePeekActionsContext.Provider>
       </NavigationProvider>
     </QueryClientProvider>
   );
   const view = renderWithI18n(tree(issues));
   return Object.assign(view, {
+    store,
     update: (next: Issue[]) => view.rerender(tree(next)),
   });
 }
@@ -186,6 +196,64 @@ describe("FeedView", () => {
     expect(JSON.parse(screen.getByTestId("virtuoso").dataset.initialIndex!)).toEqual({
       index: 2,
       align: "end",
+    });
+  });
+
+  describe("feed sort", () => {
+    const issues = () => [
+      // Created first, but the most recent thread activity.
+      makeIssue({
+        id: "a",
+        title: "Alpha",
+        created_at: "2026-10-01T00:00:00Z",
+        last_activity_at: "2026-10-09T00:00:00Z",
+      }),
+      makeIssue({
+        id: "b",
+        title: "Bravo",
+        created_at: "2026-10-02T00:00:00Z",
+        last_activity_at: "2026-10-03T00:00:00Z",
+      }),
+      // Never discussed: falls back to its creation time.
+      makeIssue({
+        id: "c",
+        title: "Charlie",
+        created_at: "2026-10-05T00:00:00Z",
+        last_activity_at: null,
+      }),
+      // Field missing entirely (older server): same fallback.
+      makeIssue({ id: "d", title: "Delta", created_at: "2026-10-04T00:00:00Z" }),
+    ];
+    const renderedTitles = () =>
+      ["Alpha", "Bravo", "Charlie", "Delta"]
+        .map((title) => ({ title, el: screen.getByText(title) }))
+        .sort((x, y) =>
+          x.el.compareDocumentPosition(y.el) & Node.DOCUMENT_POSITION_FOLLOWING
+            ? -1
+            : 1,
+        )
+        .map(({ title }) => title);
+
+    it("orders by creation time by default", () => {
+      renderFeed(issues());
+      expect(renderedTitles()).toEqual(["Alpha", "Bravo", "Delta", "Charlie"]);
+    });
+
+    it("orders by last activity, falling back to creation time when it is null", () => {
+      const { store } = renderFeed(issues());
+      act(() => store.getState().setFeedSort("activity"));
+      expect(renderedTitles()).toEqual(["Bravo", "Delta", "Charlie", "Alpha"]);
+      expect(JSON.parse(screen.getByTestId("virtuoso").dataset.initialIndex!)).toEqual({
+        index: 3,
+        align: "end",
+      });
+    });
+
+    it("returns to creation order when switched back", () => {
+      const { store } = renderFeed(issues());
+      act(() => store.getState().setFeedSort("activity"));
+      act(() => store.getState().setFeedSort("created"));
+      expect(renderedTitles()).toEqual(["Alpha", "Bravo", "Delta", "Charlie"]);
     });
   });
 

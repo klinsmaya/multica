@@ -720,6 +720,10 @@
       "plan_title": "Make a plan",
       "new": "New issue"
     },
+    "sort": {
+      "created": "By created",
+      "activity": "By recent activity"
+    },
     "new_messages": "New messages",
     "composer": {
       "placeholder": "Send a message — first line is the title, @ to assign",

@@ -691,6 +691,10 @@
       "plan_title": "計画を立てる",
       "new": "新規タスク"
     },
+    "sort": {
+      "created": "作成順",
+      "activity": "最近の活動順"
+    },
     "new_messages": "新着メッセージ",
     "composer": {
       "placeholder": "メッセージを送信。1行目がタイトル、@ で担当者を指定",

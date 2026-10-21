@@ -6,6 +6,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown, MessagesSquare } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { threadSummariesOptions } from "@multica/core/issues/queries";
+import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import type { Issue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../i18n";
@@ -19,8 +20,9 @@ const SCROLL_TO_NEWEST = { index: "LAST", align: "end", behavior: "smooth" } as 
 
 /**
  * Top-level issues of a scope as a chat-like stream: oldest at the top, newest
- * at the bottom, opened scrolled to the newest. Sort and grouping preferences
- * do not apply — a feed is chronological by definition.
+ * at the bottom, opened scrolled to the newest. The feed's own sort picks
+ * creation time or latest thread activity; the generic sort and grouping
+ * preferences do not apply.
  */
 export function FeedView({
   issues,
@@ -34,16 +36,19 @@ export function FeedView({
   const wsId = useWorkspaceId();
   const peek = useIssuePeekActions();
 
-  const messages = useMemo(
-    () =>
-      issues
-        .filter((issue) => issue.parent_issue_id == null)
-        .sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-        ),
-    [issues],
-  );
+  const feedSort = useViewStore((s) => s.feedSort);
+
+  const messages = useMemo(() => {
+    const sortTime = (issue: Issue) =>
+      new Date(
+        feedSort === "activity"
+          ? (issue.last_activity_at ?? issue.created_at)
+          : issue.created_at,
+      ).getTime();
+    return issues
+      .filter((issue) => issue.parent_issue_id == null)
+      .sort((a, b) => sortTime(a) - sortTime(b));
+  }, [issues, feedSort]);
   const messageIds = useMemo(() => messages.map((issue) => issue.id), [messages]);
 
   // A failed or unsupported summaries request leaves `data` undefined; the

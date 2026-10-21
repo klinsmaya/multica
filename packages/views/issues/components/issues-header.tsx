@@ -82,6 +82,7 @@ import { ProjectIcon } from "../../projects/components/project-icon";
 import { useProjectStatusLabels } from "../../projects/components/labels";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
+import { SegmentedToggle } from "../../common/segmented-toggle";
 import { sortDirectionLabelKey } from "../utils/sort-direction";
 import { LabelChip } from "../../labels/label-chip";
 import {
@@ -1911,6 +1912,7 @@ export function IssueDisplayControls({
   const [tableGroupMenuOpen, setTableGroupMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const viewMode = useViewStore((s) => s.viewMode);
+  const feedSort = useViewStore((s) => s.feedSort);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
   const assigneeFilters = useViewStore((s) => s.assigneeFilters);
@@ -2278,7 +2280,8 @@ export function IssueDisplayControls({
                   />
                 </label>
               )}
-              {/* Feed is always oldest-first and shows top-level issues only. */}
+              {/* Feed shows top-level issues only, oldest first; its two orders
+                  live in the header toggle, not in the sort/group settings. */}
               {viewMode !== "feed" && (
                 <>
                   <div>
@@ -2389,6 +2392,18 @@ export function IssueDisplayControls({
             </div>
           </PopoverContent>
         </Popover>
+
+        {viewMode === "feed" && allowFeed && (
+          <SegmentedToggle
+            value={feedSort}
+            options={[
+              ["created", t(($) => $.feed.sort.created)],
+              ["activity", t(($) => $.feed.sort.activity)],
+            ]}
+            onChange={(sort) => act.setFeedSort(sort)}
+            buttonClassName="px-2 py-0.5 text-caption"
+          />
+        )}
 
         {/* View toggle. If a store has `viewMode === "gantt"` persisted but
             this surface doesn't render Gantt, fall back to "list" so the

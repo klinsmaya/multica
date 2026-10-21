@@ -603,6 +603,7 @@ export function SaveViewDialog({
         // first-open default, freely adjustable per user afterwards.
         showSubIssues: state.showSubIssues,
         viewMode: state.viewMode,
+        feedSort: state.feedSort,
         grouping: state.grouping,
         sortBy: state.sortBy,
         sortDirection: state.sortDirection,
