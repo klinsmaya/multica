@@ -690,6 +690,13 @@
       "title": "等你决定",
       "open_thread": "查看讨论串"
     },
+    "progress": {
+      "label": "最新进度",
+      "count": "{{done}}/{{total}} 完成",
+      "more": "还有 {{number}} 项",
+      "item_done": "已完成：",
+      "item_open": "待办："
+    },
     "empty": "信息流中没有任务",
     "quick": {
       "continue": "继续最近的工作",

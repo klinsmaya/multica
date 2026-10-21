@@ -1602,6 +1602,59 @@ func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThr
 	return items, nil
 }
 
+const listLatestProgressCommentsForIssues = `-- name: ListLatestProgressCommentsForIssues :many
+SELECT DISTINCT ON (issue_id) issue_id, id AS comment_id, content, created_at
+FROM comment
+WHERE workspace_id = $1
+  AND issue_id = ANY($2::uuid[])
+  AND deleted_at IS NULL
+  AND type = 'progress_update'
+  AND author_type = 'agent'
+  AND content ~ '(^|\n)[ \t]*[-*+][ \t]+\[[ xX]\]'
+ORDER BY issue_id, created_at DESC, id DESC
+`
+
+type ListLatestProgressCommentsForIssuesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListLatestProgressCommentsForIssuesRow struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	CommentID pgtype.UUID        `json:"comment_id"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// The newest agent progress report per issue: a non-deleted progress_update
+// comment whose body holds a Markdown task list (a "- [ ]" / "- [x]" item,
+// any bullet marker and indentation). Reports without a checklist are not
+// progress the feed can render, so they never shadow an older checklist.
+func (q *Queries) ListLatestProgressCommentsForIssues(ctx context.Context, arg ListLatestProgressCommentsForIssuesParams) ([]ListLatestProgressCommentsForIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listLatestProgressCommentsForIssues, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestProgressCommentsForIssuesRow{}
+	for rows.Next() {
+		var i ListLatestProgressCommentsForIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.CommentID,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentThreadCommentsForIssue = `-- name: ListRecentThreadCommentsForIssue :many
 WITH RECURSIVE membership(id, root_id, comment_created_at) AS (
     -- Each root maps to itself.

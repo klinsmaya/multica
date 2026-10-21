@@ -719,6 +719,13 @@
       "title": "En attente de votre décision",
       "open_thread": "Voir le fil"
     },
+    "progress": {
+      "label": "Dernière progression",
+      "count": "{{done}}/{{total}} terminé",
+      "more": "+{{number}} de plus",
+      "item_done": "Terminé :",
+      "item_open": "À faire :"
+    },
     "empty": "Aucune tâche dans ce flux",
     "quick": {
       "continue": "Reprendre le dernier travail",

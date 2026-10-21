@@ -45,6 +45,17 @@ type IssueThreadSummaryResponse struct {
 	// mentioning the caller, newest first, at most issueAwaitingMeLimit. Never
 	// null.
 	AwaitingMe []AwaitingMeResponse `json:"awaiting_me"`
+	// LatestProgress is the newest agent progress report (a progress_update
+	// comment holding a Markdown task list); null when the issue has none.
+	LatestProgress *LatestProgressResponse `json:"latest_progress"`
+}
+
+type LatestProgressResponse struct {
+	CommentID string `json:"comment_id"`
+	// Content is the full comment body; the client decides how many lines to
+	// show.
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
 }
 
 type AwaitingMeResponse struct {
@@ -86,6 +97,9 @@ func commentExcerpt(content string, maxRunes int) string {
 //
 // awaiting_me carries the caller's open questions from agents: unresolved
 // threads whose latest comment is agent-authored and mentions the caller.
+//
+// latest_progress carries the newest agent progress report per issue, read
+// from progress_update comments whose body is a Markdown task list.
 //
 // Each row also carries the caller's read cursor (last_read_at, null when never
 // opened) so the feed can tell unread cards from read ones; other users'
@@ -189,6 +203,23 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
+	progressRows, err := h.Queries.ListLatestProgressCommentsForIssues(r.Context(), db.ListLatestProgressCommentsForIssuesParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list progress reports")
+		return
+	}
+	progress := make(map[string]*LatestProgressResponse, len(progressRows))
+	for _, p := range progressRows {
+		progress[uuidToString(p.IssueID)] = &LatestProgressResponse{
+			CommentID: uuidToString(p.CommentID),
+			Content:   p.Content,
+			CreatedAt: p.CreatedAt.Time.Format(time.RFC3339Nano),
+		}
+	}
+
 	// Rows arrive ordered by issue then most recent activity, so the first
 	// few per issue are the participants to show.
 	participants := make(map[string][]ThreadParticipantResponse, len(rows))
@@ -222,6 +253,7 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 			Participants:    list,
 			LastReadAt:      lastRead[issueID],
 			AwaitingMe:      awaitingList,
+			LatestProgress:  progress[issueID],
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summaries": summaries})

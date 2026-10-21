@@ -1026,3 +1026,18 @@ FROM latest l
 WHERE l.author_type = 'agent'
   AND l.content ILIKE '%](mention://member/' || sqlc.arg('caller_id')::uuid::text || ')%'
 ORDER BY l.issue_id, l.created_at DESC, l.id DESC;
+
+-- name: ListLatestProgressCommentsForIssues :many
+-- The newest agent progress report per issue: a non-deleted progress_update
+-- comment whose body holds a Markdown task list (a "- [ ]" / "- [x]" item,
+-- any bullet marker and indentation). Reports without a checklist are not
+-- progress the feed can render, so they never shadow an older checklist.
+SELECT DISTINCT ON (issue_id) issue_id, id AS comment_id, content, created_at
+FROM comment
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+  AND deleted_at IS NULL
+  AND type = 'progress_update'
+  AND author_type = 'agent'
+  AND content ~ '(^|\n)[ \t]*[-*+][ \t]+\[[ xX]\]'
+ORDER BY issue_id, created_at DESC, id DESC;

@@ -14,6 +14,7 @@ function summary(overrides: Partial<IssueThreadSummary> = {}): IssueThreadSummar
     participants: [{ type: "agent", id: "agent-1" }],
     last_read_at: null,
     awaiting_me: [],
+    latest_progress: null,
     ...overrides,
   };
 }

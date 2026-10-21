@@ -1248,6 +1248,7 @@ describe("thread summary realtime updates", () => {
     ],
     last_read_at: null,
     awaiting_me: [],
+    latest_progress: null,
   });
 
   const read = (key: readonly unknown[] = cacheKey) =>
@@ -1276,6 +1277,7 @@ describe("thread summary realtime updates", () => {
       ],
       last_read_at: null,
       awaiting_me: [],
+      latest_progress: null,
     });
   });
 
@@ -1378,6 +1380,7 @@ describe("thread summary realtime updates", () => {
       participants: [{ type: "agent", id: "agent-9" }],
       last_read_at: null,
       awaiting_me: [],
+      latest_progress: null,
     });
   });
 
@@ -1390,6 +1393,51 @@ describe("thread summary realtime updates", () => {
 
     expect(rowA()?.last_read_at).toBe("2026-10-01T12:00:00Z");
     expect(rowA()?.last_reply_at).toBe("2026-10-02T00:00:00Z");
+  });
+
+  describe("latest_progress", () => {
+    const progress = (overrides: Partial<Comment> = {}) =>
+      makeComment({
+        id: "progress-1",
+        author_type: "agent",
+        author_id: "agent-1",
+        type: "progress_update",
+        content: "- [x] a\n- [ ] b",
+        ...overrides,
+      });
+
+    it("takes an agent progress_update that holds a checklist", () => {
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, progress());
+
+      expect(rowA()?.latest_progress).toEqual({
+        comment_id: "progress-1",
+        content: "- [x] a\n- [ ] b",
+        created_at: "2026-10-02T00:00:00Z",
+      });
+    });
+
+    it("ignores progress without a checklist, member authors and plain comments", () => {
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, progress({ content: "working on it" }));
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, progress({ author_type: "member" }));
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, progress({ type: "comment" }));
+
+      expect(rowA()?.latest_progress).toBeNull();
+    });
+
+    it("keeps a newer stored report over an older arrival", () => {
+      const stored = {
+        comment_id: "newer",
+        content: "- [ ] x",
+        created_at: "2026-10-03T00:00:00Z",
+      };
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        { ...summaryA(), latest_progress: stored },
+      ]);
+
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, progress());
+
+      expect(rowA()?.latest_progress).toEqual(stored);
+    });
   });
 
   describe("awaiting_me", () => {

@@ -690,6 +690,13 @@
       "title": "あなたの判断待ち",
       "open_thread": "スレッドを見る"
     },
+    "progress": {
+      "label": "最新の進捗",
+      "count": "{{done}}/{{total}} 完了",
+      "more": "ほか {{number}} 件",
+      "item_done": "完了：",
+      "item_open": "未完了："
+    },
     "empty": "フィードに表示するタスクはありません",
     "quick": {
       "continue": "最近の作業を続ける",

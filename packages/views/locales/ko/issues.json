@@ -690,6 +690,13 @@
       "title": "결정 대기 중",
       "open_thread": "스레드 보기"
     },
+    "progress": {
+      "label": "최신 진행 상황",
+      "count": "{{done}}/{{total}} 완료",
+      "more": "외 {{number}}개",
+      "item_done": "완료:",
+      "item_open": "할 일:"
+    },
     "empty": "피드에 표시할 태스크가 없습니다",
     "quick": {
       "continue": "최근 작업 이어가기",

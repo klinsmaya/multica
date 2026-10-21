@@ -183,6 +183,14 @@ export interface IssueAwaitingMe {
   created_at: string;
 }
 
+/** An agent's newest progress report: a `progress_update` comment whose body is a Markdown task list. */
+export interface IssueLatestProgress {
+  comment_id: string;
+  /** Full comment body; read it with `parseProgressChecklist`. */
+  content: string;
+  created_at: string;
+}
+
 /** Comment-thread rollup for one issue. Issues without counted comments have no row. */
 export interface IssueThreadSummary {
   issue_id: string;
@@ -194,6 +202,8 @@ export interface IssueThreadSummary {
   last_read_at: string | null;
   /** Agent questions waiting on the caller, newest first (at most 3). */
   awaiting_me: IssueAwaitingMe[];
+  /** The newest agent progress report on the issue; null when there is none. */
+  latest_progress: IssueLatestProgress | null;
 }
 
 export interface Issue {

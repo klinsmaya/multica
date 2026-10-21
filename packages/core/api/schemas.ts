@@ -1812,6 +1812,12 @@ export const ThreadSummariesResponseSchema = z.object({
       excerpt: z.string().default(""),
       created_at: z.string().default(""),
     }).loose()).default([]),
+    // Older servers do not report agent progress.
+    latest_progress: z.object({
+      comment_id: z.string(),
+      content: z.string().default(""),
+      created_at: z.string().default(""),
+    }).loose().nullable().optional().default(null),
   }).loose()).default([]),
 }).loose();
 

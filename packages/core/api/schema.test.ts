@@ -1132,6 +1132,7 @@ describe("ApiClient schema fallback", () => {
           participants: [],
           last_read_at: null,
           awaiting_me: [],
+          latest_progress: null,
         },
       ]);
     });
@@ -1181,6 +1182,45 @@ describe("ApiClient schema fallback", () => {
         { comment_id: "c-2", actor_id: "agent-2", excerpt: "", created_at: "" },
       ]);
       expect(res.summaries[1]?.awaiting_me).toEqual([]);
+    });
+
+    it("keeps latest_progress and nulls a missing, null or content-less one", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            latest_progress: {
+              comment_id: "c-1",
+              content: "- [x] a\n- [ ] b",
+              created_at: "2026-05-01T10:00:00Z",
+            },
+          },
+          { issue_id: "issue-2" },
+          { issue_id: "issue-3", latest_progress: null },
+          { issue_id: "issue-4", latest_progress: { comment_id: "c-4" } },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2", "issue-3", "issue-4"]);
+      expect(res.summaries[0]?.latest_progress).toEqual({
+        comment_id: "c-1",
+        content: "- [x] a\n- [ ] b",
+        created_at: "2026-05-01T10:00:00Z",
+      });
+      expect(res.summaries[1]?.latest_progress).toBeNull();
+      expect(res.summaries[2]?.latest_progress).toBeNull();
+      expect(res.summaries[3]?.latest_progress).toEqual({
+        comment_id: "c-4",
+        content: "",
+        created_at: "",
+      });
+    });
+
+    it("falls back to an empty list for a malformed latest_progress", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", latest_progress: "oops" }] });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toEqual([]);
     });
   });
 

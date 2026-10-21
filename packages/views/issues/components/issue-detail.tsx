@@ -78,6 +78,7 @@ import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
 import { useMarkIssueRead, useUpdateIssue } from "@multica/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@multica/core/api";
+import { PeekProgressCard } from "./feed-progress-card";
 import { StatusIcon } from "./status-icon";
 import { PriorityIcon } from "./priority-icon";
 import { StatusPicker } from "./pickers/status-picker";
@@ -3482,6 +3483,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               })()}
             </AppLink>
           )}
+
+          {isPeek && <PeekProgressCard issue={issue} />}
 
           {isPeek && (
             <div className="mt-3">

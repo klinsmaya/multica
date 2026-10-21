@@ -61,6 +61,7 @@ function summaryOf(awaiting_me: IssueAwaitingMe[]): IssueThreadSummary {
     participants: [],
     last_read_at: null,
     awaiting_me,
+    latest_progress: null,
   };
 }
 

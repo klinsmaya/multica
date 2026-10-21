@@ -22,6 +22,7 @@ import {
 } from "./cache-helpers";
 import { cleanupDeletedIssueCaches } from "./delete-cache";
 import { parseMentions } from "./comment-trigger-outcomes";
+import { parseProgressChecklist } from "./progress-checklist";
 import type {
   Comment,
   Issue,
@@ -814,6 +815,18 @@ function isCountedThreadComment(comment: Comment): boolean {
 
 const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
 
+// A new agent progress report with a checklist replaces the stored one when it
+// is not older; anything else leaves the server's value in place.
+function nextLatestProgress(
+  comment: Comment,
+  existing: IssueThreadSummary["latest_progress"],
+): IssueThreadSummary["latest_progress"] {
+  if (comment.type !== "progress_update" || comment.author_type !== "agent") return existing;
+  if (parseProgressChecklist(comment.content ?? "").total === 0) return existing;
+  if (existing && Date.parse(comment.created_at) < Date.parse(existing.created_at)) return existing;
+  return { comment_id: comment.id, content: comment.content, created_at: comment.created_at };
+}
+
 function applyCommentToThreadSummary(
   existing: IssueThreadSummary | undefined,
   comment: Comment,
@@ -842,6 +855,7 @@ function applyCommentToThreadSummary(
     participants,
     last_read_at: existing?.last_read_at ?? null,
     awaiting_me: clearAwaitingMe ? [] : (existing?.awaiting_me ?? []),
+    latest_progress: nextLatestProgress(comment, existing?.latest_progress ?? null),
   };
 }
 

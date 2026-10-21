@@ -181,6 +181,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
       participants: [{ type: "member", id: "u1" }],
       last_read_at: null,
       awaiting_me: [],
+      latest_progress: null,
     };
 
     function mount() {

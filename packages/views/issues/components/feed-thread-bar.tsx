@@ -11,6 +11,7 @@ import { useT, useTimeAgo } from "../../i18n";
 import { useStatusLabel } from "../utils/status-label";
 import { useIsIssuePeeked } from "../surface/peek-context";
 import { useOpenFeedIssue } from "./feed-message-card";
+import { FeedProgressCard } from "./feed-progress-card";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { StatusIcon } from "./status-icon";
 
@@ -59,6 +60,7 @@ export const FeedThreadBar = memo(function FeedThreadBar({
   const hiddenParticipants = participants.length - shownParticipants.length;
 
   return (
+    <>
     <div
       role="button"
       tabIndex={0}
@@ -110,5 +112,7 @@ export const FeedThreadBar = memo(function FeedThreadBar({
         <FeedStatusChip status={issue.status} />
       </span>
     </div>
+    <FeedProgressCard progress={summary?.latest_progress} status={issue.status} />
+    </>
   );
 });

@@ -719,6 +719,13 @@
       "title": "Waiting on you",
       "open_thread": "View thread"
     },
+    "progress": {
+      "label": "Latest progress",
+      "count": "{{done}}/{{total}} done",
+      "more": "+{{number}} more",
+      "item_done": "Done:",
+      "item_open": "To do:"
+    },
     "empty": "No issues in this feed",
     "quick": {
       "continue": "Continue recent work",
