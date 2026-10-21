@@ -21,6 +21,7 @@ vi.mock("./issue-detail", () => ({
     variant,
     leadingAction,
     trailingActions,
+    belowHeader,
     onDelete,
     highlightCommentId,
     highlightRequestToken,
@@ -29,6 +30,7 @@ vi.mock("./issue-detail", () => ({
     variant: string;
     leadingAction: ReactNode;
     trailingActions: ReactNode;
+    belowHeader: ReactNode;
     onDelete: () => void;
     highlightCommentId?: string;
     highlightRequestToken?: number;
@@ -44,12 +46,20 @@ vi.mock("./issue-detail", () => ({
       {issueId}
       {leadingAction}
       {trailingActions}
+      {belowHeader}
       <button type="button" onClick={onDelete}>
         delete
       </button>
     </div>
     );
   },
+}));
+
+// The strip reads its own query; its tests live beside it.
+vi.mock("./issue-peek-output-strip", () => ({
+  IssuePeekOutputStrip: ({ issueId }: { issueId: string }) => (
+    <div data-testid="peek-output-strip">{`strip ${issueId}`}</div>
+  ),
 }));
 
 const navigation: NavigationAdapter = {
@@ -131,6 +141,16 @@ describe("IssuePeekHost", () => {
     expect(screen.getByTestId("detail")).toHaveTextContent("i-2");
     expect(screen.getByText("card i-2")).toHaveAttribute("data-peeked");
     expect(screen.getByText("card i-1")).not.toHaveAttribute("data-peeked");
+  });
+
+  it("puts the output strip for the peeked issue under the detail's header", () => {
+    renderHost();
+    openCard("i-2");
+    expect(screen.getByTestId("detail")).toContainElement(screen.getByTestId("peek-output-strip"));
+    expect(screen.getByTestId("peek-output-strip")).toHaveTextContent("strip i-2");
+
+    openCard("i-3");
+    expect(screen.getByTestId("peek-output-strip")).toHaveTextContent("strip i-3");
   });
 
   it("hands the comment to land on to the peeked detail, replaying a repeat open", () => {

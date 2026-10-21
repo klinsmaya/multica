@@ -739,6 +739,15 @@
       "activity": "Par activité récente"
     },
     "new_messages": "Nouveaux messages",
+    "output": {
+      "pull_request": "Pull request #{{number}}, {{state}}",
+      "state_open": "Ouverte",
+      "checks_failed": "Vérifications en échec",
+      "checks_pending": "Vérifications en cours",
+      "deliverables_one": "{{count}} livrable",
+      "deliverables_other": "{{count}} livrables",
+      "deliverables_updated": "Dernière mise à jour {{time}}"
+    },
     "composer": {
       "placeholder": "Écrire un message : la première ligne est le titre, @ pour assigner",
       "send": "Envoyer",

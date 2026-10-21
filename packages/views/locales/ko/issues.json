@@ -710,6 +710,14 @@
       "activity": "최근 활동순"
     },
     "new_messages": "새 메시지",
+    "output": {
+      "pull_request": "Pull request #{{number}}, {{state}}",
+      "state_open": "열림",
+      "checks_failed": "검사 실패",
+      "checks_pending": "검사 실행 중",
+      "deliverables_other": "산출물 {{count}}개",
+      "deliverables_updated": "마지막 업데이트 {{time}}"
+    },
     "composer": {
       "placeholder": "메시지 보내기. 첫 줄은 제목, @로 담당자 지정",
       "send": "보내기",

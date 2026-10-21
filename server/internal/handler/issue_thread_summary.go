@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +29,17 @@ const (
 	issueAwaitingMeExcerptRunes = 140
 )
 
+// Linked PRs listed per issue on the output strip, newest first.
+const issueThreadSummaryPullRequestLimit = 3
+
+// Values of ThreadPullRequestResponse.ChecksState.
+const (
+	threadChecksPassed  = "passed"
+	threadChecksFailed  = "failed"
+	threadChecksPending = "pending"
+	threadChecksNone    = "none"
+)
+
 type ThreadParticipantResponse struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
@@ -48,6 +61,14 @@ type IssueThreadSummaryResponse struct {
 	// LatestProgress is the newest agent progress report (a progress_update
 	// comment holding a Markdown task list); null when the issue has none.
 	LatestProgress *LatestProgressResponse `json:"latest_progress"`
+	// PullRequests are the newest linked PRs (GitHub and self-hosted VCS),
+	// newest first, at most issueThreadSummaryPullRequestLimit. Never null.
+	PullRequests []ThreadPullRequestResponse `json:"pull_requests"`
+	// DeliverableCount is the number of distinct files uploaded in live
+	// comments; uploads of the same name and type are versions of one file.
+	DeliverableCount int64 `json:"deliverable_count"`
+	// LastDeliverableAt is the newest upload among those files, or null.
+	LastDeliverableAt *string `json:"last_deliverable_at"`
 }
 
 type LatestProgressResponse struct {
@@ -56,6 +77,24 @@ type LatestProgressResponse struct {
 	// show.
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
+}
+
+// ThreadPullRequestResponse is the slice of a linked PR the feed's output
+// strip renders. ChecksState is one of passed, failed, pending or none; none
+// covers both "no checks" and "no current CI snapshot", which the strip shows
+// the same way.
+type ThreadPullRequestResponse struct {
+	ID          string `json:"id"`
+	Number      int32  `json:"number"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	State       string `json:"state"`
+	Additions   int32  `json:"additions"`
+	Deletions   int32  `json:"deletions"`
+	ChecksState string `json:"checks_state"`
+
+	// createdAt orders the merged GitHub and VCS lists; never serialized.
+	createdAt time.Time
 }
 
 type AwaitingMeResponse struct {
@@ -90,8 +129,9 @@ func commentExcerpt(content string, maxRunes int) string {
 // ListIssueThreadSummaries returns comment rollups for a batch of issues so a
 // feed can render reply counts and avatars without one comment list per card.
 //
-// Only issues with at least one counted comment (not deleted, not
-// platform-authored) get a row; callers treat a missing issue as zero.
+// An issue gets a row when it has at least one counted comment (not deleted,
+// not platform-authored), a linked PR, or a deliverable; callers treat a
+// missing issue as zero.
 // Workspace scope is enforced in the query, so an id from another workspace
 // yields no row rather than an error.
 //
@@ -100,6 +140,9 @@ func commentExcerpt(content string, maxRunes int) string {
 //
 // latest_progress carries the newest agent progress report per issue, read
 // from progress_update comments whose body is a Markdown task list.
+//
+// pull_requests and deliverable_count/last_deliverable_at feed the output
+// strip: what the issue has produced, without opening it.
 //
 // Each row also carries the caller's read cursor (last_read_at, null when never
 // opened) so the feed can tell unread cards from read ones; other users'
@@ -203,6 +246,24 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
+	pullRequests, err := h.listThreadPullRequests(r.Context(), wsUUID, issueIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
+		return
+	}
+	deliverableRows, err := h.Queries.ListIssueDeliverableSummaries(r.Context(), db.ListIssueDeliverableSummariesParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list deliverables")
+		return
+	}
+	deliverables := make(map[string]db.ListIssueDeliverableSummariesRow, len(deliverableRows))
+	for _, d := range deliverableRows {
+		deliverables[uuidToString(d.IssueID)] = d
+	}
+
 	progressRows, err := h.Queries.ListLatestProgressCommentsForIssues(r.Context(), db.ListLatestProgressCommentsForIssuesParams{
 		WorkspaceID: wsUUID,
 		IssueIds:    issueIDs,
@@ -234,9 +295,7 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	summaries := make([]IssueThreadSummaryResponse, len(rows))
-	for i, row := range rows {
-		issueID := uuidToString(row.IssueID)
+	build := func(issueID string, row *db.ListIssueThreadSummariesRow) IssueThreadSummaryResponse {
 		list := participants[issueID]
 		if list == nil {
 			list = []ThreadParticipantResponse{}
@@ -245,16 +304,150 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		if awaitingList == nil {
 			awaitingList = []AwaitingMeResponse{}
 		}
-		summaries[i] = IssueThreadSummaryResponse{
-			IssueID:         issueID,
-			ReplyCount:      row.ReplyCount,
-			LastReplyAt:     timestampToNanoPtr(row.LastReplyAt),
-			OpenThreadCount: row.OpenThreadCount,
-			Participants:    list,
-			LastReadAt:      lastRead[issueID],
-			AwaitingMe:      awaitingList,
-			LatestProgress:  progress[issueID],
+		prs := pullRequests[issueID]
+		if prs == nil {
+			prs = []ThreadPullRequestResponse{}
 		}
+		summary := IssueThreadSummaryResponse{
+			IssueID:        issueID,
+			Participants:   list,
+			LastReadAt:     lastRead[issueID],
+			AwaitingMe:     awaitingList,
+			PullRequests:   prs,
+			LatestProgress: progress[issueID],
+		}
+		if row != nil {
+			summary.ReplyCount = row.ReplyCount
+			summary.LastReplyAt = timestampToNanoPtr(row.LastReplyAt)
+			summary.OpenThreadCount = row.OpenThreadCount
+		}
+		if d, ok := deliverables[issueID]; ok {
+			summary.DeliverableCount = d.DeliverableCount
+			summary.LastDeliverableAt = timestampToNanoPtr(d.LastDeliverableAt)
+		}
+		return summary
+	}
+
+	summaries := make([]IssueThreadSummaryResponse, 0, len(rows))
+	seen := make(map[string]bool, len(rows))
+	for i := range rows {
+		issueID := uuidToString(rows[i].IssueID)
+		seen[issueID] = true
+		summaries = append(summaries, build(issueID, &rows[i]))
+	}
+	// Issues with output but no counted comment (a PR linked before anyone
+	// replied) still need a row; they follow the commented ones in request
+	// order.
+	for _, id := range issueIDs {
+		issueID := uuidToString(id)
+		if seen[issueID] {
+			continue
+		}
+		if _, hasFiles := deliverables[issueID]; !hasFiles && len(pullRequests[issueID]) == 0 {
+			continue
+		}
+		seen[issueID] = true
+		summaries = append(summaries, build(issueID, nil))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summaries": summaries})
+}
+
+// listThreadPullRequests returns each issue's newest linked PRs across GitHub
+// and the self-hosted providers, newest first, capped per issue. Each source
+// is queried once for the whole batch and already capped per issue, so the
+// merge sees at most the cap per issue per source.
+func (h *Handler) listThreadPullRequests(ctx context.Context, wsUUID pgtype.UUID, issueIDs []pgtype.UUID) (map[string][]ThreadPullRequestResponse, error) {
+	ghRows, err := h.Queries.ListIssueThreadPullRequests(ctx, db.ListIssueThreadPullRequestsParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+		PrLimit:     issueThreadSummaryPullRequestLimit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	vcsRows, err := h.Queries.ListIssueThreadVCSPullRequests(ctx, db.ListIssueThreadVCSPullRequestsParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+		PrLimit:     issueThreadSummaryPullRequestLimit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snapshotsEnabled := h.PRRefresh.Enabled()
+	out := make(map[string][]ThreadPullRequestResponse)
+	for _, p := range ghRows {
+		available := currentGitHubSnapshotAvailable(snapshotsEnabled, p.HeadSha, p.SnapshotHeadSha, p.SnapshotFetchedAt)
+		issueID := uuidToString(p.IssueID)
+		out[issueID] = append(out[issueID], ThreadPullRequestResponse{
+			ID:          uuidToString(p.ID),
+			Number:      p.PrNumber,
+			Title:       p.Title,
+			URL:         p.HtmlUrl,
+			State:       p.State,
+			Additions:   p.Additions,
+			Deletions:   p.Deletions,
+			ChecksState: githubChecksState(available, p.ChecksRollupState, p.ChecksFailed, p.ChecksRunning, p.ChecksPassed),
+			createdAt:   p.PrCreatedAt.Time,
+		})
+	}
+	for _, p := range vcsRows {
+		issueID := uuidToString(p.IssueID)
+		out[issueID] = append(out[issueID], ThreadPullRequestResponse{
+			ID:          uuidToString(p.ID),
+			Number:      p.PrNumber,
+			Title:       p.Title,
+			URL:         p.HtmlUrl,
+			State:       p.State,
+			Additions:   p.Additions,
+			Deletions:   p.Deletions,
+			ChecksState: checksStateFromConclusion(aggregateChecksConclusion(p.ChecksFailed, p.ChecksPassed, p.ChecksPending, p.ChecksTotal)),
+			createdAt:   p.PrCreatedAt.Time,
+		})
+	}
+	for issueID, list := range out {
+		sort.SliceStable(list, func(i, j int) bool {
+			if !list[i].createdAt.Equal(list[j].createdAt) {
+				return list[i].createdAt.After(list[j].createdAt)
+			}
+			return list[i].ID > list[j].ID
+		})
+		if len(list) > issueThreadSummaryPullRequestLimit {
+			list = list[:issueThreadSummaryPullRequestLimit]
+		}
+		out[issueID] = list
+	}
+	return out, nil
+}
+
+// githubChecksState folds a GitHub PR's CI snapshot into the strip's enum the
+// way the PR list does (deriveChecksStatus in
+// packages/core/github/pull-request-status.ts): nothing is claimed without a
+// current snapshot, a failed run or a failing rollup wins, then pending, then
+// passed.
+func githubChecksState(snapshotAvailable bool, rollup pgtype.Text, failed, running, passed int64) string {
+	if !snapshotAvailable {
+		return threadChecksNone
+	}
+	if failed > 0 {
+		return threadChecksFailed
+	}
+	return checksStateFromConclusion(rollupToConclusion(rollup, failed, running, passed))
+}
+
+// checksStateFromConclusion maps the coarse failed/pending/passed conclusion
+// shared by the PR list responses onto the strip's enum; nil is "none".
+func checksStateFromConclusion(conclusion *string) string {
+	if conclusion == nil {
+		return threadChecksNone
+	}
+	switch *conclusion {
+	case "failed":
+		return threadChecksFailed
+	case "pending":
+		return threadChecksPending
+	case "passed":
+		return threadChecksPassed
+	}
+	return threadChecksNone
 }

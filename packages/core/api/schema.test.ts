@@ -1133,8 +1133,103 @@ describe("ApiClient schema fallback", () => {
           last_read_at: null,
           awaiting_me: [],
           latest_progress: null,
+          pull_requests: [],
+          deliverable_count: 0,
+          last_deliverable_at: null,
         },
       ]);
+    });
+
+    it("keeps the output strip fields and defaults a PR's optional ones", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            deliverable_count: 2,
+            last_deliverable_at: "2026-05-01T10:00:00.5Z",
+            pull_requests: [
+              {
+                id: "pr-1",
+                number: 12,
+                title: "Fix it",
+                url: "https://github.com/o/r/pull/12",
+                state: "merged",
+                additions: 40,
+                deletions: 3,
+                checks_state: "passed",
+              },
+              { id: "pr-2" },
+            ],
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries[0]?.deliverable_count).toBe(2);
+      expect(res.summaries[0]?.last_deliverable_at).toBe("2026-05-01T10:00:00.5Z");
+      expect(res.summaries[0]?.pull_requests).toEqual([
+        {
+          id: "pr-1",
+          number: 12,
+          title: "Fix it",
+          url: "https://github.com/o/r/pull/12",
+          state: "merged",
+          additions: 40,
+          deletions: 3,
+          checks_state: "passed",
+        },
+        {
+          id: "pr-2",
+          number: 0,
+          title: "",
+          url: "",
+          state: "open",
+          additions: 0,
+          deletions: 0,
+          checks_state: "none",
+        },
+      ]);
+    });
+
+    it("keeps the rows when a PR carries an unknown state or checks_state", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            reply_count: 4,
+            pull_requests: [
+              { id: "pr-1", state: "queued", checks_state: "flaky" },
+              { id: "pr-2", state: "open", checks_state: null },
+            ],
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries).toHaveLength(1);
+      expect(res.summaries[0]?.reply_count).toBe(4);
+      expect(res.summaries[0]?.pull_requests.map((p) => [p.state, p.checks_state])).toEqual([
+        ["queued", "none"],
+        ["open", "none"],
+      ]);
+    });
+
+    it("keeps an explicit null last_deliverable_at", async () => {
+      stubFetchJson({
+        summaries: [{ issue_id: "issue-1", last_deliverable_at: null, deliverable_count: 1 }],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries[0]?.last_deliverable_at).toBeNull();
+      expect(res.summaries[0]?.deliverable_count).toBe(1);
+    });
+
+    it("falls back to no summaries when pull_requests is malformed", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", pull_requests: "invalid" }] });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
     });
 
     it("keeps the caller's read cursor and nulls an explicit null", async () => {

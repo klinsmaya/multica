@@ -950,6 +950,9 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // The feed's output strip carries each issue's newest PRs and their CI.
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the

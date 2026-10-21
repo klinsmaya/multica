@@ -13,6 +13,7 @@ import { useIsIssuePeeked } from "../surface/peek-context";
 import { useOpenFeedIssue } from "./feed-message-card";
 import { FeedProgressCard } from "./feed-progress-card";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
+import { IssueOutputStrip } from "./issue-output-strip";
 import { StatusIcon } from "./status-icon";
 
 const MAX_PARTICIPANTS = 3;
@@ -37,9 +38,10 @@ function FeedStatusChip({ status }: { status: Issue["status"] }) {
 
 /**
  * The row under a feed message: reply count, who took part, when it last moved
- * and where the issue stands. `summary` is undefined both while the rollup is
- * loading and when the server has no row for the issue (no counted comments,
- * or a backend without the endpoint) — both read as an issue with no replies.
+ * and where the issue stands, then what it has produced (PRs, files).
+ * `summary` is undefined both while the rollup is loading and when the server
+ * has no row for the issue (no counted comments, PRs or files, or a backend
+ * without the endpoint) — both read as an issue with no replies.
  */
 export const FeedThreadBar = memo(function FeedThreadBar({
   issue,
@@ -111,6 +113,7 @@ export const FeedThreadBar = memo(function FeedThreadBar({
         <IssueAgentActivityIndicator issueId={issue.id} />
         <FeedStatusChip status={issue.status} />
       </span>
+      <IssueOutputStrip summary={summary} onOpenDeliverables={open} className="basis-full" />
     </div>
     <FeedProgressCard progress={summary?.latest_progress} status={issue.status} />
     </>

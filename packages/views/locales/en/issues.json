@@ -739,6 +739,15 @@
       "activity": "By recent activity"
     },
     "new_messages": "New messages",
+    "output": {
+      "pull_request": "Pull request #{{number}}, {{state}}",
+      "state_open": "Open",
+      "checks_failed": "Checks failed",
+      "checks_pending": "Checks running",
+      "deliverables_one": "{{count}} deliverable",
+      "deliverables_other": "{{count}} deliverables",
+      "deliverables_updated": "Last updated {{time}}"
+    },
     "composer": {
       "placeholder": "Send a message — first line is the title, @ to assign",
       "send": "Send",

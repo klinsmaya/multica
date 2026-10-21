@@ -1499,6 +1499,65 @@ func (q *Queries) ListCommentsSinceForIssue(ctx context.Context, arg ListComment
 	return items, nil
 }
 
+const listIssueDeliverableSummaries = `-- name: ListIssueDeliverableSummaries :many
+WITH files AS (
+    SELECT c.issue_id,
+           lower(btrim(split_part(a.content_type, ';', 1))) AS media_type,
+           btrim(a.filename) AS file_name,
+           MAX(a.created_at) AS latest_at
+    FROM attachment a
+    JOIN comment c ON c.id = a.comment_id
+    WHERE c.workspace_id = $1
+      AND a.workspace_id = $1
+      AND c.issue_id = ANY($2::uuid[])
+      AND c.deleted_at IS NULL
+    GROUP BY c.issue_id, 2, 3
+)
+SELECT issue_id,
+       COUNT(*)::bigint AS deliverable_count,
+       MAX(latest_at)::timestamptz AS last_deliverable_at
+FROM files
+GROUP BY issue_id
+`
+
+type ListIssueDeliverableSummariesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListIssueDeliverableSummariesRow struct {
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	DeliverableCount  int64              `json:"deliverable_count"`
+	LastDeliverableAt pgtype.Timestamptz `json:"last_deliverable_at"`
+}
+
+// Per-issue deliverable rollup for the project feed's output strip. A
+// deliverable is a file uploaded in a live comment; description attachments
+// are inputs, not output. Uploads with the same media type (parameters
+// dropped, case-insensitive) and filename are versions of ONE file, so each
+// group counts once and the group's newest upload dates it. This is the SQL
+// twin of deliverableKey / collectDeliverableFiles in
+// packages/core/attachments/deliverables.ts.
+func (q *Queries) ListIssueDeliverableSummaries(ctx context.Context, arg ListIssueDeliverableSummariesParams) ([]ListIssueDeliverableSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listIssueDeliverableSummaries, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueDeliverableSummariesRow{}
+	for rows.Next() {
+		var i ListIssueDeliverableSummariesRow
+		if err := rows.Scan(&i.IssueID, &i.DeliverableCount, &i.LastDeliverableAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIssueThreadParticipants = `-- name: ListIssueThreadParticipants :many
 SELECT issue_id, author_type, author_id, MAX(created_at)::timestamptz AS last_at
 FROM comment
@@ -1538,6 +1597,123 @@ func (q *Queries) ListIssueThreadParticipants(ctx context.Context, arg ListIssue
 			&i.AuthorType,
 			&i.AuthorID,
 			&i.LastAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadPullRequests = `-- name: ListIssueThreadPullRequests :many
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_pull_request ipr
+    JOIN github_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY($1::uuid[])
+      AND i.workspace_id = $2
+      AND pr.workspace_id = $2
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= $3::int
+),
+checks AS (
+    SELECT
+        cr.pr_id,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('failure','cancelled','timed_out','action_required','startup_failure','stale','error')
+            THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cr.status = 'completed' AND cr.conclusion IN
+                ('success','neutral','skipped')
+            THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cr.status <> 'completed' OR cr.conclusion IS NULL
+            THEN 1 ELSE 0 END)::bigint AS running
+    FROM github_pull_request_check_run cr
+    JOIN github_pull_request pr ON pr.id = cr.pr_id
+    WHERE cr.pr_id IN (SELECT pr_id FROM top)
+      AND pr.snapshot_head_sha <> ''
+      AND cr.head_sha = pr.snapshot_head_sha
+    GROUP BY cr.pr_id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    pr.head_sha, pr.snapshot_head_sha, pr.snapshot_fetched_at, pr.checks_rollup_state,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.running, 0)::bigint AS checks_running
+FROM top
+JOIN github_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC
+`
+
+type ListIssueThreadPullRequestsParams struct {
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	PrLimit     int32         `json:"pr_limit"`
+}
+
+type ListIssueThreadPullRequestsRow struct {
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	ID                pgtype.UUID        `json:"id"`
+	PrNumber          int32              `json:"pr_number"`
+	Title             string             `json:"title"`
+	State             string             `json:"state"`
+	HtmlUrl           string             `json:"html_url"`
+	Additions         int32              `json:"additions"`
+	Deletions         int32              `json:"deletions"`
+	PrCreatedAt       pgtype.Timestamptz `json:"pr_created_at"`
+	HeadSha           string             `json:"head_sha"`
+	SnapshotHeadSha   string             `json:"snapshot_head_sha"`
+	SnapshotFetchedAt pgtype.Timestamptz `json:"snapshot_fetched_at"`
+	ChecksRollupState pgtype.Text        `json:"checks_rollup_state"`
+	ChecksPassed      int64              `json:"checks_passed"`
+	ChecksFailed      int64              `json:"checks_failed"`
+	ChecksRunning     int64              `json:"checks_running"`
+}
+
+// The newest linked GitHub PRs for a batch of issues, at most pr_limit per
+// issue, for the project feed's output strip. Same snapshot and check-run
+// aggregation as ListPullRequestsByIssue (current snapshot head only), but
+// narrowed to the ranked PR ids first so check rows are read for those PRs
+// alone. Rows arrive ordered by issue, then newest PR first.
+func (q *Queries) ListIssueThreadPullRequests(ctx context.Context, arg ListIssueThreadPullRequestsParams) ([]ListIssueThreadPullRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadPullRequests, arg.IssueIds, arg.WorkspaceID, arg.PrLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadPullRequestsRow{}
+	for rows.Next() {
+		var i ListIssueThreadPullRequestsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ID,
+			&i.PrNumber,
+			&i.Title,
+			&i.State,
+			&i.HtmlUrl,
+			&i.Additions,
+			&i.Deletions,
+			&i.PrCreatedAt,
+			&i.HeadSha,
+			&i.SnapshotHeadSha,
+			&i.SnapshotFetchedAt,
+			&i.ChecksRollupState,
+			&i.ChecksPassed,
+			&i.ChecksFailed,
+			&i.ChecksRunning,
 		); err != nil {
 			return nil, err
 		}
@@ -1591,6 +1767,112 @@ func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThr
 			&i.ReplyCount,
 			&i.LastReplyAt,
 			&i.OpenThreadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadVCSPullRequests = `-- name: ListIssueThreadVCSPullRequests :many
+WITH ranked AS (
+    SELECT ipr.issue_id,
+           pr.id AS pr_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY ipr.issue_id
+               ORDER BY pr.pr_created_at DESC, pr.id DESC
+           ) AS rn
+    FROM issue_vcs_pull_request ipr
+    JOIN vcs_pull_request pr ON pr.id = ipr.pull_request_id
+    JOIN issue i ON i.id = ipr.issue_id
+    WHERE ipr.issue_id = ANY($1::uuid[])
+      AND i.workspace_id = $2
+      AND pr.workspace_id = $2
+),
+top AS (
+    SELECT issue_id, pr_id FROM ranked WHERE rn <= $3::int
+),
+checks AS (
+    SELECT
+        pr.id AS pr_id,
+        COUNT(*)::bigint AS total,
+        SUM(CASE WHEN cs.state = 'failed'  THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN cs.state = 'passed'  THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN cs.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
+    FROM vcs_pull_request pr
+    JOIN vcs_commit_status cs
+        ON cs.connection_id = pr.connection_id
+       AND cs.sha = pr.head_sha
+    WHERE pr.id IN (SELECT pr_id FROM top)
+      AND pr.head_sha <> ''
+    GROUP BY pr.id
+)
+SELECT
+    top.issue_id,
+    pr.id, pr.pr_number, pr.title, pr.state, pr.html_url,
+    pr.additions, pr.deletions, pr.pr_created_at,
+    COALESCE(c.total, 0)::bigint   AS checks_total,
+    COALESCE(c.passed, 0)::bigint  AS checks_passed,
+    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.pending, 0)::bigint AS checks_pending
+FROM top
+JOIN vcs_pull_request pr ON pr.id = top.pr_id
+LEFT JOIN checks c ON c.pr_id = pr.id
+ORDER BY top.issue_id, pr.pr_created_at DESC, pr.id DESC
+`
+
+type ListIssueThreadVCSPullRequestsParams struct {
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	PrLimit     int32         `json:"pr_limit"`
+}
+
+type ListIssueThreadVCSPullRequestsRow struct {
+	IssueID       pgtype.UUID        `json:"issue_id"`
+	ID            pgtype.UUID        `json:"id"`
+	PrNumber      int32              `json:"pr_number"`
+	Title         string             `json:"title"`
+	State         string             `json:"state"`
+	HtmlUrl       string             `json:"html_url"`
+	Additions     int32              `json:"additions"`
+	Deletions     int32              `json:"deletions"`
+	PrCreatedAt   pgtype.Timestamptz `json:"pr_created_at"`
+	ChecksTotal   int64              `json:"checks_total"`
+	ChecksPassed  int64              `json:"checks_passed"`
+	ChecksFailed  int64              `json:"checks_failed"`
+	ChecksPending int64              `json:"checks_pending"`
+}
+
+// ListIssueThreadPullRequests for token-based providers (Forgejo / Gitea /
+// GitLab): commit statuses for the PR's current head sha, folded into
+// passed/failed/pending counts like ListVCSPullRequestsByIssue.
+func (q *Queries) ListIssueThreadVCSPullRequests(ctx context.Context, arg ListIssueThreadVCSPullRequestsParams) ([]ListIssueThreadVCSPullRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadVCSPullRequests, arg.IssueIds, arg.WorkspaceID, arg.PrLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadVCSPullRequestsRow{}
+	for rows.Next() {
+		var i ListIssueThreadVCSPullRequestsRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.ID,
+			&i.PrNumber,
+			&i.Title,
+			&i.State,
+			&i.HtmlUrl,
+			&i.Additions,
+			&i.Deletions,
+			&i.PrCreatedAt,
+			&i.ChecksTotal,
+			&i.ChecksPassed,
+			&i.ChecksFailed,
+			&i.ChecksPending,
 		); err != nil {
 			return nil, err
 		}

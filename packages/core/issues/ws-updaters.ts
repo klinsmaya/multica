@@ -856,6 +856,10 @@ function applyCommentToThreadSummary(
     last_read_at: existing?.last_read_at ?? null,
     awaiting_me: clearAwaitingMe ? [] : (existing?.awaiting_me ?? []),
     latest_progress: nextLatestProgress(comment, existing?.latest_progress ?? null),
+    // Output fields are owned by the server; a comment leaves them as loaded.
+    pull_requests: existing?.pull_requests ?? [],
+    deliverable_count: existing?.deliverable_count ?? 0,
+    last_deliverable_at: existing?.last_deliverable_at ?? null,
   };
 }
 
@@ -890,6 +894,8 @@ function mayAskCaller(comment: Comment, selfUserId: string | null | undefined): 
  * own member comment lands (the question was most likely just answered), and
  * refetches the cache whenever the comment could change which questions are
  * pending: the issue already lists some, or an agent may be asking the caller.
+ * It also refetches when the comment carries files, since the server folds
+ * uploads into `deliverable_count`.
  */
 export function onCommentCreatedPatchThreadSummaries(
   qc: QueryClient,
@@ -925,7 +931,10 @@ export function onCommentCreatedPatchThreadSummaries(
         ? [...data, patched]
         : data.map((s, i) => (i === index ? patched : s)),
     );
-    if (hadQuestions || (!ownMemberComment && askingCaller)) {
+    // Uploads change the deliverable count, which only the server can fold
+    // (same name and type is one file).
+    const addsFiles = (comment.attachments?.length ?? 0) > 0;
+    if (hadQuestions || addsFiles || (!ownMemberComment && askingCaller)) {
       qc.invalidateQueries({ queryKey: key, exact: true });
     }
   }

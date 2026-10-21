@@ -1249,6 +1249,9 @@ describe("thread summary realtime updates", () => {
     last_read_at: null,
     awaiting_me: [],
     latest_progress: null,
+    pull_requests: [],
+    deliverable_count: 0,
+    last_deliverable_at: null,
   });
 
   const read = (key: readonly unknown[] = cacheKey) =>
@@ -1278,6 +1281,9 @@ describe("thread summary realtime updates", () => {
       last_read_at: null,
       awaiting_me: [],
       latest_progress: null,
+      pull_requests: [],
+      deliverable_count: 0,
+      last_deliverable_at: null,
     });
   });
 
@@ -1381,6 +1387,9 @@ describe("thread summary realtime updates", () => {
       last_read_at: null,
       awaiting_me: [],
       latest_progress: null,
+      pull_requests: [],
+      deliverable_count: 0,
+      last_deliverable_at: null,
     });
   });
 
@@ -1517,6 +1526,86 @@ describe("thread summary realtime updates", () => {
 
       expect(rowA()?.awaiting_me).toEqual([]);
       expect(isInvalidated()).toBe(false);
+    });
+  });
+
+  describe("output strip fields", () => {
+    const prs: IssueThreadSummary["pull_requests"] = [
+      {
+        id: "pr-1",
+        number: 7,
+        title: "Ship it",
+        url: "https://github.com/acme/app/pull/7",
+        state: "open",
+        additions: 3,
+        deletions: 1,
+        checks_state: "pending",
+      },
+    ];
+    const isInvalidated = () => qc.getQueryState(cacheKey)?.isInvalidated === true;
+
+    it("keeps the loaded PRs and deliverables when a comment lands", () => {
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        {
+          ...summaryA(),
+          pull_requests: prs,
+          deliverable_count: 2,
+          last_deliverable_at: "2026-10-01T00:00:00Z",
+        },
+      ]);
+
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+      expect(rowA()).toMatchObject({
+        reply_count: 3,
+        pull_requests: prs,
+        deliverable_count: 2,
+        last_deliverable_at: "2026-10-01T00:00:00Z",
+      });
+      expect(isInvalidated()).toBe(false);
+    });
+
+    it("starts a new row with no output", () => {
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, []);
+
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+      expect(rowA()).toMatchObject({
+        pull_requests: [],
+        deliverable_count: 0,
+        last_deliverable_at: null,
+      });
+    });
+
+    it("refetches when the comment carries files, since the server folds versions", () => {
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({
+          attachments: [
+            {
+              id: "att-1",
+              workspace_id: WS_ID,
+              issue_id: issueA,
+              comment_id: "comment-1",
+              chat_session_id: null,
+              chat_message_id: null,
+              uploader_type: "agent",
+              uploader_id: "agent-1",
+              filename: "report.html",
+              url: "https://example.test/report.html",
+              download_url: "https://example.test/report.html",
+              markdown_url: "https://example.test/api/attachments/att-1/download",
+              content_type: "text/html",
+              size_bytes: 10,
+              created_at: "2026-10-02T00:00:00Z",
+            },
+          ],
+        }),
+      );
+
+      expect(rowA()?.reply_count).toBe(3);
+      expect(isInvalidated()).toBe(true);
     });
   });
 

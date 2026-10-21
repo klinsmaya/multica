@@ -15,6 +15,9 @@ function summary(overrides: Partial<IssueThreadSummary> = {}): IssueThreadSummar
     last_read_at: null,
     awaiting_me: [],
     latest_progress: null,
+    pull_requests: [],
+    deliverable_count: 0,
+    last_deliverable_at: null,
     ...overrides,
   };
 }

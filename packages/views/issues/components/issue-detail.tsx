@@ -1173,6 +1173,8 @@ interface IssueDetailProps {
   variant?: "page" | "peek";
   /** Peek only: host controls at the end of the header (open full page, close). */
   trailingActions?: ReactNode;
+  /** Peek only: a full-width strip between the header and the content. */
+  belowHeader?: ReactNode;
 }
 
 // Not found
@@ -1304,7 +1306,7 @@ export function IssueDetailSkeleton({
 /** How long an issue must stay open before it counts as read. */
 const MARK_READ_DELAY_MS = 1500;
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader }: IssueDetailProps) {
   const isPeek = variant === "peek";
   const { t } = useT("issues");
   const locale = useLocale();
@@ -3314,6 +3316,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             </>
           }
         />
+        {isPeek ? belowHeader : null}
 
         {/* scrollbar-gutter both-edges: with classic (space-taking) scrollbars —
             macOS with a mouse or "always show", Windows, Linux — the global

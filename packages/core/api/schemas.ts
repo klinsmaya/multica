@@ -1818,6 +1818,21 @@ export const ThreadSummariesResponseSchema = z.object({
       content: z.string().default(""),
       created_at: z.string().default(""),
     }).loose().nullable().optional().default(null),
+    // Older servers do not send the output strip fields.
+    pull_requests: z.array(z.object({
+      id: z.string(),
+      number: z.number().default(0),
+      title: z.string().default(""),
+      url: z.string().default(""),
+      // Unknown states pass through; the strip draws a generic PR icon.
+      state: z.string().default("open"),
+      additions: z.number().default(0),
+      deletions: z.number().default(0),
+      // An unfamiliar verdict from a newer server reads as "no CI claim".
+      checks_state: z.enum(["passed", "failed", "pending", "none"]).catch("none"),
+    }).loose()).default([]),
+    deliverable_count: z.number().default(0),
+    last_deliverable_at: z.string().nullable().optional().default(null),
   }).loose()).default([]),
 }).loose();
 

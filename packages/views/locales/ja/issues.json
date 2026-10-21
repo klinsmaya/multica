@@ -710,6 +710,14 @@
       "activity": "最近の活動順"
     },
     "new_messages": "新着メッセージ",
+    "output": {
+      "pull_request": "Pull request #{{number}}、{{state}}",
+      "state_open": "オープン",
+      "checks_failed": "チェック失敗",
+      "checks_pending": "チェック実行中",
+      "deliverables_other": "成果物 {{count}} 件",
+      "deliverables_updated": "最終更新 {{time}}"
+    },
     "composer": {
       "placeholder": "メッセージを送信。1行目がタイトル、@ で担当者を指定",
       "send": "送信",

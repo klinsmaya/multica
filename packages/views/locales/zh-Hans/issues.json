@@ -710,6 +710,14 @@
       "activity": "按最近活跃"
     },
     "new_messages": "有新消息",
+    "output": {
+      "pull_request": "PR #{{number}}，{{state}}",
+      "state_open": "Open",
+      "checks_failed": "检查失败",
+      "checks_pending": "检查进行中",
+      "deliverables_other": "{{count}} 个产物",
+      "deliverables_updated": "最后更新 {{time}}"
+    },
     "composer": {
       "placeholder": "发消息，首行是标题，@ 可指派",
       "send": "发送",

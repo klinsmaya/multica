@@ -25,6 +25,7 @@ import { PAGE_GUTTER } from "../../layout/page-header";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 import { IssueDetail } from "./issue-detail";
+import { IssuePeekOutputStrip } from "./issue-peek-output-strip";
 import {
   IssuePeekActionsContext,
   IssuePeekIdContext,
@@ -226,6 +227,7 @@ const IssuePeekPanel = memo(function IssuePeekPanel({
           defaultSidebarOpen={false}
           leadingAction={<IssuePeekNav />}
           trailingActions={<IssuePeekTrailingActions issueId={issueId} />}
+          belowHeader={<IssuePeekOutputStrip issueId={issueId} />}
           onDelete={actions.close}
         />
       </ErrorBoundary>

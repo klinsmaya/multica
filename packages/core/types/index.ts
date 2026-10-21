@@ -3,6 +3,8 @@ export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssign
   IssueAwaitingMe,
   IssueLatestProgress,
   IssueThreadParticipant,
+  IssueThreadPullRequest,
+  IssueThreadPullRequestChecksState,
   IssueThreadSummary,
 } from "./issue";
 export type {
