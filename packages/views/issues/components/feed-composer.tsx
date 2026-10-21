@@ -1,11 +1,23 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@multica/core/auth";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { useCreateIssue } from "@multica/core/issues/mutations";
+import {
+  useCreateCommentOnIssue,
+  useCreateIssue,
+  useMarkIssueRead,
+} from "@multica/core/issues/mutations";
+import { composeFeedForwardComment } from "@multica/core/issues/feed-forward";
 import { parseFeedMessage } from "@multica/core/issues/feed-message";
-import { feedComposerDraftKey, useFeedComposerStore } from "@multica/core/issues/stores";
+import {
+  feedComposerDraftKey,
+  useFeedComposerStore,
+  useFeedReplyTargetsStore,
+  type FeedReplyTarget,
+} from "@multica/core/issues/stores";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import type { CreateIssueRequest, Issue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
@@ -17,6 +29,8 @@ import { useT } from "../../i18n";
 
 interface PendingMessage {
   phase: "sending" | "failed";
+  /** "reply" posts a comment to each selected waiting thread instead of creating an issue. */
+  mode: "issue" | "reply";
   /** The submitted markdown; a retry sends exactly this, not the live editor. */
   content: string;
   title: string;
@@ -26,6 +40,10 @@ interface FeedComposerProps {
   projectId: string;
   /** Called once the server has created the issue. */
   onSent?: (issue: Issue) => void;
+  /** Called when any send starts, before the server answers. */
+  onSendStart?: () => void;
+  /** Called once a reply has reached every selected thread, with all of them. */
+  onForwarded?: (targets: FeedReplyTarget[]) => void;
 }
 
 export interface FeedComposerHandle {
@@ -38,9 +56,12 @@ export interface FeedComposerHandle {
  * rest the description, and an @agent / @squad assigns the new issue; without
  * one it goes to the project lead. The text stays in the editor until the
  * server accepts it, with a pending row above showing the send.
+ *
+ * With reply targets selected on the feed's "waiting on you" cards, the same
+ * text instead goes as one comment per target, behind a quoted origin marker.
  */
 export const FeedComposer = forwardRef<FeedComposerHandle, FeedComposerProps>(
-  function FeedComposer({ projectId, onSent }, ref) {
+  function FeedComposer({ projectId, onSent, onSendStart, onForwarded }, ref) {
     const wsId = useWorkspaceId();
     // A project switch remounts the composer so the editor opens on that
     // project's own draft instead of carrying the previous text over.
@@ -51,16 +72,29 @@ export const FeedComposer = forwardRef<FeedComposerHandle, FeedComposerProps>(
         wsId={wsId}
         projectId={projectId}
         onSent={onSent}
+        onSendStart={onSendStart}
+        onForwarded={onForwarded}
       />
     );
   },
 );
 
 const FeedComposerBody = forwardRef<FeedComposerHandle, FeedComposerProps & { wsId: string }>(
-  function FeedComposerBody({ wsId, projectId, onSent }, ref) {
+  function FeedComposerBody({ wsId, projectId, onSent, onSendStart, onForwarded }, ref) {
   const { t } = useT("issues");
   const qc = useQueryClient();
   const createIssue = useCreateIssue();
+  const createComment = useCreateCommentOnIssue();
+  const { mutate: markIssueRead } = useMarkIssueRead();
+  const senderName = useAuthStore((s) => s.user?.name);
+  const targetMap = useFeedReplyTargetsStore((s) => s.targets);
+  const targets = useMemo(() => Object.values(targetMap), [targetMap]);
+  // Threads a reply already reached, kept across retries of the same text so
+  // the receipt lists all of them.
+  const deliveredRef = useRef<{ content: string; targets: FeedReplyTarget[] }>({
+    content: "",
+    targets: [],
+  });
   const draftKey = feedComposerDraftKey(wsId, projectId);
   const setDraft = useFeedComposerStore((s) => s.setDraft);
   const editorRef = useRef<ContentEditorRef>(null);
@@ -97,12 +131,32 @@ const FeedComposerBody = forwardRef<FeedComposerHandle, FeedComposerProps & { ws
     };
   }, [draftKey, setDraft]);
 
-  const send = useCallback(
+  // Only consume the draft that was sent: text typed while the request was in
+  // flight stays in the editor and the store.
+  const consumeDraft = useCallback(
+    (content: string) => {
+      const late = editorRef.current?.flushPendingUpdate?.();
+      if (late != null) setDraft(draftKey, late);
+      const live = useFeedComposerStore.getState().getDraft(draftKey);
+      const untouched = live === undefined || live.trim() === content.trim();
+      if (untouched) {
+        useFeedComposerStore.getState().clearDraft(draftKey);
+        if (mountedRef.current) {
+          editorRef.current?.clearContent();
+          setHasText(false);
+        }
+      }
+    },
+    [draftKey, setDraft],
+  );
+
+  const sendIssue = useCallback(
     async (content: string) => {
       const message = parseFeedMessage(content);
       if (!message || inFlight.current) return;
       inFlight.current = true;
-      setPending({ phase: "sending", content, title: message.title });
+      onSendStart?.();
+      setPending({ phase: "sending", mode: "issue", content, title: message.title });
       try {
         // Read the lead at send time: the cached project may still be loading.
         const project = await qc.ensureQueryData(projectDetailOptions(wsId, projectId));
@@ -119,37 +173,88 @@ const FeedComposerBody = forwardRef<FeedComposerHandle, FeedComposerProps & { ws
         };
         const issue = await createIssue.mutateAsync(request);
 
-        // Only consume the draft that was sent: text typed while the request
-        // was in flight stays in the editor and the store.
-        const late = editorRef.current?.flushPendingUpdate?.();
-        if (late != null) setDraft(draftKey, late);
-        const live = useFeedComposerStore.getState().getDraft(draftKey);
-        const untouched = live === undefined || live.trim() === content.trim();
-        if (untouched) {
-          useFeedComposerStore.getState().clearDraft(draftKey);
-          if (mountedRef.current) {
-            editorRef.current?.clearContent();
-            setHasText(false);
-          }
-        }
+        consumeDraft(content);
         if (mountedRef.current) setPending(null);
         onSent?.(issue);
       } catch {
         if (mountedRef.current) {
-          setPending({ phase: "failed", content, title: message.title });
+          setPending({ phase: "failed", mode: "issue", content, title: message.title });
         }
       } finally {
         inFlight.current = false;
       }
     },
-    [qc, wsId, projectId, createIssue, draftKey, setDraft, onSent],
+    [qc, wsId, projectId, createIssue, consumeDraft, onSent, onSendStart],
+  );
+
+  const sendReply = useCallback(
+    async (content: string) => {
+      if (inFlight.current) return;
+      const remaining = Object.values(useFeedReplyTargetsStore.getState().targets);
+      if (remaining.length === 0) {
+        if (mountedRef.current) setPending(null);
+        return;
+      }
+      inFlight.current = true;
+      onSendStart?.();
+      if (deliveredRef.current.content !== content) {
+        deliveredRef.current = { content, targets: [] };
+      }
+      const identifiers = (list: FeedReplyTarget[]) =>
+        list.map((target) => target.identifier).join(", ");
+      setPending({ phase: "sending", mode: "reply", content, title: identifiers(remaining) });
+      const marker = t(($) => $.feed.composer.reply_marker, { name: senderName ?? "" }).replace(
+        /\s*·\s*$/,
+        "",
+      );
+      const body = composeFeedForwardComment(content, marker);
+      const failed: FeedReplyTarget[] = [];
+      // One at a time: the text can @mention agents, and a stable order keeps
+      // the receipt and any retry predictable.
+      for (const target of remaining) {
+        try {
+          await createComment.mutateAsync({
+            issueId: target.issueId,
+            content: body,
+            type: "comment",
+            parentId: target.commentId,
+          });
+          markIssueRead(target.issueId);
+          deliveredRef.current.targets.push(target);
+          useFeedReplyTargetsStore.getState().deselect(target.issueId);
+        } catch {
+          failed.push(target);
+        }
+      }
+      inFlight.current = false;
+
+      if (failed.length > 0) {
+        if (mountedRef.current) {
+          setPending({ phase: "failed", mode: "reply", content, title: identifiers(failed) });
+        }
+        return;
+      }
+      const delivered = deliveredRef.current.targets;
+      deliveredRef.current = { content: "", targets: [] };
+      useFeedReplyTargetsStore.getState().clear();
+      consumeDraft(content);
+      if (mountedRef.current) setPending(null);
+      onForwarded?.(delivered);
+    },
+    [t, senderName, createComment, markIssueRead, consumeDraft, onSendStart, onForwarded],
+  );
+
+  const send = useCallback(
+    (content: string, mode: PendingMessage["mode"]) =>
+      mode === "reply" ? sendReply(content) : sendIssue(content),
+    [sendReply, sendIssue],
   );
 
   const submit = useCallback(() => {
     const raw = editorRef.current?.getMarkdown() ?? "";
     const content = raw.trim();
-    if (content) void send(content);
-  }, [send]);
+    if (content) void send(content, targets.length > 0 ? "reply" : "issue");
+  }, [send, targets.length]);
 
   const sending = pending?.phase === "sending";
 
@@ -176,12 +281,50 @@ const FeedComposerBody = forwardRef<FeedComposerHandle, FeedComposerProps & { ws
                   type="button"
                   size="xs"
                   variant="outline"
-                  onClick={() => void send(pending.content)}
+                  onClick={() => void send(pending.content, pending.mode)}
                 >
                   {t(($) => $.feed.composer.retry)}
                 </Button>
               </>
             )}
+          </div>
+        )}
+        {targets.length > 0 && (
+          <div
+            data-testid="feed-composer-targets"
+            className="mb-2 flex flex-wrap items-center gap-1.5 text-caption"
+          >
+            <span className="font-medium text-brand">
+              {t(($) => $.feed.composer.reply_to, { count: targets.length })}
+            </span>
+            {targets.map((target) => (
+              <span
+                key={target.issueId}
+                className="inline-flex items-center gap-1 rounded-md bg-brand/10 py-0.5 pl-2 pr-1 text-brand"
+              >
+                {target.identifier}
+                <button
+                  type="button"
+                  disabled={sending}
+                  aria-label={t(($) => $.feed.composer.reply_remove, {
+                    identifier: target.identifier,
+                  })}
+                  className="rounded-sm p-0.5 hover:bg-brand/15 disabled:opacity-50"
+                  onClick={() => useFeedReplyTargetsStore.getState().deselect(target.issueId)}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={sending}
+              onClick={() => useFeedReplyTargetsStore.getState().clear()}
+            >
+              {t(($) => $.feed.composer.reply_clear)}
+            </Button>
           </div>
         )}
         <div className="relative flex items-end gap-2 rounded-lg bg-card py-1 pl-3 pr-1.5 ring-1 ring-border">
@@ -195,7 +338,11 @@ const FeedComposerBody = forwardRef<FeedComposerHandle, FeedComposerProps & { ws
             <ContentEditor
               ref={editorRef}
               defaultValue={initialDraft}
-              placeholder={t(($) => $.feed.composer.placeholder)}
+              placeholder={
+                targets.length > 0
+                  ? t(($) => $.feed.composer.reply_placeholder, { count: targets.length })
+                  : t(($) => $.feed.composer.placeholder)
+              }
               onUpdate={(md) => {
                 setHasText(!!md.trim());
                 setDraft(draftKey, md);

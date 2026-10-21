@@ -80,3 +80,4 @@ export {
   type SubIssueRowProperties,
   type SubIssueRowPropertyKey,
 } from "./sub-issue-display-store";
+export { useFeedReplyTargetsStore, type FeedReplyTarget } from "./feed-reply-targets-store";

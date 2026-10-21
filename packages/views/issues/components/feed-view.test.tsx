@@ -90,12 +90,28 @@ const composerFocus = vi.hoisted(() => vi.fn());
 // The composer has its own tests; here it only reports a sent issue and
 // exposes the focus handle the quick actions call.
 vi.mock("./feed-composer", () => ({
-  FeedComposer: forwardRef(function MockComposer({ projectId, onSent }: any, ref) {
+  FeedComposer: forwardRef(function MockComposer(
+    { projectId, onSent, onSendStart, onForwarded }: any,
+    ref,
+  ) {
     useImperativeHandle(ref, () => ({ focus: composerFocus }));
     return (
-      <button data-testid="composer" onClick={() => onSent?.({ id: "sent" })}>
-        {projectId}
-      </button>
+      <>
+        <button data-testid="composer" onClick={() => onSent?.({ id: "sent" })}>
+          {projectId}
+        </button>
+        <button
+          data-testid="composer-forward"
+          onClick={() => {
+            onSendStart?.();
+            onForwarded?.([
+              { issueId: "issue-1", commentId: "c-1", identifier: "MUL-1" },
+              { issueId: "issue-2", commentId: "c-2", identifier: "MUL-2" },
+            ]);
+          }}
+        />
+        <button data-testid="composer-start" onClick={() => onSendStart?.()} />
+      </>
     );
   }),
 }));
@@ -538,5 +554,37 @@ describe("FeedView", () => {
       expect.objectContaining({ index: "LAST", align: "end" }),
     );
 
+  });
+
+  describe("forward summary", () => {
+    const issues = () => [
+      makeIssue({ id: "issue-1", title: "One", created_at: "2026-10-01T00:00:00Z" }),
+      makeIssue({ id: "issue-2", identifier: "MUL-2", title: "Two", created_at: "2026-10-02T00:00:00Z" }),
+    ];
+
+    it("lists the threads a multi-send reached, each opening its peek", () => {
+      renderFeed(issues(), "p-1");
+      expect(screen.queryByTestId("feed-forward-summary")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("composer-forward"));
+
+      const card = screen.getByTestId("feed-forward-summary");
+      expect(card).toHaveTextContent("Sent to 2 threads");
+      fireEvent.click(within(card).getByRole("button", { name: "MUL-2" }));
+      expect(peek.open).toHaveBeenCalledWith("issue-2");
+    });
+
+    it("goes away when dismissed or when the composer sends again", () => {
+      renderFeed(issues(), "p-1");
+
+      fireEvent.click(screen.getByTestId("composer-forward"));
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+      expect(screen.queryByTestId("feed-forward-summary")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("composer-forward"));
+      expect(screen.getByTestId("feed-forward-summary")).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("composer-start"));
+      expect(screen.queryByTestId("feed-forward-summary")).not.toBeInTheDocument();
+    });
   });
 });

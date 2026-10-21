@@ -1,5 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useFeedReplyTargetsStore } from "@multica/core/issues/stores";
 import type { IssueAwaitingMe, IssueThreadSummary } from "@multica/core/types";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { renderWithI18n } from "../../test/i18n";
@@ -66,7 +67,7 @@ function summaryOf(awaiting_me: IssueAwaitingMe[]): IssueThreadSummary {
 }
 
 function renderCard(summary: IssueThreadSummary | undefined, withPeek = true) {
-  const card = <FeedDecisionCard issueId="issue-1" summary={summary} />;
+  const card = <FeedDecisionCard issueId="issue-1" identifier="MUL-1" summary={summary} />;
   return renderWithI18n(
     <NavigationProvider value={navigation}>
       {withPeek ? (
@@ -81,6 +82,7 @@ function renderCard(summary: IssueThreadSummary | undefined, withPeek = true) {
 describe("FeedDecisionCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useFeedReplyTargetsStore.setState({ targets: {} });
   });
 
   it("shows the asking agent's avatar, the label and the excerpt", () => {
@@ -118,6 +120,43 @@ describe("FeedDecisionCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "View thread" }));
 
     expect(navigation.push).toHaveBeenCalledWith("/acme/issues/issue-1#comment-comment-1");
+  });
+
+  it("toggles the thread as a reply target on its newest question, without opening the peek", () => {
+    renderCard(summaryOf([question("2"), question("1")]));
+    const toggle = screen.getByRole("checkbox", { name: "Reply here" });
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+
+    expect(useFeedReplyTargetsStore.getState().targets).toEqual({
+      "issue-1": { issueId: "issue-1", commentId: "comment-2", identifier: "MUL-1" },
+    });
+    expect(screen.getByRole("checkbox", { name: "Reply here" })).toBeChecked();
+    expect(peek.open).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Reply here" }));
+    expect(useFeedReplyTargetsStore.getState().targets).toEqual({});
+    expect(peek.open).not.toHaveBeenCalled();
+  });
+
+  it("moves the selected target to a newer question and drops it once nothing is waiting", () => {
+    const view = renderCard(summaryOf([question("1")]));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Reply here" }));
+    expect(useFeedReplyTargetsStore.getState().targets["issue-1"]!.commentId).toBe("comment-1");
+
+    const card = (summary: IssueThreadSummary) => (
+      <NavigationProvider value={navigation}>
+        <IssuePeekActionsContext.Provider value={peek}>
+          <FeedDecisionCard issueId="issue-1" identifier="MUL-1" summary={summary} />
+        </IssuePeekActionsContext.Provider>
+      </NavigationProvider>
+    );
+    view.rerender(card(summaryOf([question("2"), question("1")])));
+    expect(useFeedReplyTargetsStore.getState().targets["issue-1"]!.commentId).toBe("comment-2");
+
+    view.rerender(card(summaryOf([])));
+    expect(useFeedReplyTargetsStore.getState().targets).toEqual({});
   });
 
   it.each([

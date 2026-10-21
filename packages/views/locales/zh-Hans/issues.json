@@ -688,7 +688,8 @@
     "awaiting_reply": "等你回复",
     "decision": {
       "title": "等你决定",
-      "open_thread": "查看讨论串"
+      "open_thread": "查看讨论串",
+      "reply_here": "回复到这里"
     },
     "progress": {
       "label": "最新进度",
@@ -714,7 +715,16 @@
       "send": "发送",
       "sending": "发送中...",
       "failed": "无法发送",
-      "retry": "重试"
+      "retry": "重试",
+      "reply_to_other": "回复到 {{count}} 个讨论串",
+      "reply_placeholder_other": "回复到 {{count}} 个讨论串，每个讨论串发一条评论",
+      "reply_clear": "全部清除",
+      "reply_remove": "移除 {{identifier}}",
+      "reply_marker": "来自项目对话 · {{name}}"
+    },
+    "forward": {
+      "title_other": "已发到 {{count}} 个讨论串",
+      "dismiss": "关闭"
     }
   },
   "filtered_empty": {

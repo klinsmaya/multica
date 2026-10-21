@@ -69,6 +69,11 @@ function sourceAttribution(annotation: ReplyAnnotation, sourceLink?: ReplyAnnota
   return `> — [${label}](${target})`;
 }
 
+/** Render text as an inert Markdown blockquote, one `> ` line per line. */
+export function quoteMarkdown(text: string): string {
+  return text.split(/\r?\n/).map((line) => `> ${quoteText(line)}`).join("\n");
+}
+
 export function composeAnnotatedReply(
   content: string,
   annotations: readonly ReplyAnnotation[],
@@ -81,7 +86,7 @@ export function composeAnnotatedReply(
   const command = body.match(/^\/note(?=\s|$)/i)?.[0];
   const reply = command ? body.slice(command.length).trim() : body;
   const quotes = saved.map((a) => {
-    const lines = a.quote.split(/\r?\n/).map((line) => `> ${quoteText(line)}`);
+    const lines = quoteMarkdown(a.quote).split("\n");
     // A bare ">" line keeps the attribution out of the quote's last paragraph.
     const attribution = sourceAttribution(a, sourceLink);
     if (attribution) lines.push(">", attribution);

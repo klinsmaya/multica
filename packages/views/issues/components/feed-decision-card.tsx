@@ -1,8 +1,10 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect } from "react";
+import { useFeedReplyTargetsStore } from "@multica/core/issues/stores";
 import type { IssueThreadSummary } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { useOpenFeedIssue } from "./feed-message-card";
@@ -10,13 +12,17 @@ import { useOpenFeedIssue } from "./feed-message-card";
 /**
  * Agent questions waiting on the reader, under the issue's message card. Several
  * open questions fold into one card: the newest excerpt plus a "+N" count. The
- * button opens the issue's peek on the newest question's comment.
+ * button opens the issue's peek on the newest question's comment; the checkbox
+ * adds the thread to the composer's reply targets without opening anything.
  */
 export const FeedDecisionCard = memo(function FeedDecisionCard({
   issueId,
+  identifier,
   summary,
 }: {
   issueId: string;
+  /** Shown on the composer chip once the thread is selected. */
+  identifier: string;
   /** Undefined while the rollup loads or when the issue has no row. */
   summary: IssueThreadSummary | undefined;
 }) {
@@ -25,6 +31,18 @@ export const FeedDecisionCard = memo(function FeedDecisionCard({
   const awaitingMe = summary?.awaiting_me ?? [];
   const newest = awaitingMe[0];
   const open = useOpenFeedIssue(issueId, newest?.comment_id);
+  const selected = useFeedReplyTargetsStore((s) => issueId in s.targets);
+  const newestCommentId = newest?.comment_id;
+
+  // The selection follows the thread: a newer question moves the target to its
+  // comment, and a question answered elsewhere drops it from the composer.
+  useEffect(() => {
+    if (!selected) return;
+    const { select, deselect } = useFeedReplyTargetsStore.getState();
+    if (newestCommentId) select({ issueId, commentId: newestCommentId, identifier });
+    else if (summary) deselect(issueId);
+  }, [selected, issueId, identifier, newestCommentId, summary]);
+
   if (!newest) return null;
 
   const more = awaitingMe.length - 1;
@@ -47,9 +65,22 @@ export const FeedDecisionCard = memo(function FeedDecisionCard({
           {newest.excerpt}
         </p>
       </div>
-      <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={open}>
-        {t(($) => $.feed.decision.open_thread)}
-      </Button>
+      <div className="flex shrink-0 items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-1.5 text-caption text-muted-foreground">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={() =>
+              useFeedReplyTargetsStore
+                .getState()
+                .toggle({ issueId, commentId: newest.comment_id, identifier })
+            }
+          />
+          {t(($) => $.feed.decision.reply_here)}
+        </label>
+        <Button type="button" variant="outline" size="sm" onClick={open}>
+          {t(($) => $.feed.decision.open_thread)}
+        </Button>
+      </div>
     </div>
   );
 });

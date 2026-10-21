@@ -688,7 +688,8 @@
     "awaiting_reply": "返信待ち",
     "decision": {
       "title": "あなたの判断待ち",
-      "open_thread": "スレッドを見る"
+      "open_thread": "スレッドを見る",
+      "reply_here": "ここに返信"
     },
     "progress": {
       "label": "最新の進捗",
@@ -714,7 +715,16 @@
       "send": "送信",
       "sending": "送信中…",
       "failed": "送信できませんでした",
-      "retry": "再試行"
+      "retry": "再試行",
+      "reply_to_other": "{{count}} 件のスレッドに返信",
+      "reply_placeholder_other": "{{count}} 件のスレッドに返信 — それぞれにコメントを投稿します",
+      "reply_clear": "すべて解除",
+      "reply_remove": "{{identifier}} を外す",
+      "reply_marker": "プロジェクトの会話から · {{name}}"
+    },
+    "forward": {
+      "title_other": "{{count}} 件のスレッドに送信しました",
+      "dismiss": "閉じる"
     }
   },
   "filtered_empty": {

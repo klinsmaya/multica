@@ -717,7 +717,8 @@
     "awaiting_reply": "Awaiting your reply",
     "decision": {
       "title": "Waiting on you",
-      "open_thread": "View thread"
+      "open_thread": "View thread",
+      "reply_here": "Reply here"
     },
     "progress": {
       "label": "Latest progress",
@@ -743,7 +744,19 @@
       "send": "Send",
       "sending": "Sending…",
       "failed": "Couldn't send",
-      "retry": "Retry"
+      "retry": "Retry",
+      "reply_to_one": "Reply to {{count}} thread",
+      "reply_to_other": "Reply to {{count}} threads",
+      "reply_placeholder_one": "Reply to {{count}} thread — posts a comment there",
+      "reply_placeholder_other": "Reply to {{count}} threads — posts a comment in each",
+      "reply_clear": "Clear all",
+      "reply_remove": "Remove {{identifier}}",
+      "reply_marker": "From project chat · {{name}}"
+    },
+    "forward": {
+      "title_one": "Sent to {{count}} thread",
+      "title_other": "Sent to {{count}} threads",
+      "dismiss": "Dismiss"
     }
   },
   "filtered_empty": {

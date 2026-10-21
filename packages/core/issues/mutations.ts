@@ -46,7 +46,7 @@ import type {
   MoveIssueRequest,
   UpdateIssueRequest,
 } from "../types";
-import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
+import type { Comment, TimelineEntry, IssueSubscriber, Reaction } from "../types";
 import { sortTimelineEntriesAsc } from "./timeline-sort";
 import { updateTimelinePages, type TimelinePagesCache } from "./timeline-pages";
 import { applyCommentDeletion, removeCommentSubtree } from "./comment-deletion";
@@ -840,6 +840,66 @@ export function useBatchDeleteIssues() {
 
 type TimelineCache = TimelinePagesCache;
 
+type CommentCreateVars = {
+  content: string;
+  type?: string;
+  parentId?: string;
+  attachmentIds?: string[];
+  suppressAgentIds?: string[];
+  /** Running turns this comment goes into instead of a follow-up run. */
+  steerTaskIds?: string[];
+};
+
+/** Cache bookkeeping once the server has created a comment on `issueId`. */
+function applyCommentCreated(
+  qc: QueryClient,
+  wsId: string,
+  issueId: string,
+  comment: Comment,
+) {
+  if (comment.issue_revision) {
+    onIssueAuxiliaryRevision(qc, wsId, issueId, comment.issue_revision);
+  } else {
+    invalidateIssueOwnerProjections(qc, wsId, issueId);
+  }
+  invalidateLastActivitySortedIssueLists(qc, wsId);
+  const entry: TimelineEntry = {
+    type: "comment",
+    id: comment.id,
+    actor_type: comment.author_type,
+    actor_id: comment.author_id,
+    content: comment.content,
+    parent_id: comment.parent_id,
+    comment_type: comment.type,
+    reactions: comment.reactions ?? [],
+    attachments: comment.attachments ?? [],
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    supplements: comment.supplements,
+  };
+  const steered = !!comment.supplements?.length;
+  // Dedupe by id: the `comment:created` WS event may have already added
+  // this entry from the broadcast path before this onSuccess fires. Skip
+  // the append if the entry is already in the cache — but keep the
+  // steering receipts, which that broadcast predates.
+  qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+    updateTimelinePages(old, (entries) => {
+      if (entries.some((e) => e.id === entry.id)) {
+        return steered
+          ? entries.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
+          : entries;
+      }
+      return sortTimelineEntriesAsc([...entries, entry]);
+    }),
+  );
+  // A steered turn now lists this comment among its inputs.
+  if (steered) qc.invalidateQueries({ queryKey: issueKeys.tasks(issueId) });
+  // Posting a comment changes the trigger answer itself (the enqueued
+  // task now dedupes follow-up triggers), so cached previews for this
+  // issue are stale the moment the create lands.
+  qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreview(issueId) });
+}
+
 export function useCreateComment(issueId: string) {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
@@ -851,58 +911,9 @@ export function useCreateComment(issueId: string) {
       attachmentIds,
       suppressAgentIds,
       steerTaskIds,
-    }: {
-      content: string;
-      type?: string;
-      parentId?: string;
-      attachmentIds?: string[];
-      suppressAgentIds?: string[];
-      /** Running turns this comment goes into instead of a follow-up run. */
-      steerTaskIds?: string[];
-    }) => api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
-    onSuccess: (comment) => {
-      if (comment.issue_revision) {
-        onIssueAuxiliaryRevision(qc, wsId, issueId, comment.issue_revision);
-      } else {
-        invalidateIssueOwnerProjections(qc, wsId, issueId);
-      }
-      invalidateLastActivitySortedIssueLists(qc, wsId);
-      const entry: TimelineEntry = {
-        type: "comment",
-        id: comment.id,
-        actor_type: comment.author_type,
-        actor_id: comment.author_id,
-        content: comment.content,
-        parent_id: comment.parent_id,
-        comment_type: comment.type,
-        reactions: comment.reactions ?? [],
-        attachments: comment.attachments ?? [],
-        created_at: comment.created_at,
-        updated_at: comment.updated_at,
-        supplements: comment.supplements,
-      };
-      const steered = !!comment.supplements?.length;
-      // Dedupe by id: the `comment:created` WS event may have already added
-      // this entry from the broadcast path before this onSuccess fires. Skip
-      // the append if the entry is already in the cache — but keep the
-      // steering receipts, which that broadcast predates.
-      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
-        updateTimelinePages(old, (entries) => {
-          if (entries.some((e) => e.id === entry.id)) {
-            return steered
-              ? entries.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
-              : entries;
-          }
-          return sortTimelineEntriesAsc([...entries, entry]);
-        }),
-      );
-      // A steered turn now lists this comment among its inputs.
-      if (steered) qc.invalidateQueries({ queryKey: issueKeys.tasks(issueId) });
-      // Posting a comment changes the trigger answer itself (the enqueued
-      // task now dedupes follow-up triggers), so cached previews for this
-      // issue are stale the moment the create lands.
-      qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreview(issueId) });
-    },
+    }: CommentCreateVars) =>
+      api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
+    onSuccess: (comment) => applyCommentCreated(qc, wsId, issueId, comment),
     // No onSettled invalidate. The `comment:created` WS broadcast keeps
     // the timeline cache fresh after a successful create, and reconnect
     // recovery in useIssueTimeline already invalidates if the connection
@@ -910,6 +921,28 @@ export function useCreateComment(issueId: string) {
     // reference, which forces every memoized CommentCard subtree to
     // re-render (visible as a flash across sibling threads during AI
     // streaming).
+  });
+}
+
+/**
+ * `useCreateComment` for callers that post to several issues from one place
+ * (the feed composer), where the issue is part of the call instead of the hook.
+ */
+export function useCreateCommentOnIssue() {
+  const qc = useQueryClient();
+  const wsId = useWorkspaceId();
+  return useMutation({
+    mutationFn: ({
+      issueId,
+      content,
+      type,
+      parentId,
+      attachmentIds,
+      suppressAgentIds,
+      steerTaskIds,
+    }: CommentCreateVars & { issueId: string }) =>
+      api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds, steerTaskIds),
+    onSuccess: (comment, { issueId }) => applyCommentCreated(qc, wsId, issueId, comment),
   });
 }
 

@@ -7,6 +7,7 @@ import { ArrowDown, MessagesSquare } from "lucide-react";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { threadSummariesOptions } from "@multica/core/issues/queries";
+import { useFeedReplyTargetsStore, type FeedReplyTarget } from "@multica/core/issues/stores";
 import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import type { Issue } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
@@ -14,6 +15,7 @@ import { useT } from "../../i18n";
 import { useIssuePeekActions } from "../surface/peek-context";
 import { FeedComposer, type FeedComposerHandle } from "./feed-composer";
 import { FeedDecisionCard } from "./feed-decision-card";
+import { FeedForwardSummary } from "./feed-forward-summary";
 import { FeedMessageCard } from "./feed-message-card";
 import { getFeedReadState } from "./feed-read-state";
 import { FeedQuickActions } from "./feed-quick-actions";
@@ -118,6 +120,13 @@ export function FeedView({
   }, [peek, messageIds]);
   useEffect(() => () => peek?.publishColumns(null), [peek]);
 
+  // Threads the last multi-send reached. Local and transient: it goes away
+  // when dismissed or when the composer sends again.
+  const [forwarded, setForwarded] = useState<FeedReplyTarget[] | null>(null);
+  const dismissForwarded = useCallback(() => setForwarded(null), []);
+  // Reply targets belong to this feed; leaving it must not carry them along.
+  useEffect(() => () => useFeedReplyTargetsStore.getState().clear(), []);
+
   const composerRef = useRef<FeedComposerHandle>(null);
   const focusComposer = useCallback(() => composerRef.current?.focus(), []);
 
@@ -144,7 +153,11 @@ export function FeedView({
                   issue={issue}
                   readState={getFeedReadState(summaries?.get(issue.id), currentUserId)}
                 />
-                <FeedDecisionCard issueId={issue.id} summary={summaries?.get(issue.id)} />
+                <FeedDecisionCard
+                  issueId={issue.id}
+                  identifier={issue.identifier}
+                  summary={summaries?.get(issue.id)}
+                />
                 <FeedThreadBar issue={issue} summary={summaries?.get(issue.id)} />
               </div>
             )}
@@ -163,8 +176,17 @@ export function FeedView({
           )}
         </div>
       )}
+      {forwarded && <FeedForwardSummary targets={forwarded} onDismiss={dismissForwarded} />}
       <FeedQuickActions issues={issues} projectId={projectId} onNewIssue={focusComposer} />
-      {projectId && <FeedComposer ref={composerRef} projectId={projectId} onSent={handleSent} />}
+      {projectId && (
+        <FeedComposer
+          ref={composerRef}
+          projectId={projectId}
+          onSent={handleSent}
+          onSendStart={dismissForwarded}
+          onForwarded={setForwarded}
+        />
+      )}
     </div>
   );
 }

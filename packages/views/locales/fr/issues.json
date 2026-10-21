@@ -717,7 +717,8 @@
     "awaiting_reply": "En attente de votre réponse",
     "decision": {
       "title": "En attente de votre décision",
-      "open_thread": "Voir le fil"
+      "open_thread": "Voir le fil",
+      "reply_here": "Répondre ici"
     },
     "progress": {
       "label": "Dernière progression",
@@ -743,7 +744,19 @@
       "send": "Envoyer",
       "sending": "Envoi…",
       "failed": "Échec de l'envoi",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "reply_to_one": "Répondre à {{count}} fil",
+      "reply_to_other": "Répondre à {{count}} fils",
+      "reply_placeholder_one": "Répondre à {{count}} fil : un commentaire y sera publié",
+      "reply_placeholder_other": "Répondre à {{count}} fils : un commentaire sera publié dans chacun",
+      "reply_clear": "Tout effacer",
+      "reply_remove": "Retirer {{identifier}}",
+      "reply_marker": "Depuis la conversation du projet · {{name}}"
+    },
+    "forward": {
+      "title_one": "Envoyé à {{count}} fil",
+      "title_other": "Envoyé à {{count}} fils",
+      "dismiss": "Fermer"
     }
   },
   "filtered_empty": {

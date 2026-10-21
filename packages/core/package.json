@@ -50,6 +50,7 @@
     "./issues/comment-trigger-outcomes": "./issues/comment-trigger-outcomes.ts",
     "./issues/feed-message": "./issues/feed-message.ts",
     "./issues/progress-checklist": "./issues/progress-checklist.ts",
+    "./issues/feed-forward": "./issues/feed-forward.ts",
     "./issues/run-steering": "./issues/run-steering.ts",
     "./issues/date": "./issues/date.ts",
     "./issues/ws-updaters": "./issues/ws-updaters.ts",

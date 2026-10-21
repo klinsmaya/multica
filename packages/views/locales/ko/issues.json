@@ -688,7 +688,8 @@
     "awaiting_reply": "답장 대기 중",
     "decision": {
       "title": "결정 대기 중",
-      "open_thread": "스레드 보기"
+      "open_thread": "스레드 보기",
+      "reply_here": "여기에 답글"
     },
     "progress": {
       "label": "최신 진행 상황",
@@ -714,7 +715,16 @@
       "send": "보내기",
       "sending": "전송 중…",
       "failed": "전송하지 못했습니다",
-      "retry": "다시 시도"
+      "retry": "다시 시도",
+      "reply_to_other": "스레드 {{count}}개에 답글",
+      "reply_placeholder_other": "스레드 {{count}}개에 답글 — 각각에 댓글을 하나씩 게시합니다",
+      "reply_clear": "모두 해제",
+      "reply_remove": "{{identifier}} 제거",
+      "reply_marker": "프로젝트 대화에서 · {{name}}"
+    },
+    "forward": {
+      "title_other": "스레드 {{count}}개에 보냈습니다",
+      "dismiss": "닫기"
     }
   },
   "filtered_empty": {
