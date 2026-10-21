@@ -675,6 +675,7 @@ function PreviewPanel({
   extraActions,
   annotationSource,
   renderHtmlFrame = renderViewerHtmlFrame,
+  renderMarkdown,
   initialHtmlAddress = "",
   onHtmlAddressChange,
 }: {
@@ -697,6 +698,7 @@ function PreviewPanel({
   /** Marks a Markdown or text body as a quotable source (`data-comment-content`). */
   annotationSource?: string;
   renderHtmlFrame?: HtmlFrameRenderer;
+  renderMarkdown?: MarkdownRenderer;
   /** Query and fragment an HTML file opens at. */
   initialHtmlAddress?: string;
   /** Reports an HTML file's address as the reader or the document moves it. */
@@ -737,6 +739,7 @@ function PreviewPanel({
     structuredParse,
     renderHtmlFrame,
     htmlLocation,
+    renderMarkdown,
   };
 
   // Gallery navigation hands this panel an attachment the reader never
@@ -1287,6 +1290,12 @@ function ImagePreview({
 
 // Dispatch
 
+/** Draws a Markdown file's body; `className` and `attachments` are the defaults. */
+export type MarkdownRenderer = (
+  text: string,
+  context: { className: string; attachments: Attachment[] },
+) => ReactNode;
+
 // What the top bar decided about how the file shows — see PreviewPanel.
 interface StageView {
   wrap: boolean;
@@ -1297,6 +1306,7 @@ interface StageView {
   structuredParse: ReturnType<typeof parseStructured> | null;
   renderHtmlFrame: HtmlFrameRenderer;
   htmlLocation: HtmlPreviewLocation;
+  renderMarkdown?: MarkdownRenderer;
 }
 
 const TEXT_BACKED_KINDS: ReadonlySet<PreviewKind> = new Set<PreviewKind>([
@@ -1409,17 +1419,24 @@ function PreviewContent({
         <TextBackedPreview
           attachmentId={state.attachmentId!}
           onDownload={onDownload}
-          render={(text) => (
-            <DocumentSheet width="prose" onBackdropClick={onBackdropClick}>
-              {quotable(
-                <ReadonlyContent
-                  content={text}
-                  className="px-10 py-8"
-                  attachments={source.kind === "full" ? [source.attachment] : []}
-                />,
-              )}
-            </DocumentSheet>
-          )}
+          render={(text) => {
+            const attachments = source.kind === "full" ? [source.attachment] : [];
+            return (
+              <DocumentSheet width="prose" onBackdropClick={onBackdropClick}>
+                {quotable(
+                  view.renderMarkdown ? (
+                    view.renderMarkdown(text, { className: "px-10 py-8", attachments })
+                  ) : (
+                    <ReadonlyContent
+                      content={text}
+                      className="px-10 py-8"
+                      attachments={attachments}
+                    />
+                  ),
+                )}
+              </DocumentSheet>
+            );
+          }}
         />
       );
     case "html":
@@ -1671,6 +1688,7 @@ export function AttachmentPreviewPanel({
   titleAccessory,
   extraActions,
   annotationSource,
+  renderMarkdown,
   onClose,
 }: {
   attachment: Attachment;
@@ -1679,6 +1697,8 @@ export function AttachmentPreviewPanel({
   extraActions?: ReactNode;
   /** See PreviewPanel: lets the host quote Markdown and text bodies. */
   annotationSource?: string;
+  /** Replaces the Markdown body's renderer, e.g. to mark placeholders. */
+  renderMarkdown?: MarkdownRenderer;
   onClose: () => void;
 }) {
   const download = useDownloadAttachment();
@@ -1701,6 +1721,7 @@ export function AttachmentPreviewPanel({
       titleAccessory={titleAccessory}
       extraActions={extraActions}
       annotationSource={annotationSource}
+      renderMarkdown={renderMarkdown}
     />
   );
 }

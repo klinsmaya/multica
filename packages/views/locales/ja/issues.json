@@ -1498,7 +1498,13 @@
     "open_focus": "全画面で開く",
     "open_focus_named": "{{name}} を全画面で開く",
     "focus_comments": "コメント",
-    "focus_unavailable": "この成果物は利用できなくなりました。"
+    "focus_unavailable": "この成果物は利用できなくなりました。",
+    "progressive": {
+      "pending": "未執筆",
+      "changed_label": "Claude",
+      "writing": "執筆中 · {{done}}/{{total}} 節",
+      "unfinished": "未完了 · {{done}}/{{total}}"
+    }
   },
   "workflows": {
     "default_name": "Default",

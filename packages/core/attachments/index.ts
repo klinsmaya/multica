@@ -6,6 +6,16 @@ export {
   type DeliverableSourceComment,
 } from "./deliverables";
 export {
+  diffParagraphs,
+  parsePendingSections,
+  pendingTitle,
+  splitParagraphs,
+  writingProgress,
+  type ParagraphDiff,
+  type PendingSection,
+  type WritingProgress,
+} from "./progressive-document";
+export {
   collectAttachmentSequence,
   collectImageSequence,
   indexOfImageKey,

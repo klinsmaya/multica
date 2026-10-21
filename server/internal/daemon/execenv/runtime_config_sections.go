@@ -837,6 +837,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 		b.WriteString("**One exception — a progress checklist for multi-step work (optional):** post it with `multica issue comment add --type progress_update`, body a Markdown task list (`- [ ]` / `- [x]`, one step per line). The feed shows the newest such comment as the issue's checklist. It is not your final result.\n\n")
 		b.WriteString("Keep comments concise and natural — state the outcome, not the process.\n\n")
 		b.WriteString("**Delivering files here:** pass `--attachment <path>` to `multica issue comment add` (repeatable) — the only way a screenshot or artifact reaches the reader.\n")
+		b.WriteString("\n**Long documents, section by section (optional):** upload an outline first, with each unwritten section as a single line `<!-- pending: Section title -->`, then re-upload the same file name after each section is written, replacing that line with the text. Each upload becomes a new version, so the reader watches the document fill in. Each upload rides on a one-line comment, the one exception to the single-comment rule above; your final result is still the last comment.\n")
 		writeInlineBlocksPolicy(b)
 	}
 	b.WriteString("\n")

@@ -3,12 +3,22 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Attachment, TimelineEntry } from "@multica/core/types";
+import { issueTimelineOptions } from "@multica/core/issues/queries";
 import { renderWithI18n } from "../../../test/i18n";
 
-const { listTimelineMock } = vi.hoisted(() => ({ listTimelineMock: vi.fn() }));
+const { listTimelineMock, textContentMock, taskSnapshotMock } = vi.hoisted(() => ({
+  listTimelineMock: vi.fn(),
+  textContentMock: vi.fn(),
+  taskSnapshotMock: vi.fn(),
+}));
 
 vi.mock("@multica/core/api", () => ({
-  api: { listTimeline: listTimelineMock, getAttachment: vi.fn(() => Promise.reject(new Error("no re-sign"))) },
+  api: {
+    listTimeline: listTimelineMock,
+    getAttachment: vi.fn(() => Promise.reject(new Error("no re-sign"))),
+    getAttachmentTextContent: textContentMock,
+    getAgentTaskSnapshot: taskSnapshotMock,
+  },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
@@ -29,13 +39,14 @@ vi.mock("../../../editor/hooks/use-inline-media-url", () => ({
 }));
 vi.mock("@multica/core/workspace/avatar-url", () => ({ resolvePublicFileUrl: (url: string) => url }));
 vi.mock("../../../platform", () => ({ useImmersiveMode: () => {} }));
-vi.mock("../../../navigation", () => ({ useNavigation: () => ({}) }));
+vi.mock("../../../navigation", () => ({ useNavigation: () => ({}), useAppOrigin: () => "https://app.example.test" }));
 vi.mock("@multica/core/auth", () => ({
   useAuthStore: (select: (s: { user: { id: string } }) => unknown) => select({ user: { id: "user-1" } }),
 }));
 vi.mock("@multica/core/paths", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useWorkspaceSlug: () => "acme",
+  useCurrentWorkspace: () => ({ id: "ws-1", slug: "acme" }),
 }));
 
 // The page behind it is IssueDetail's own business (issue-detail.test.tsx owns
@@ -134,6 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   setWide(true);
   listTimelineMock.mockResolvedValue([comment(A), comment(B), comment(C)]);
+  taskSnapshotMock.mockResolvedValue([]);
 });
 
 describe("DeliverableFocusModal", () => {
@@ -232,5 +244,75 @@ describe("DeliverableFocusModal", () => {
     // requested upload is the one on screen.
     expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     expect(screen.getByText("v1")).toBeInTheDocument();
+  });
+
+  describe("a document written section by section", () => {
+    const outline = "# Report\n\n<!-- pending: Background -->\n\n<!-- pending: Findings -->\n\n<!-- pending: Next steps -->";
+    const second = outline.replace("<!-- pending: Background -->", "Background, written.");
+
+    function document(id: string, createdAt: string) {
+      return shot(id, "report.md", createdAt, { content_type: "text/markdown" });
+    }
+
+    beforeEach(() => {
+      listTimelineMock.mockResolvedValue([
+        comment(document("r1", "2026-09-20T10:00:00Z")),
+        comment(document("r2", "2026-09-20T10:05:00Z")),
+      ]);
+      textContentMock.mockImplementation(async (id: string) => ({
+        text: id === "r1" ? outline : second,
+        originalContentType: "text/markdown",
+      }));
+    });
+
+    it("counts the written sections beside the name while the agent works", async () => {
+      taskSnapshotMock.mockResolvedValue([
+        { id: "t1", issue_id: "issue-1", status: "running", agent_id: "lambda" },
+      ]);
+      renderFocus("r2");
+
+      expect(await screen.findByText("Writing · 1/3 sections")).toBeInTheDocument();
+      expect(screen.getByText("Findings")).toBeInTheDocument();
+    });
+
+    it("says the document is unfinished once no agent run is left", async () => {
+      renderFocus("r2");
+
+      expect(await screen.findByText("Unfinished · 1/3")).toBeInTheDocument();
+    });
+
+    it("follows a new version as it lands and marks what it added", async () => {
+      taskSnapshotMock.mockResolvedValue([
+        { id: "t1", issue_id: "issue-1", status: "running", agent_id: "lambda" },
+      ]);
+      listTimelineMock.mockResolvedValue([comment(document("r1", "2026-09-20T10:00:00Z"))]);
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      renderWithI18n(
+        <QueryClientProvider client={qc}>
+          <DeliverableFocusModal onClose={vi.fn()} data={{ issueId: "issue-1", attachmentId: "r1" }} />
+        </QueryClientProvider>,
+      );
+      expect(await screen.findByText("Writing · 0/3 sections")).toBeInTheDocument();
+      expect(screen.queryByText("Claude")).not.toBeInTheDocument();
+
+      listTimelineMock.mockResolvedValue([
+        comment(document("r1", "2026-09-20T10:00:00Z")),
+        comment(document("r2", "2026-09-20T10:05:00Z")),
+      ]);
+      await qc.invalidateQueries({ queryKey: issueTimelineOptions("issue-1").queryKey });
+
+      expect(await screen.findByText("Writing · 1/3 sections")).toBeInTheDocument();
+      expect(screen.getByText("v2")).toBeInTheDocument();
+      expect(screen.getByText("Background, written.")).toBeInTheDocument();
+      expect(screen.getAllByText("Claude")).toHaveLength(1);
+    });
+
+    it("shows no progress for a document without markers", async () => {
+      textContentMock.mockResolvedValue({ text: "# Done\n\nAll written.", originalContentType: "text/markdown" });
+      renderFocus("r2");
+
+      expect(await screen.findByText("All written.")).toBeInTheDocument();
+      expect(screen.queryByTestId("writing-progress")).not.toBeInTheDocument();
+    });
   });
 });

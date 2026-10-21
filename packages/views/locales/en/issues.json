@@ -1554,7 +1554,13 @@
     "open_focus": "Open full screen",
     "open_focus_named": "Open {{name}} full screen",
     "focus_comments": "Comments",
-    "focus_unavailable": "This deliverable is no longer available."
+    "focus_unavailable": "This deliverable is no longer available.",
+    "progressive": {
+      "pending": "Pending",
+      "changed_label": "Claude",
+      "writing": "Writing · {{done}}/{{total}} sections",
+      "unfinished": "Unfinished · {{done}}/{{total}}"
+    }
   },
   "workflows": {
     "default_name": "Default",

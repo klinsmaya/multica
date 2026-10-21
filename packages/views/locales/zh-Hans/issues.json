@@ -1498,7 +1498,13 @@
     "open_focus": "全屏打开",
     "open_focus_named": "全屏打开 {{name}}",
     "focus_comments": "评论",
-    "focus_unavailable": "该产物已不可用。"
+    "focus_unavailable": "该产物已不可用。",
+    "progressive": {
+      "pending": "待写",
+      "changed_label": "Claude",
+      "writing": "正在写 · {{done}}/{{total}} 段",
+      "unfinished": "未完成 · {{done}}/{{total}}"
+    }
   },
   "workflows": {
     "default_name": "Default",

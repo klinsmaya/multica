@@ -34,6 +34,7 @@ export {
 } from "./attachment-preview-modal";
 export type {
   AttachmentPreviewHandle,
+  MarkdownRenderer,
   PreviewLocateAction,
   PreviewSequence,
 } from "./attachment-preview-modal";

@@ -24,6 +24,7 @@ import { useImmersiveMode } from "../../../platform";
 import { IssueDetail } from "../issue-detail";
 import { AnnotatablePreviewPanel, useDocumentAnnotations } from "./document-annotations";
 import { VersionBadge } from "./version-badge";
+import { useProgressiveDocument } from "./use-progressive-document";
 
 // The focus covers the whole window, drag strip included, so it opts out of
 // the desktop window-drag region itself (see AttachmentPreviewModal).
@@ -132,6 +133,16 @@ function DeliverableFocus({
   const attachment = current?.file.versions[current.version - 1];
   const title = attachment?.filename ?? "";
   const documentAnnotations = useDocumentAnnotations({ issueId, attachment, enabled: discussionOpen });
+  const progressive = useProgressiveDocument({
+    issueId,
+    file: current?.file,
+    viewedId: attachmentId,
+    onFollow: setAttachmentId,
+  });
+  const versionBadge =
+    current && current.file.versions.length > 1 ? (
+      <VersionBadge version={current.version} className="bg-secondary" />
+    ) : undefined;
 
   return (
     <>
@@ -144,10 +155,16 @@ function DeliverableFocus({
             attachment={attachment}
             sequence={{ index, total: files.length, onPrev, onNext }}
             titleAccessory={
-              current.file.versions.length > 1 ? (
-                <VersionBadge version={current.version} className="bg-secondary" />
-              ) : undefined
+              progressive.status ? (
+                <>
+                  {versionBadge}
+                  {progressive.status}
+                </>
+              ) : (
+                versionBadge
+              )
             }
+            renderMarkdown={progressive.renderMarkdown}
             extraActions={
               <>
                 <ChromeDivider />

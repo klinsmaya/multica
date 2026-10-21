@@ -1498,7 +1498,13 @@
     "open_focus": "전체 화면으로 열기",
     "open_focus_named": "{{name}} 전체 화면으로 열기",
     "focus_comments": "댓글",
-    "focus_unavailable": "이 산출물은 더 이상 사용할 수 없습니다."
+    "focus_unavailable": "이 산출물은 더 이상 사용할 수 없습니다.",
+    "progressive": {
+      "pending": "작성 예정",
+      "changed_label": "Claude",
+      "writing": "작성 중 · {{done}}/{{total}}개 섹션",
+      "unfinished": "미완료 · {{done}}/{{total}}"
+    }
   },
   "workflows": {
     "default_name": "Default",

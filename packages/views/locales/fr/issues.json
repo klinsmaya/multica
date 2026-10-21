@@ -1554,7 +1554,13 @@
     "open_focus": "Ouvrir en plein écran",
     "open_focus_named": "Ouvrir {{name}} en plein écran",
     "focus_comments": "Commentaires",
-    "focus_unavailable": "Ce livrable n'est plus disponible."
+    "focus_unavailable": "Ce livrable n'est plus disponible.",
+    "progressive": {
+      "pending": "À rédiger",
+      "changed_label": "Claude",
+      "writing": "Rédaction · {{done}}/{{total}} sections",
+      "unfinished": "Inachevé · {{done}}/{{total}}"
+    }
   },
   "workflows": {
     "default_name": "Default",
