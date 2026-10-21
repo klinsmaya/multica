@@ -394,6 +394,37 @@ func (q *Queries) DeleteReplylessCommentTombstone(ctx context.Context, arg Delet
 	return i, err
 }
 
+const existsCommentRootAfterForIssue = `-- name: ExistsCommentRootAfterForIssue :one
+SELECT EXISTS (
+    SELECT 1 FROM comment
+    WHERE issue_id = $1
+      AND workspace_id = $2
+      AND parent_id IS NULL
+      AND (created_at, id) > ($3::timestamptz, $4::uuid)
+)
+`
+
+type ExistsCommentRootAfterForIssueParams struct {
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	AfterAt     pgtype.Timestamptz `json:"after_at"`
+	AfterID     pgtype.UUID        `json:"after_id"`
+}
+
+// Whether the issue has a top-level comment strictly newer than the
+// (@after_at, @after_id) pair. Backs has_more_after on an `around` timeline page.
+func (q *Queries) ExistsCommentRootAfterForIssue(ctx context.Context, arg ExistsCommentRootAfterForIssueParams) (bool, error) {
+	row := q.db.QueryRow(ctx, existsCommentRootAfterForIssue,
+		arg.IssueID,
+		arg.WorkspaceID,
+		arg.AfterAt,
+		arg.AfterID,
+	)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getComment = `-- name: GetComment :one
 SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
 WHERE id = $1
@@ -875,6 +906,184 @@ func (q *Queries) ListCommentAncestorPath(ctx context.Context, arg ListCommentAn
 			&i.DeletedAt,
 			&i.Depth,
 			&i.Cycle,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentRepliesForRoots = `-- name: ListCommentRepliesForRoots :many
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id, c.created_at AS root_created_at
+    FROM comment c
+    WHERE c.id = ANY($2::uuid[])
+      AND c.issue_id = $3
+      AND c.workspace_id = $4
+      AND c.parent_id IS NULL
+),
+membership(id, root_id, root_created_at) AS (
+    SELECT c.id, r.root_id, r.root_created_at
+    FROM comment c
+    JOIN roots r ON c.parent_id = r.root_id
+    WHERE c.issue_id = $3
+      AND c.workspace_id = $4
+    UNION ALL
+    SELECT c.id, m.root_id, m.root_created_at
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.issue_id = $3
+      AND c.workspace_id = $4
+)
+SELECT c.id, c.issue_id, c.author_type, c.author_id, c.content, c.type, c.created_at, c.updated_at, c.parent_id, c.workspace_id, c.resolved_at, c.resolved_by_type, c.resolved_by_id, c.source_task_id, c.quick_action_id, c.via_plugin_id, c.revision, c.recovery_settled_at, c.deleted_at, c.suppressed_agent_ids, m.root_id
+FROM membership m
+JOIN comment c ON c.id = m.id
+ORDER BY m.root_created_at DESC, m.root_id DESC, c.created_at ASC, c.id ASC
+LIMIT $1
+`
+
+type ListCommentRepliesForRootsParams struct {
+	RowLimit    int32         `json:"row_limit"`
+	RootIds     []pgtype.UUID `json:"root_ids"`
+	IssueID     pgtype.UUID   `json:"issue_id"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+}
+
+type ListCommentRepliesForRootsRow struct {
+	Comment Comment     `json:"comment"`
+	RootID  pgtype.UUID `json:"root_id"`
+}
+
+// Every descendant of the given root comments, at any reply depth, each labelled
+// with its thread root. Roots themselves are not returned.
+//
+// Rows come back grouped by root in the same order the roots page uses
+// ((created_at, id) DESC) and chronologically inside a root, so a LIMIT cuts
+// through at most one thread and a chronological prefix of a thread is closed
+// under "parent of" (a reply is never older than its parent). The caller probes
+// with limit + 1 and drops the trailing partial thread.
+//
+// Both tenant predicates apply at every level of the walk, and @root_ids only
+// matches top-level comments of this issue, so an id from elsewhere expands to
+// nothing.
+func (q *Queries) ListCommentRepliesForRoots(ctx context.Context, arg ListCommentRepliesForRootsParams) ([]ListCommentRepliesForRootsRow, error) {
+	rows, err := q.db.Query(ctx, listCommentRepliesForRoots,
+		arg.RowLimit,
+		arg.RootIds,
+		arg.IssueID,
+		arg.WorkspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCommentRepliesForRootsRow{}
+	for rows.Next() {
+		var i ListCommentRepliesForRootsRow
+		if err := rows.Scan(
+			&i.Comment.ID,
+			&i.Comment.IssueID,
+			&i.Comment.AuthorType,
+			&i.Comment.AuthorID,
+			&i.Comment.Content,
+			&i.Comment.Type,
+			&i.Comment.CreatedAt,
+			&i.Comment.UpdatedAt,
+			&i.Comment.ParentID,
+			&i.Comment.WorkspaceID,
+			&i.Comment.ResolvedAt,
+			&i.Comment.ResolvedByType,
+			&i.Comment.ResolvedByID,
+			&i.Comment.SourceTaskID,
+			&i.Comment.QuickActionID,
+			&i.Comment.ViaPluginID,
+			&i.Comment.Revision,
+			&i.Comment.RecoverySettledAt,
+			&i.Comment.DeletedAt,
+			&i.Comment.SuppressedAgentIds,
+			&i.RootID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCommentRootsForIssueBefore = `-- name: ListCommentRootsForIssueBefore :many
+SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
+WHERE issue_id = $1
+  AND workspace_id = $2
+  AND parent_id IS NULL
+  AND (
+      $3::boolean = FALSE
+      OR (created_at, id) < ($4::timestamptz, $5::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $6
+`
+
+type ListCommentRootsForIssueBeforeParams struct {
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	HasCursor   bool               `json:"has_cursor"`
+	BeforeAt    pgtype.Timestamptz `json:"before_at"`
+	BeforeID    pgtype.UUID        `json:"before_id"`
+	RowLimit    int32              `json:"row_limit"`
+}
+
+// Top-level comments (parent_id IS NULL) of an issue, newest first, strictly
+// older than the (@before_at, @before_id) cursor when @has_cursor is TRUE.
+//
+// Powers the root-paged timeline: a page is a set of whole threads, so the page
+// boundary can never split a reply thread (the reason time-based paging was
+// removed earlier). Tombstoned roots (deleted_at set) stay in the page like
+// ListCommentsForIssue returns them, because their replies still render under
+// them. Callers pass limit + 1 to probe for an older page.
+func (q *Queries) ListCommentRootsForIssueBefore(ctx context.Context, arg ListCommentRootsForIssueBeforeParams) ([]Comment, error) {
+	rows, err := q.db.Query(ctx, listCommentRootsForIssueBefore,
+		arg.IssueID,
+		arg.WorkspaceID,
+		arg.HasCursor,
+		arg.BeforeAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Comment{}
+	for rows.Next() {
+		var i Comment
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.AuthorType,
+			&i.AuthorID,
+			&i.Content,
+			&i.Type,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentID,
+			&i.WorkspaceID,
+			&i.ResolvedAt,
+			&i.ResolvedByType,
+			&i.ResolvedByID,
+			&i.SourceTaskID,
+			&i.QuickActionID,
+			&i.ViaPluginID,
+			&i.Revision,
+			&i.RecoverySettledAt,
+			&i.DeletedAt,
+			&i.SuppressedAgentIds,
 		); err != nil {
 			return nil, err
 		}

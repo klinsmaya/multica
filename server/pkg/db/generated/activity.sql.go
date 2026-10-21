@@ -225,3 +225,70 @@ func (q *Queries) ListActivitiesForIssue(ctx context.Context, arg ListActivities
 	}
 	return items, nil
 }
+
+const listActivitiesForIssueBetween = `-- name: ListActivitiesForIssueBetween :many
+SELECT id, workspace_id, issue_id, actor_type, actor_id, action, details, created_at FROM (
+    SELECT id, workspace_id, issue_id, actor_type, actor_id, action, details, created_at FROM activity_log
+    WHERE issue_id = $1
+      AND ($2::boolean = FALSE OR created_at >= $3::timestamptz)
+      AND ($4::boolean = FALSE OR created_at < $5::timestamptz)
+    ORDER BY created_at DESC, id DESC
+    LIMIT $6
+) AS recent
+ORDER BY created_at ASC, id ASC
+`
+
+type ListActivitiesForIssueBetweenParams struct {
+	IssueID  pgtype.UUID        `json:"issue_id"`
+	HasFrom  bool               `json:"has_from"`
+	FromAt   pgtype.Timestamptz `json:"from_at"`
+	HasTo    bool               `json:"has_to"`
+	ToAt     pgtype.Timestamptz `json:"to_at"`
+	RowLimit int32              `json:"row_limit"`
+}
+
+// The NEWEST @row_limit activities of an issue inside a time window, returned in
+// chronological order. The window is [@from_at, @to_at): the lower bound is
+// inclusive and applies when @has_from is TRUE, the upper bound is exclusive and
+// applies when @has_to is TRUE.
+//
+// Powers the root-paged timeline, where activities are partitioned by TIME
+// rather than by thread: each page owns the interval from its oldest root up to
+// the previous page's oldest root, so adjacent pages tile the timeline with no
+// gap and no overlap. The cap bites at the OLD end for the same reason as
+// ListActivitiesForIssue.
+func (q *Queries) ListActivitiesForIssueBetween(ctx context.Context, arg ListActivitiesForIssueBetweenParams) ([]ActivityLog, error) {
+	rows, err := q.db.Query(ctx, listActivitiesForIssueBetween,
+		arg.IssueID,
+		arg.HasFrom,
+		arg.FromAt,
+		arg.HasTo,
+		arg.ToAt,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ActivityLog{}
+	for rows.Next() {
+		var i ActivityLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.ActorType,
+			&i.ActorID,
+			&i.Action,
+			&i.Details,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

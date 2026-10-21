@@ -18,8 +18,10 @@ import type {
   ListGroupedIssuesParams,
   ListIssuesParams,
   ListIssuesCache,
+  TimelinePageCursor,
 } from "../types";
 import { ALL_STATUSES } from "./config";
+import { TIMELINE_PAGE_SIZE, nextTimelinePageCursor } from "./timeline-pages";
 import { issueColumnCategory } from "./status-category";
 
 export function issueTasksOptions(issueId: string) {
@@ -172,9 +174,13 @@ export const issueKeys = {
    *  prefixes explicitly, or missed events leave them stale forever under
    *  the staleTime: Infinity default (#3953). */
   timelineAll: () => ["issues", "timeline"] as const,
-  /** Full-issue timeline (single TanStack Query, no cursor). */
+  /** Prefix of everything cached for one issue's timeline. Invalidating or
+   *  removing it covers the paged cache below. */
   timeline: (issueId: string) =>
     [...issueKeys.timelineAll(), issueId] as const,
+  /** The paged timeline (infinite query, newest page first). */
+  timelinePages: (issueId: string) =>
+    [...issueKeys.timeline(issueId), "pages"] as const,
   /** Prefix across all issues — WS task lifecycle events invalidate here so
    *  an open composer's trigger preview refreshes when an agent's queue
    *  state changes (the dedup guard makes the answer queue-dependent). */
@@ -669,11 +675,31 @@ export function threadSummariesOptions(wsId: string, ids: readonly string[]) {
 }
 
 /**
- * Single-fetch timeline options. The endpoint returns the full ordered set of
- * comments + activities for an issue (server caps at 2000 as a safety net).
- * Cursor pagination was removed in #1929 — at observed data sizes (p99 ~30
- * entries per issue) it added complexity without a UX win and broke reply
- * threads at page boundaries.
+ * The issue timeline, paged by root comment: the first page is the newest
+ * TIMELINE_PAGE_SIZE root comments with all their replies and the activities of
+ * that time window; each further page is the next OLDER slice, reached through
+ * the previous page's cursor. Older pages are the query's "next" pages, so
+ * `pages[0]` is always the newest page. Read and patch the cache through
+ * `timeline-pages.ts`, not by indexing `pages`.
+ */
+export function issueTimelineInfiniteOptions(issueId: string) {
+  return infiniteQueryOptions({
+    queryKey: issueKeys.timelinePages(issueId),
+    initialPageParam: null as TimelinePageCursor | null,
+    queryFn: ({ pageParam }) =>
+      api.listTimeline(issueId, {
+        limit: TIMELINE_PAGE_SIZE,
+        ...(pageParam ?? {}),
+      }),
+    getNextPageParam: nextTimelinePageCursor,
+  });
+}
+
+/**
+ * The unpaged timeline: the full ordered set of comments + activities for an
+ * issue (server caps at 2000 as a safety net) as one flat array. Nothing in the
+ * app reads it any more — the issue page uses `issueTimelineInfiniteOptions` —
+ * and it lives under a different key, so the two caches never mix.
  */
 export function issueTimelineOptions(issueId: string) {
   return queryOptions({

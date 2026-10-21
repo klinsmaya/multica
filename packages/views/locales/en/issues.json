@@ -493,7 +493,8 @@
     "pull_requests_empty_title": "No linked pull requests."
   },
   "timeline": {
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "load_earlier": "Load earlier comments"
   },
   "activity": {
     "created": "created this issue",

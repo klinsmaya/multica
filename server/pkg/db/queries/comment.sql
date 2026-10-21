@@ -24,6 +24,77 @@ SELECT * FROM (
 ) AS recent
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListCommentRootsForIssueBefore :many
+-- Top-level comments (parent_id IS NULL) of an issue, newest first, strictly
+-- older than the (@before_at, @before_id) cursor when @has_cursor is TRUE.
+--
+-- Powers the root-paged timeline: a page is a set of whole threads, so the page
+-- boundary can never split a reply thread (the reason time-based paging was
+-- removed earlier). Tombstoned roots (deleted_at set) stay in the page like
+-- ListCommentsForIssue returns them, because their replies still render under
+-- them. Callers pass limit + 1 to probe for an older page.
+SELECT * FROM comment
+WHERE issue_id = @issue_id
+  AND workspace_id = @workspace_id
+  AND parent_id IS NULL
+  AND (
+      @has_cursor::boolean = FALSE
+      OR (created_at, id) < (@before_at::timestamptz, @before_id::uuid)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT @row_limit;
+
+-- name: ListCommentRepliesForRoots :many
+-- Every descendant of the given root comments, at any reply depth, each labelled
+-- with its thread root. Roots themselves are not returned.
+--
+-- Rows come back grouped by root in the same order the roots page uses
+-- ((created_at, id) DESC) and chronologically inside a root, so a LIMIT cuts
+-- through at most one thread and a chronological prefix of a thread is closed
+-- under "parent of" (a reply is never older than its parent). The caller probes
+-- with limit + 1 and drops the trailing partial thread.
+--
+-- Both tenant predicates apply at every level of the walk, and @root_ids only
+-- matches top-level comments of this issue, so an id from elsewhere expands to
+-- nothing.
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id, c.created_at AS root_created_at
+    FROM comment c
+    WHERE c.id = ANY(@root_ids::uuid[])
+      AND c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+      AND c.parent_id IS NULL
+),
+membership(id, root_id, root_created_at) AS (
+    SELECT c.id, r.root_id, r.root_created_at
+    FROM comment c
+    JOIN roots r ON c.parent_id = r.root_id
+    WHERE c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+    UNION ALL
+    SELECT c.id, m.root_id, m.root_created_at
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.issue_id = @issue_id
+      AND c.workspace_id = @workspace_id
+)
+SELECT sqlc.embed(c), m.root_id
+FROM membership m
+JOIN comment c ON c.id = m.id
+ORDER BY m.root_created_at DESC, m.root_id DESC, c.created_at ASC, c.id ASC
+LIMIT @row_limit;
+
+-- name: ExistsCommentRootAfterForIssue :one
+-- Whether the issue has a top-level comment strictly newer than the
+-- (@after_at, @after_id) pair. Backs has_more_after on an `around` timeline page.
+SELECT EXISTS (
+    SELECT 1 FROM comment
+    WHERE issue_id = @issue_id
+      AND workspace_id = @workspace_id
+      AND parent_id IS NULL
+      AND (created_at, id) > (@after_at::timestamptz, @after_id::uuid)
+);
+
 -- name: ListCommentsByIDsForIssue :many
 -- The subset of @ids that exists within this issue and workspace.
 --

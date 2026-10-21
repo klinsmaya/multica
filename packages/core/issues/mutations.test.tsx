@@ -24,6 +24,11 @@ import {
   type IssueSortParam,
 } from "./queries";
 import { onIssueUpdated, onIssueAuxiliaryRevision } from "./ws-updaters";
+import {
+  flattenTimelinePages,
+  singleTimelinePage,
+  type TimelinePagesCache,
+} from "./timeline-pages";
 import { inboxKeys, inboxListOptions } from "../inbox/queries";
 import {
   onInboxInvalidate,
@@ -1163,6 +1168,18 @@ describe("status / priority writes re-read an Inbox list they left behind", () =
   });
 });
 
+// The issue timeline cache is a paged infinite query; tests seed and read it as
+// the flat entry list they care about.
+function seedTimelinePages(qc: QueryClient, issueId: string, entries: TimelineEntry[]) {
+  qc.setQueryData(issueKeys.timelinePages(issueId), singleTimelinePage(entries));
+}
+
+function readTimeline(qc: QueryClient, issueId: string): TimelineEntry[] {
+  return flattenTimelinePages(
+    qc.getQueryData<TimelinePagesCache>(issueKeys.timelinePages(issueId)),
+  );
+}
+
 describe("comment mutations — owner revision and last activity", () => {
   const issueId = "issue-1";
   const detailKey = issueKeys.detail(WS_ID, issueId);
@@ -1180,7 +1197,7 @@ describe("comment mutations — owner revision and last activity", () => {
     qc.setQueryData<Issue>(detailKey, issue);
     qc.setQueryData<ListIssuesCache>(lastActivityKey, board);
     qc.setQueryData<ListIssuesCache>(positionKey, board);
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(issueId), [
+    seedTimelinePages(qc, issueId, [
       {
         type: "comment",
         id: "comment-1",
@@ -1256,9 +1273,9 @@ describe("comment mutations — owner revision and last activity", () => {
     onTestFinished(() => configStore.getState().setCommentDeleteKeepRepliesSupported(false));
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     seed(qc);
-    const [root] = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))!;
+    const [root] = readTimeline(qc, issueId);
     const reply: TimelineEntry = { ...root!, id: "comment-2", parent_id: "comment-1", content: "reply" };
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(issueId), [root!, reply]);
+    seedTimelinePages(qc, issueId, [root!, reply]);
     let confirm!: () => void;
     const deleteComment = vi.fn(() => new Promise<void>((resolve) => { confirm = resolve; }));
     setApiInstance({ deleteComment } as unknown as ApiClient);
@@ -1271,13 +1288,13 @@ describe("comment mutations — owner revision and last activity", () => {
       pending = result.current.mutateAsync("comment-1");
     });
     await waitFor(() => expect(deleteComment).toHaveBeenCalledWith("comment-1", { keepReplies: true }));
-    expect(qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))).toEqual([root, reply]);
+    expect(readTimeline(qc, issueId)).toEqual([root, reply]);
 
     await act(async () => {
       confirm();
       await pending;
     });
-    const timeline = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))!;
+    const timeline = readTimeline(qc, issueId);
     expect(timeline.map((e) => e.id)).toEqual(["comment-1", "comment-2"]);
     expect(timeline[0]).toMatchObject({ content: "" });
     expect(timeline[0]?.deleted_at).toEqual(expect.any(String));
@@ -1290,9 +1307,9 @@ describe("comment mutations — owner revision and last activity", () => {
   it("mirrors a reply-deleting server when the capability is not declared", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     seed(qc);
-    const [root] = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))!;
+    const [root] = readTimeline(qc, issueId);
     const reply: TimelineEntry = { ...root!, id: "comment-2", parent_id: "comment-1", content: "reply" };
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(issueId), [root!, reply]);
+    seedTimelinePages(qc, issueId, [root!, reply]);
     const deleteComment = vi.fn().mockResolvedValue(undefined);
     setApiInstance({ deleteComment } as unknown as ApiClient);
     const { result } = renderHook(() => useDeleteComment(issueId), {
@@ -1304,14 +1321,14 @@ describe("comment mutations — owner revision and last activity", () => {
     });
 
     expect(deleteComment).toHaveBeenCalledWith("comment-1", { keepReplies: false });
-    expect(qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))).toEqual([]);
+    expect(readTimeline(qc, issueId)).toEqual([]);
     qc.clear();
   });
 
   it("leaves the timeline untouched when the delete fails", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     seed(qc);
-    const before = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId));
+    const before = qc.getQueryData(issueKeys.timelinePages(issueId));
     setApiInstance({
       deleteComment: vi.fn().mockRejectedValue(new Error("nope")),
     } as unknown as ApiClient);
@@ -1323,7 +1340,7 @@ describe("comment mutations — owner revision and last activity", () => {
       await result.current.mutateAsync("comment-1").catch(() => undefined);
     });
 
-    expect(qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(issueId))).toBe(before);
+    expect(qc.getQueryData(issueKeys.timelinePages(issueId))).toBe(before);
     qc.clear();
   });
 });
@@ -1365,11 +1382,11 @@ describe("useResolveComment", () => {
       makeComment("root2", null, null),
       makeComment("a2", "root2", "2026-01-01T00:05:00Z"),
     ];
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(ISSUE_ID), entries);
+    seedTimelinePages(qc, ISSUE_ID, entries);
   }
 
   function resolvedIds(qc: QueryClient): string[] {
-    const cache = qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(ISSUE_ID)) ?? [];
+    const cache = readTimeline(qc, ISSUE_ID);
     return cache.filter((e) => e.resolved_at).map((e) => e.id).sort();
   }
 
@@ -1420,7 +1437,7 @@ describe("useResolveComment", () => {
 
   it("unresolve only clears its own row, never siblings", async () => {
     // Legacy state: two resolved comments coexist in one thread.
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(ISSUE_ID), [
+    seedTimelinePages(qc, ISSUE_ID, [
       makeComment("root1", null, null),
       makeComment("a1", "root1", "2026-01-01T00:01:00Z"),
       makeComment("b1", "root1", "2026-01-01T00:02:00Z"),
@@ -1483,7 +1500,7 @@ describe("useCreateComment — sibling caches under a shared key prefix", () => 
   });
 
   it("appends the created comment even when non-row table caches are loaded", async () => {
-    qc.setQueryData<TimelineEntry[]>(issueKeys.timeline(ISSUE_ID), []);
+    seedTimelinePages(qc, ISSUE_ID, []);
     // Grouped rows are an infinite cache and facets a plain object — both live
     // under the `table-query` prefix next to the row pages, and neither has a
     // `rows` array.
@@ -1506,8 +1523,6 @@ describe("useCreateComment — sibling caches under a shared key prefix", () => 
       await result.current.mutateAsync({ content: "hello" });
     });
 
-    expect(
-      qc.getQueryData<TimelineEntry[]>(issueKeys.timeline(ISSUE_ID))?.map((e) => e.id),
-    ).toEqual(["comment-1"]);
+    expect(readTimeline(qc, ISSUE_ID).map((e) => e.id)).toEqual(["comment-1"]);
   });
 });

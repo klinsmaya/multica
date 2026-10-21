@@ -9,6 +9,8 @@ import type {
   StorageAdapter,
   IssueTableQuerySpec,
   Comment,
+  TimelineEntry,
+  TimelinePage,
 } from "@multica/core/types";
 import { STATUS_ORDER } from "@multica/core/issues/config";
 import { ApiClient } from "@multica/core/api";
@@ -159,6 +161,25 @@ export function createFixtureApi(getLocale: () => LabLocale = () => "en") {
           query.scope.assignee_types.includes(issue.assignee_type!))
       );
     });
+  // The whole fixture timeline fits one page, so a paged request gets it with
+  // nothing older.
+  function listTimeline(id: string): Promise<TimelineEntry[]>;
+  function listTimeline(id: string, page: { limit: number }): Promise<TimelinePage>;
+  async function listTimeline(id: string, page?: { limit: number }): Promise<TimelineEntry[] | TimelinePage> {
+    const entries: TimelineEntry[] = comments
+      .filter((comment) => comment.issue_id === id)
+      .map((comment) => ({
+        ...localizeComment(comment),
+        type: "comment",
+        actor_type: comment.author_type,
+        actor_id: comment.author_id,
+        actor_name: user.name,
+      }));
+    return page
+      ? { entries, has_more_before: false, has_more_after: false, next_before: null, next_before_id: null }
+      : entries;
+  }
+
   const handlers: Partial<ApiClient> = {
     getBaseUrl: () => "/ui-lab-fixtures",
     getMe: async () => ({ ...user, language: productLocale(getLocale()) }),
@@ -259,16 +280,7 @@ export function createFixtureApi(getLocale: () => LabLocale = () => "en") {
       comments
         .filter((comment) => comment.issue_id === id)
         .map(localizeComment),
-    listTimeline: async (id) =>
-      comments
-        .filter((comment) => comment.issue_id === id)
-        .map((comment) => ({
-          ...localizeComment(comment),
-          type: "comment",
-          actor_type: comment.author_type,
-          actor_id: comment.author_id,
-          actor_name: user.name,
-        })),
+    listTimeline,
     previewCommentTriggers: async () => ({ agents: [] }),
     createComment: async (issueId, content, _type, parentId) => {
       const comment: Comment = {

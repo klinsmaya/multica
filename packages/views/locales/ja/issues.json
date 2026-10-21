@@ -488,7 +488,8 @@
     "pull_requests_empty_title": "関連する PR はありません。"
   },
   "timeline": {
-    "loading": "読み込み中..."
+    "loading": "読み込み中...",
+    "load_earlier": "以前のコメントを読み込む"
   },
   "activity": {
     "created": "このタスクを作成しました",

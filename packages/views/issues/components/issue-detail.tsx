@@ -155,6 +155,7 @@ import {
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
+import { usePrependedFirstItemIndex } from "../hooks/use-prepended-first-item-index";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
 import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
@@ -1606,11 +1607,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   }, [issue, issueLoading, onDelete]);
 
   // Custom hooks — encapsulate timeline, reactions, subscribers
+  // The timeline loads in pages of root comments, newest first. A deep link to
+  // a comment keeps loading older pages until that comment is on screen.
   const {
     timeline, loading: timelineLoading,
+    hasOlder: hasOlderTimeline, loadOlder: loadOlderTimeline,
     submitComment, submitReply,
     editComment, deleteComment, toggleResolveComment, toggleReaction: handleToggleReaction,
-  } = useIssueTimeline(id, user?.id);
+  } = useIssueTimeline(id, user?.id, { ensureCommentId: highlightCommentId });
 
   const { data: commentTasks } = useQuery(issueTasksOptions(id));
   const enteringRunIds = useNewRunIds(id, commentTasks);
@@ -1653,8 +1657,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const timelineView = useMemo(() => {
     // Group entries: top-level = activities + root comments; replies are
     // bucketed under their parent's id and rendered nested inside CommentCard.
-    // No orphan rescue needed: the timeline is fetched in full, so every
-    // reply's parent is always in the same array.
+    // No orphan rescue needed: a timeline page always carries every reply of
+    // its root comments, so every reply's parent is in the same array.
     const topLevel = displayTimeline.filter(
       (e) => e.type === "activity" || !e.parent_id,
     );
@@ -1758,6 +1762,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [timelineView.groups, expandedResolved],
   );
 
+  // Virtuoso keeps the viewport on the same row when an older page lands above
+  // it as long as `firstItemIndex` drops by the number of prepended rows.
+  const itemKeys = useMemo(
+    () => items.map((it) => `${it.kind}:${it.kind === "run" ? it.run.task.id : it.id}`),
+    [items],
+  );
+  const firstItemIndex = usePrependedFirstItemIndex(itemKeys, `${wsId}:${id}`);
+
   // In-page find (Cmd/Ctrl+F). `items.length` is the content signal that
   // triggers a match recompute when comments are added/removed; text edits
   // are caught by the hook's own MutationObserver. Opening find forces the
@@ -1773,6 +1785,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   useEffect(() => {
     closeFind();
   }, [id, closeFind]);
+  // Find walks the DOM, so it can only match comments that are loaded: pull in
+  // every older page while it is open (one page per render, via the effect).
+  useEffect(() => {
+    if (find.open && hasOlderTimeline) loadOlderTimeline();
+  }, [find.open, hasOlderTimeline, loadOlderTimeline]);
 
   // ID of the trailing activity block — the only one expanded by default.
   const lastActivityGroupId = useMemo(() => {
@@ -3870,6 +3887,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       ref={virtuosoRef}
                       customScrollParent={scrollContainerEl}
                       data={items}
+                      firstItemIndex={firstItemIndex}
+                      startReached={loadOlderTimeline}
                       initialScrollTop={restoredScrollTop}
                       increaseViewportBy={{ top: 800, bottom: 800 }}
                       computeItemKey={(_i, item) => `${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}
@@ -3884,6 +3903,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 )
               ) : (
                 <div className="mt-4">
+                  {hasOlderTimeline && (
+                    <div className="pb-3">
+                      <Button variant="ghost" size="sm" onClick={loadOlderTimeline}>
+                        {t(($) => $.timeline.load_earlier)}
+                      </Button>
+                    </div>
+                  )}
                   {items.map((item, i) => (
                     <Fragment key={`${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}>
                       {renderItem(i, item)}

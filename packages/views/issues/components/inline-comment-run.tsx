@@ -2,14 +2,15 @@
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, Brain, Check, ChevronRight, CirclePause, Clock3, CornerDownRight, ExternalLink, Loader2, MessageSquare, RotateCcw, ScrollText, Square, Terminal } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useTraceIssueLabels } from "../../common/task-transcript/use-trace-issue-labels";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { useTaskMessages } from "@multica/core/chat/queries";
 import { useCancelIssueRun, useRetryIssueRun } from "@multica/core/issues/mutations";
-import { issueTimelineOptions } from "@multica/core/issues/queries";
+import { issueTimelineInfiniteOptions } from "@multica/core/issues/queries";
+import { flattenTimelinePages } from "@multica/core/issues/timeline-pages";
 import { commentSupplementReceipts } from "@multica/core/issues/run-steering";
 import { dispatchReasonCode } from "@multica/core/api";
 import type { AgentTask, TimelineEntry } from "@multica/core/types";
@@ -109,10 +110,10 @@ export function InlineCommentRun({ run, className, viewState, showIdentity = fal
   const steps = useMemo(() => buildSteps(items), [items]);
   const rows = useMemo(() => groupSteps(steps), [steps]);
   // Messages that steered this turn, placed in its step list where it read them.
-  const { data: steers = NO_STEERS } = useQuery({
-    ...issueTimelineOptions(task.issue_id),
+  const { data: steers = NO_STEERS } = useInfiniteQuery({
+    ...issueTimelineInfiniteOptions(task.issue_id),
     enabled: false,
-    select: (entries: TimelineEntry[]) => deliveredSteers(entries, task.id),
+    select: (data) => deliveredSteers(flattenTimelinePages(data), task.id),
   });
   useEffect(() => {
     if (!active) return;

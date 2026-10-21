@@ -28,11 +28,14 @@ import {
   issueKeys,
   issueListOptions,
   issueTableRowPageOptions,
+  issueTimelineInfiniteOptions,
+  issueTimelineOptions,
   projectGanttIssuesOptions,
   sourceContextPreviewOptions,
   threadSummariesOptions,
 } from "./queries";
 import { onIssueUpdated } from "./ws-updaters";
+import { TIMELINE_PAGE_SIZE } from "./timeline-pages";
 
 const WS_ID = "ws-1";
 const PROJECT_ID = "project-1";
@@ -831,5 +834,61 @@ describe("threadSummariesOptions", () => {
 
   it("is disabled when there are no ids", () => {
     expect(threadSummariesOptions(WS_ID, []).enabled).toBe(false);
+  });
+});
+
+describe("issueTimelineInfiniteOptions", () => {
+  function timelinePage(overrides: Record<string, unknown> = {}) {
+    return {
+      entries: [],
+      has_more_before: false,
+      has_more_after: false,
+      next_before: null,
+      next_before_id: null,
+      ...overrides,
+    };
+  }
+
+  it("lives under the issue's timeline prefix but apart from the unpaged cache", () => {
+    const paged = issueTimelineInfiniteOptions("issue-1").queryKey;
+    const unpaged = issueTimelineOptions("issue-1").queryKey;
+    expect(paged.slice(0, unpaged.length)).toEqual([...unpaged]);
+    expect(paged).not.toEqual(unpaged);
+  });
+
+  it("loads the newest page first, then walks older pages by cursor", async () => {
+    const listTimeline = vi
+      .fn()
+      .mockResolvedValueOnce(
+        timelinePage({ has_more_before: true, next_before: "2026-01-01T00:00:00.5Z", next_before_id: "root-9" }),
+      )
+      .mockResolvedValueOnce(timelinePage());
+    setApiInstance({ listTimeline } as unknown as ApiClient);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const options = issueTimelineInfiniteOptions("issue-1");
+
+    const data = await qc.fetchInfiniteQuery({ ...options, pages: 2 });
+    expect(listTimeline).toHaveBeenNthCalledWith(1, "issue-1", { limit: TIMELINE_PAGE_SIZE });
+    expect(listTimeline).toHaveBeenNthCalledWith(2, "issue-1", {
+      limit: TIMELINE_PAGE_SIZE,
+      before: "2026-01-01T00:00:00.5Z",
+      beforeId: "root-9",
+    });
+    expect(data.pages).toHaveLength(2);
+    qc.clear();
+  });
+
+  it("stops at a page without a usable cursor", async () => {
+    const listTimeline = vi
+      .fn()
+      // has_more_before without a cursor: a server that cannot be walked.
+      .mockResolvedValue(timelinePage({ has_more_before: true }));
+    setApiInstance({ listTimeline } as unknown as ApiClient);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const data = await qc.fetchInfiniteQuery({ ...issueTimelineInfiniteOptions("issue-1"), pages: 3 });
+    expect(data.pages).toHaveLength(1);
+    expect(listTimeline).toHaveBeenCalledTimes(1);
+    qc.clear();
   });
 });

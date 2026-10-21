@@ -48,6 +48,7 @@ import type {
 } from "../types";
 import type { TimelineEntry, IssueSubscriber, Reaction } from "../types";
 import { sortTimelineEntriesAsc } from "./timeline-sort";
+import { updateTimelinePages, type TimelinePagesCache } from "./timeline-pages";
 import { applyCommentDeletion, removeCommentSubtree } from "./comment-deletion";
 import { configStore } from "../config";
 import {
@@ -819,7 +820,7 @@ export function useBatchDeleteIssues() {
 
 // Comments / Timeline
 
-type TimelineCache = TimelineEntry[];
+type TimelineCache = TimelinePagesCache;
 
 export function useCreateComment(issueId: string) {
   const qc = useQueryClient();
@@ -867,15 +868,16 @@ export function useCreateComment(issueId: string) {
       // this entry from the broadcast path before this onSuccess fires. Skip
       // the append if the entry is already in the cache — but keep the
       // steering receipts, which that broadcast predates.
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return [entry];
-        if (old.some((e) => e.id === entry.id)) {
-          return steered
-            ? old.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
-            : old;
-        }
-        return sortTimelineEntriesAsc([...old, entry]);
-      });
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) => {
+          if (entries.some((e) => e.id === entry.id)) {
+            return steered
+              ? entries.map((e) => (e.id === entry.id && !e.supplements?.length ? { ...e, supplements: entry.supplements } : e))
+              : entries;
+          }
+          return sortTimelineEntriesAsc([...entries, entry]);
+        }),
+      );
       // A steered turn now lists this comment among its inputs.
       if (steered) qc.invalidateQueries({ queryKey: issueKeys.tasks(issueId) });
       // Posting a comment changes the trigger answer itself (the enqueued
@@ -913,21 +915,23 @@ export function useUpdateComment(issueId: string) {
       expectedRevision?: number;
     }) => api.updateComment(commentId, content, attachmentIds, suppressAgentIds, contentBase, expectedRevision),
     onMutate: async ({ commentId, content, attachmentIds }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
-      const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
+      await qc.cancelQueries({ queryKey: issueKeys.timelinePages(issueId) });
+      const prev = qc.getQueryData<TimelineCache>(issueKeys.timelinePages(issueId));
       const kept = new Set(attachmentIds);
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) =>
-        old?.map((e) =>
-          e.id === commentId
-            ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
-            : e,
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) =>
+          entries.map((e) =>
+            e.id === commentId
+              ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
+              : e,
+          ),
         ),
       );
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev !== undefined) {
-        qc.setQueryData(issueKeys.timeline(issueId), ctx.prev);
+        qc.setQueryData(issueKeys.timelinePages(issueId), ctx.prev);
       }
     },
     onSuccess: (comment) => {
@@ -962,12 +966,13 @@ export function useDeleteComment(issueId: string) {
     // confirms, mirror its outcome; realtime events and the settle refetch
     // reconcile the rest.
     onSuccess: (keptReplies, commentId) => {
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return old;
-        return keptReplies
-          ? applyCommentDeletion(old, commentId, new Date().toISOString())
-          : removeCommentSubtree(old, commentId);
-      });
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) =>
+          keptReplies
+            ? applyCommentDeletion(entries, commentId, new Date().toISOString())
+            : removeCommentSubtree(entries, commentId),
+        ),
+      );
       // The endpoint remains 204 for compatibility, so the local caller has
       // no body carrying issue_revision. The realtime event will narrow this
       // with its revision when connected; this is the no-WS safety net.
@@ -986,7 +991,7 @@ export function useDeleteComment(issueId: string) {
 // resolutions exactly as the backend will, instead of briefly showing two
 // resolutions until the refetch settles.
 function collectThreadCommentIds(
-  entries: TimelineCache,
+  entries: TimelineEntry[],
   commentId: string,
 ): Set<string> {
   const byId = new Map<string, TimelineEntry>();
@@ -1031,36 +1036,37 @@ export function useResolveComment(issueId: string) {
     mutationFn: ({ commentId, resolved }: { commentId: string; resolved: boolean }) =>
       resolved ? api.resolveComment(commentId) : api.unresolveComment(commentId),
     onMutate: async ({ commentId, resolved }) => {
-      await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
-      const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
-      qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) => {
-        if (!old) return old;
-        // Resolving makes this comment the sole resolution in its thread, so
-        // mirror the server (ClearOtherThreadResolutions) and clear every other
-        // resolution in the same thread. Without this the cache shows two
-        // resolutions until the settle refetch, which is exactly the flash the
-        // single-resolution fix removes. Unresolve only clears its own row.
-        const threadIds = resolved ? collectThreadCommentIds(old, commentId) : null;
-        return old.map((e) => {
-          if (e.id === commentId) {
-            return {
-              ...e,
-              resolved_at: resolved ? new Date().toISOString() : null,
-              resolved_by_type: resolved ? e.resolved_by_type ?? null : null,
-              resolved_by_id: resolved ? e.resolved_by_id ?? null : null,
-            };
-          }
-          if (resolved && e.resolved_at && threadIds?.has(e.id)) {
-            return { ...e, resolved_at: null, resolved_by_type: null, resolved_by_id: null };
-          }
-          return e;
-        });
-      });
+      await qc.cancelQueries({ queryKey: issueKeys.timelinePages(issueId) });
+      const prev = qc.getQueryData<TimelineCache>(issueKeys.timelinePages(issueId));
+      qc.setQueryData<TimelineCache>(issueKeys.timelinePages(issueId), (old) =>
+        updateTimelinePages(old, (entries) => {
+          // Resolving makes this comment the sole resolution in its thread, so
+          // mirror the server (ClearOtherThreadResolutions) and clear every other
+          // resolution in the same thread. Without this the cache shows two
+          // resolutions until the settle refetch, which is exactly the flash the
+          // single-resolution fix removes. Unresolve only clears its own row.
+          const threadIds = resolved ? collectThreadCommentIds(entries, commentId) : null;
+          return entries.map((e) => {
+            if (e.id === commentId) {
+              return {
+                ...e,
+                resolved_at: resolved ? new Date().toISOString() : null,
+                resolved_by_type: resolved ? e.resolved_by_type ?? null : null,
+                resolved_by_id: resolved ? e.resolved_by_id ?? null : null,
+              };
+            }
+            if (resolved && e.resolved_at && threadIds?.has(e.id)) {
+              return { ...e, resolved_at: null, resolved_by_type: null, resolved_by_id: null };
+            }
+            return e;
+          });
+        }),
+      );
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev !== undefined) {
-        qc.setQueryData(issueKeys.timeline(issueId), ctx.prev);
+        qc.setQueryData(issueKeys.timelinePages(issueId), ctx.prev);
       }
     },
     onSettled: () => {

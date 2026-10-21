@@ -90,6 +90,7 @@ import type {
   SkillSummary,
   Squad,
   TimelineEntry,
+  TimelinePage,
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
@@ -1089,6 +1090,45 @@ const TimelineEntrySchema = z.object({
 export const TimelineEntriesSchema = z.array(TimelineEntrySchema);
 
 export const EMPTY_TIMELINE_ENTRIES: TimelineEntry[] = [];
+
+// Root-paged timeline (`?limit=`): a wrapper object, newest entries first. Every
+// field but `entries` is optional on the wire, so a server that predates paging
+// (whole timeline, no cursor) or drops a field still parses; with no cursor the
+// client simply has no older page to ask for.
+const NullableStringSchema = z.preprocess(
+  (value) => (typeof value === "string" && value !== "" ? value : null),
+  z.string().nullable(),
+);
+
+const TimelinePageObjectSchema = z.object({
+  entries: z.array(TimelineEntrySchema).default([]),
+  has_more_before: z.preprocess(
+    (value) => (typeof value === "boolean" ? value : undefined),
+    z.boolean().default(false),
+  ),
+  has_more_after: z.preprocess(
+    (value) => (typeof value === "boolean" ? value : undefined),
+    z.boolean().default(false),
+  ),
+  next_before: NullableStringSchema,
+  next_before_id: NullableStringSchema,
+  target_index: z.number().int().nonnegative().optional().catch(undefined),
+}).loose();
+
+// A server that predates the wrapper answers `?limit=` with its bare timeline
+// array; that is one complete page with nothing older.
+export const TimelinePageSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? { entries: value } : value),
+  TimelinePageObjectSchema,
+);
+
+export const EMPTY_TIMELINE_PAGE: TimelinePage = {
+  entries: [],
+  has_more_before: false,
+  has_more_after: false,
+  next_before: null,
+  next_before_id: null,
+};
 
 const OptionalStringSchema = z.preprocess(
   (value) => (typeof value === "string" ? value : undefined),

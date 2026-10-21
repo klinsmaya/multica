@@ -116,6 +116,135 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
+  describe("listTimeline (root-paged)", () => {
+    const entry = {
+      type: "comment",
+      id: "e-1",
+      actor_type: "member",
+      actor_id: "u-1",
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    const emptyPage = {
+      entries: [],
+      has_more_before: false,
+      has_more_after: false,
+      next_before: null,
+      next_before_id: null,
+    };
+
+    it("sends the page size as roots and encodes the composite cursor", async () => {
+      stubFetchJson(emptyPage);
+      const client = new ApiClient("https://api.example.test");
+      await client.listTimeline("issue-1", {
+        limit: 50,
+        before: "2026-01-01T08:00:00.123456+08:00",
+        beforeId: "root-7",
+      });
+      const url = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      expect(url.pathname).toBe("/api/issues/issue-1/timeline");
+      expect(url.searchParams.get("roots")).toBe("50");
+      // '+' must survive as a plus sign, not decode to a space.
+      expect(url.searchParams.get("before")).toBe("2026-01-01T08:00:00.123456+08:00");
+      expect(url.searchParams.get("before_id")).toBe("root-7");
+      expect(url.searchParams.has("around")).toBe(false);
+    });
+
+    it("sends only roots for a first page and around for an anchor", async () => {
+      const client = new ApiClient("https://api.example.test");
+      stubFetchJson(emptyPage);
+      await client.listTimeline("issue-1", { limit: 50 });
+      const first = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      stubFetchJson(emptyPage);
+      await client.listTimeline("issue-1", { limit: 50, around: "c-9" });
+      const second = new URL(String(vi.mocked(fetch).mock.calls[0]![0]));
+      expect([...first.searchParams.keys()]).toEqual(["roots"]);
+      expect(second.searchParams.get("around")).toBe("c-9");
+      expect(second.searchParams.has("before")).toBe(false);
+    });
+
+    it("keeps the unpaged request unchanged", async () => {
+      stubFetchJson([]);
+      const client = new ApiClient("https://api.example.test");
+      await client.listTimeline("issue-1");
+      expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe(
+        "https://api.example.test/api/issues/issue-1/timeline",
+      );
+    });
+
+    it("parses a full page", async () => {
+      stubFetchJson({
+        entries: [entry],
+        has_more_before: true,
+        has_more_after: false,
+        next_before: "2026-01-01T00:00:00.000001Z",
+        next_before_id: "e-1",
+        target_index: 0,
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page.has_more_before).toBe(true);
+      expect(page.next_before).toBe("2026-01-01T00:00:00.000001Z");
+      expect(page.next_before_id).toBe("e-1");
+      expect(page.target_index).toBe(0);
+    });
+
+    it("defaults every optional field of a minimal page", async () => {
+      stubFetchJson({ entries: [entry] });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page).toMatchObject({
+        has_more_before: false,
+        has_more_after: false,
+        next_before: null,
+        next_before_id: null,
+      });
+      expect(page.target_index).toBeUndefined();
+    });
+
+    it("treats a wrongly typed cursor or flag as absent instead of failing the page", async () => {
+      stubFetchJson({
+        entries: [entry],
+        has_more_before: "yes",
+        next_before: 12,
+        next_before_id: { id: "e-1" },
+        target_index: "0",
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page).toMatchObject({ has_more_before: false, next_before: null, next_before_id: null });
+      expect(page.target_index).toBeUndefined();
+    });
+
+    it("falls back to an empty page for a malformed body", async () => {
+      const client = new ApiClient("https://api.example.test");
+      for (const body of [null, JSON.stringify("nope"), 7, { entries: "not-an-array" }, { entries: [{ id: 1 }] }]) {
+        stubFetchJson(body);
+        await expect(client.listTimeline("issue-1", { limit: 50 })).resolves.toEqual(emptyPage);
+      }
+    });
+
+    it("reads a bare timeline array from an older server as one page with nothing older", async () => {
+      stubFetchJson([entry]);
+      const client = new ApiClient("https://api.example.test");
+      const page = await client.listTimeline("issue-1", { limit: 50 });
+      expect(page.entries).toHaveLength(1);
+      expect(page).toMatchObject({ has_more_before: false, next_before: null });
+    });
+
+    it("preserves fields the schema does not list", async () => {
+      stubFetchJson({
+        entries: [{ ...entry, future_field: 1 }],
+        future_page_field: "kept",
+      });
+      const client = new ApiClient("https://api.example.test");
+      const page = (await client.listTimeline("issue-1", { limit: 50 })) as unknown as Record<string, unknown>;
+      expect(page.future_page_field).toBe("kept");
+      expect((page.entries as Array<Record<string, unknown>>)[0]!.future_field).toBe(1);
+    });
+  });
+
   describe("listIssues", () => {
     it("falls back to an empty list when the response is malformed", async () => {
       // `issues` having the wrong type triggers the fallback. An object

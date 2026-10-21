@@ -91,6 +91,8 @@ import type {
   CreateRuntimeLocalSkillImportRequest,
   RuntimeLocalSkillImportRequest,
   TimelineEntry,
+  TimelinePage,
+  TimelinePageCursor,
   AssigneeFrequencyEntry,
   TaskMessagePayload,
   Attachment,
@@ -313,6 +315,7 @@ import {
   EMPTY_SQUAD_LIST,
   EMPTY_SQUAD_MEMBER_STATUS_LIST,
   EMPTY_TIMELINE_ENTRIES,
+  EMPTY_TIMELINE_PAGE,
   EMPTY_USER,
   EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE,
   EMPTY_WEBHOOK_DELIVERY,
@@ -354,6 +357,7 @@ import {
   SubscribersListSchema,
   TaskMessageListSchema,
   TimelineEntriesSchema,
+  TimelinePageSchema,
   UserSchema,
   WebhookDeliveryResponseSchema,
   BillingBalanceSchema,
@@ -499,6 +503,15 @@ import {
  *  Sent on every HTTP request as X-Client-Platform / X-Client-Version /
  *  X-Client-OS so the backend can log, gate, or split metrics by client.
  *  See server/internal/middleware/client.go for the receiving end. */
+/** Query of one root-paged timeline request; see `ApiClient.listTimeline`. */
+export interface ListTimelinePageParams extends Partial<TimelinePageCursor> {
+  /** Root comments per page, 1..200. Sent as `roots=`: `limit=` is the legacy
+   *  whole-timeline wrapper that installed clients still rely on. */
+  limit: number;
+  /** Land on the page that holds this comment instead of the newest page. */
+  around?: string;
+}
+
 export interface ApiClientIdentity {
   /** Logical client kind. Server expects: "web" | "desktop" | "cli" | "daemon". */
   platform?: string;
@@ -1730,12 +1743,37 @@ export class ApiClient {
     });
   }
 
-  async listTimeline(issueId: string): Promise<TimelineEntry[]> {
+  /**
+   * Without `page` the whole timeline as a flat ascending array. With `page` one
+   * root-paged slice (`limit` root comments plus all their replies, newest
+   * first); `before`/`beforeId` continue from a previous page's cursor and
+   * `around` lands on the page that holds a comment.
+   */
+  async listTimeline(issueId: string): Promise<TimelineEntry[]>;
+  async listTimeline(issueId: string, page: ListTimelinePageParams): Promise<TimelinePage>;
+  async listTimeline(
+    issueId: string,
+    page?: ListTimelinePageParams,
+  ): Promise<TimelineEntry[] | TimelinePage> {
+    if (!page) {
+      const raw = await this.fetch<unknown>(
+        `/api/issues/${issueId}/timeline`,
+      );
+      return parseWithFallback(raw, TimelineEntriesSchema, EMPTY_TIMELINE_ENTRIES, {
+        endpoint: "GET /api/issues/:id/timeline",
+      });
+    }
+    const params = new URLSearchParams({ roots: String(page.limit) });
+    if (page.before && page.beforeId) {
+      params.set("before", page.before);
+      params.set("before_id", page.beforeId);
+    }
+    if (page.around) params.set("around", page.around);
     const raw = await this.fetch<unknown>(
-      `/api/issues/${issueId}/timeline`,
+      `/api/issues/${issueId}/timeline?${params.toString()}`,
     );
-    return parseWithFallback(raw, TimelineEntriesSchema, EMPTY_TIMELINE_ENTRIES, {
-      endpoint: "GET /api/issues/:id/timeline",
+    return parseWithFallback(raw, TimelinePageSchema, EMPTY_TIMELINE_PAGE, {
+      endpoint: "GET /api/issues/:id/timeline?roots",
     });
   }
 
