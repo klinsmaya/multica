@@ -98,6 +98,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   // slugs that read like API identifiers.
   "v1",
   "v2",
+  "registry",
   "graphql",
   "webhooks",
   "sdk",

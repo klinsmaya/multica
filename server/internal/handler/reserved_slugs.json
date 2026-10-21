@@ -90,6 +90,7 @@
       "slugs": [
         "v1",
         "v2",
+        "registry",
         "graphql",
         "webhooks",
         "sdk",

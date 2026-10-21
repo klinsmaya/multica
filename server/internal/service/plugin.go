@@ -170,6 +170,10 @@ type PluginPreview struct {
 	Installed        bool     `json:"installed"`
 	InstalledVersion string   `json:"installed_version,omitempty"`
 	AddedScopes      []string `json:"added_scopes,omitempty"`
+	// RegistryVersionID is set when the preview describes a template
+	// marketplace version; installing then names it instead of VersionID,
+	// because the workspace copy is only made on confirm.
+	RegistryVersionID string `json:"registry_version_id,omitempty"`
 }
 
 // PluginConfigField is one host-rendered configuration input.
@@ -269,17 +273,27 @@ func (s *PluginService) PreviewPlugin(ctx context.Context, workspaceID pgtype.UU
 	if err != nil {
 		return nil, err
 	}
+	preview, err := s.previewManifest(ctx, workspaceID, manifest)
+	if err != nil {
+		return nil, err
+	}
+	preview.VersionID = uuidString(version.ID)
+	preview.Version = version.Version
+	preview.Digest = version.Digest
+	return preview, nil
+}
+
+// previewManifest builds the consent screen for a manifest, including what an
+// upgrade over the existing installation would add. Shared by workspace
+// publishes and template marketplace versions.
+func (s *PluginService) previewManifest(ctx context.Context, workspaceID pgtype.UUID, manifest plugincontract.Manifest) (*PluginPreview, error) {
 	if err := manifest.CheckCapabilities(s.Host); err != nil {
 		return nil, &PluginError{Kind: PluginErrorIncompatible, Message: capabilityMessage(err), Err: err}
 	}
-
 	preview := &PluginPreview{
 		Manifest:     manifest,
 		Scopes:       manifest.Scopes,
 		ConfigSchema: ConfigFieldsForManifest(manifest),
-		VersionID:    uuidString(version.ID),
-		Version:      version.Version,
-		Digest:       version.Digest,
 	}
 	existing, err := s.Queries.GetWorkspacePluginInstallationByKey(ctx, db.GetWorkspacePluginInstallationByKeyParams{
 		WorkspaceID: workspaceID,

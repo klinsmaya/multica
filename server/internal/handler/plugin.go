@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/featureflags"
@@ -205,6 +206,8 @@ func (h *Handler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 
 type previewPluginRequest struct {
 	VersionID string `json:"version_id"`
+	// RegistryVersionID previews a template marketplace version instead.
+	RegistryVersionID string `json:"registry_version_id"`
 }
 
 // PreviewPlugin — POST /api/workspaces/{id}/plugins/preview
@@ -224,7 +227,16 @@ func (h *Handler) PreviewPlugin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	preview, err := h.PluginService.PreviewPlugin(r.Context(), workspaceID, req.VersionID)
+	var preview *service.PluginPreview
+	var err error
+	if strings.TrimSpace(req.RegistryVersionID) != "" {
+		if !h.requireMarketplaceV1(w, r) {
+			return
+		}
+		preview, err = h.PluginRegistry.Preview(r.Context(), workspaceID, req.RegistryVersionID)
+	} else {
+		preview, err = h.PluginService.PreviewPlugin(r.Context(), workspaceID, req.VersionID)
+	}
 	if err != nil {
 		writePluginError(w, err, "failed to read the Plugin manifest")
 		return
@@ -233,8 +245,11 @@ func (h *Handler) PreviewPlugin(w http.ResponseWriter, r *http.Request) {
 }
 
 type installPluginRequest struct {
-	VersionID     string   `json:"version_id"`
-	GrantedScopes []string `json:"granted_scopes"`
+	VersionID string `json:"version_id"`
+	// RegistryVersionID installs a template marketplace version instead of a
+	// workspace publish. Exactly one of the two is set.
+	RegistryVersionID string   `json:"registry_version_id"`
+	GrantedScopes     []string `json:"granted_scopes"`
 }
 
 // InstallPlugin — POST /api/workspaces/{id}/plugins
@@ -256,7 +271,16 @@ func (h *Handler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	installation, err := h.PluginService.InstallPlugin(r.Context(), workspaceID, member.UserID, req.VersionID, req.GrantedScopes)
+	var installation db.PluginInstallation
+	var err error
+	if strings.TrimSpace(req.RegistryVersionID) != "" {
+		if !h.requireMarketplaceV1(w, r) {
+			return
+		}
+		installation, err = h.PluginRegistry.Install(r.Context(), workspaceID, member.UserID, req.RegistryVersionID, req.GrantedScopes)
+	} else {
+		installation, err = h.PluginService.InstallPlugin(r.Context(), workspaceID, member.UserID, req.VersionID, req.GrantedScopes)
+	}
 	if err != nil {
 		writePluginError(w, err, "failed to install the Plugin")
 		return
@@ -335,6 +359,7 @@ func (h *Handler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to uninstall the Plugin")
 		return
 	}
+	h.PluginRegistry.InstallationRemoved(r.Context(), installation)
 	w.WriteHeader(http.StatusNoContent)
 }
 
