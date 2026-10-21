@@ -98,3 +98,80 @@ SELECT EXISTS (
 
 -- name: DeleteExpiredConnectorOAuthStates :execrows
 DELETE FROM connector_oauth_state WHERE expires_at < @now;
+
+-- =====================
+-- Connector service policy (platform admin)
+-- =====================
+
+-- name: ListConnectorServicePolicies :many
+SELECT * FROM connector_service_policy
+WHERE provider = $1
+ORDER BY service ASC;
+
+-- name: GetConnectorServicePolicy :one
+SELECT * FROM connector_service_policy
+WHERE provider = $1 AND service = $2;
+
+-- name: SetConnectorServiceEnabled :one
+-- Publishes or delists a service, leaving its tool and user allowlists intact.
+INSERT INTO connector_service_policy (provider, service, enabled, updated_by)
+VALUES (@provider, @service, @enabled, @updated_by)
+ON CONFLICT (provider, service) DO UPDATE SET
+    enabled    = EXCLUDED.enabled,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = now()
+RETURNING *;
+
+-- name: SetConnectorServicePolicy :one
+-- Replaces the tool and user allowlists; a service without a row stays delisted.
+INSERT INTO connector_service_policy (provider, service, allowed_tools, allowed_user_ids, updated_by)
+VALUES (@provider, @service, @allowed_tools::text[], @allowed_user_ids::uuid[], @updated_by)
+ON CONFLICT (provider, service) DO UPDATE SET
+    allowed_tools    = EXCLUDED.allowed_tools,
+    allowed_user_ids = EXCLUDED.allowed_user_ids,
+    updated_by       = EXCLUDED.updated_by,
+    updated_at       = now()
+RETURNING *;
+
+-- =====================
+-- Connector connection counts (platform admin)
+-- =====================
+
+-- name: AdminCountConnectorConnectionsByService :many
+SELECT service,
+       count(*) FILTER (WHERE status = 'active')::bigint              AS active_count,
+       count(*) FILTER (WHERE status = 'reauth_required')::bigint     AS reauth_count,
+       count(*) FILTER (WHERE status = 'revoked')::bigint             AS revoked_count,
+       count(DISTINCT user_id) FILTER (WHERE status <> 'revoked')::bigint AS user_count
+FROM user_connector_connection
+WHERE provider = $1
+GROUP BY service
+ORDER BY service ASC;
+
+-- name: AdminListConnectorUsers :many
+SELECT u.id AS user_id, u.name, u.email, u.disabled_at,
+       count(*) FILTER (WHERE c.status = 'active')::bigint          AS active_count,
+       count(*) FILTER (WHERE c.status = 'reauth_required')::bigint AS reauth_count,
+       count(*) FILTER (WHERE c.status = 'revoked')::bigint         AS revoked_count,
+       COALESCE(array_agg(DISTINCT c.service) FILTER (WHERE c.status <> 'revoked'), '{}')::text[] AS services,
+       max(c.connected_at)::timestamptz AS last_connected_at
+FROM user_connector_connection c
+JOIN "user" u ON u.id = c.user_id
+WHERE c.provider = @provider
+  AND (sqlc.narg('service')::text IS NULL OR c.service = sqlc.narg('service')::text)
+  AND (sqlc.narg('q')::text IS NULL
+       OR u.email ILIKE '%' || sqlc.narg('q')::text || '%'
+       OR u.name ILIKE '%' || sqlc.narg('q')::text || '%')
+GROUP BY u.id, u.name, u.email, u.disabled_at
+ORDER BY active_count DESC, u.email ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountConnectorUsers :one
+SELECT count(DISTINCT c.user_id)
+FROM user_connector_connection c
+JOIN "user" u ON u.id = c.user_id
+WHERE c.provider = @provider
+  AND (sqlc.narg('service')::text IS NULL OR c.service = sqlc.narg('service')::text)
+  AND (sqlc.narg('q')::text IS NULL
+       OR u.email ILIKE '%' || sqlc.narg('q')::text || '%'
+       OR u.name ILIKE '%' || sqlc.narg('q')::text || '%');

@@ -160,6 +160,7 @@ var concurrentIndexCleanups = map[string]string{
 	"586_admin_audit_log_pkey_index":                            "admin_audit_log_pkey_uidx",
 	"588_admin_audit_log_created_idx":                           "idx_admin_audit_log_created",
 	"589_admin_audit_log_actor_idx":                             "idx_admin_audit_log_actor",
+	"598_connector_service_policy_pkey_index":                   "connector_service_policy_pkey_uidx",
 	"554_wakeup_expiry_index":                                   "issue_wakeup_expiry_idx",
 	"556_wakeup_system_rule_index":                              "issue_wakeup_system_rule_idx",
 	"559_issue_child_event_id":                                  "issue_child_event_id_idx",

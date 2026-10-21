@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/multica-ai/multica/server/pkg/openconnector"
 )
 
@@ -24,32 +26,117 @@ func stateFromReturnURI(t *testing.T, sdk *fakeSDK) string {
 	return u.Query().Get("state")
 }
 
-func TestListAppsFiltersAndCaches(t *testing.T) {
+func TestCatalogFiltersAndCaches(t *testing.T) {
 	sdk := defaultSDK()
-	svc := newTestService(t, sdk, &fakeStore{})
-	apps, err := svc.ListApps(context.Background())
+	svc := newTestService(t, sdk, publishedStore())
+	apps, err := svc.Catalog(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// notion has no configured client; openai is an api_key candidate.
+	// notion has no configured client; openai accepts an api key.
 	var got []string
 	for _, a := range apps {
 		got = append(got, a.Service+":"+strings.Join(a.AuthTypes, ","))
 	}
 	want := []string{"github:oauth", "openai:api_key"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("apps = %v, want %v", got, want)
+		t.Fatalf("catalog = %v, want %v", got, want)
 	}
 	sdk.providers = nil
-	if again, _ := svc.ListApps(context.Background()); len(again) != 2 {
+	if again, _ := svc.Catalog(context.Background()); len(again) != 2 {
 		t.Fatalf("expected cached result, got %d apps", len(again))
+	}
+	svc.InvalidateCatalog()
+	if after, _ := svc.Catalog(context.Background()); len(after) != 0 {
+		t.Fatalf("expected refetch after invalidate, got %d apps", len(after))
+	}
+}
+
+func TestListAppsFollowsPolicy(t *testing.T) {
+	ctx := context.Background()
+	sdk := defaultSDK()
+	store := &fakeStore{}
+	svc := newTestService(t, sdk, store)
+	alice, bob := newTestUser(), newTestUser()
+
+	// No policy rows: nothing is published, even though the instance offers two services.
+	if apps, err := svc.ListApps(ctx, alice); err != nil || len(apps) != 0 {
+		t.Fatalf("unpublished apps = %v, err = %v", apps, err)
+	}
+	if _, err := svc.BeginOAuthConnect(ctx, alice, "github"); !errors.Is(err, ErrServiceNotSupported) {
+		t.Fatalf("connect to unpublished service err = %v", err)
+	}
+
+	store.publish("github").publish("openai", alice)
+	services := func(u pgtype.UUID) []string {
+		apps, err := svc.ListApps(ctx, u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, a := range apps {
+			out = append(out, a.Service)
+		}
+		return out
+	}
+	if got := services(alice); !reflect.DeepEqual(got, []string{"github", "openai"}) {
+		t.Fatalf("alice apps = %v", got)
+	}
+	if got := services(bob); !reflect.DeepEqual(got, []string{"github"}) {
+		t.Fatalf("bob apps = %v", got)
+	}
+	sdk.apiKeyConn = &openconnector.Connection{ID: "app-k", Service: "openai", ConnectionName: "alias", AuthType: "api_key"}
+	if _, err := svc.ConnectWithAPIKey(ctx, bob, "openai", "sk-x", nil, ""); !errors.Is(err, ErrUserNotAllowed) {
+		t.Fatalf("bob api key connect err = %v", err)
+	}
+	if _, err := svc.ConnectWithAPIKey(ctx, alice, "openai", "sk-x", nil, ""); err != nil {
+		t.Fatalf("alice api key connect err = %v", err)
+	}
+
+	// A disabled row delists the service for everyone.
+	store.policies[0].Enabled = false
+	if got := services(alice); !reflect.DeepEqual(got, []string{"openai"}) {
+		t.Fatalf("alice apps after delist = %v", got)
+	}
+}
+
+func TestHealthReportsReachability(t *testing.T) {
+	sdk := defaultSDK()
+	svc := newTestService(t, sdk, &fakeStore{})
+	svc.baseURL = "https://oc.example.com"
+	h := svc.Health(context.Background())
+	if !h.Reachable || h.ProvidersTotal != 3 || h.OAuthConfigured != 1 || h.BaseURL != "https://oc.example.com" || h.Error != "" {
+		t.Fatalf("health = %+v", h)
+	}
+	sdk.providersErr = errors.New("connection refused")
+	h = svc.Health(context.Background())
+	if h.Reachable || !strings.Contains(h.Error, "connection refused") {
+		t.Fatalf("health after failure = %+v", h)
+	}
+}
+
+func TestNormalizeAllowedTools(t *testing.T) {
+	got, err := NormalizeAllowedTools("GitHub", []string{" github.create_issue ", "list_repos", "create_issue", "", "search.*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"create_issue", "list_repos", "search.*"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools = %v, want %v", got, want)
+	}
+	if got, err := NormalizeAllowedTools("github", []string{"create_issue", "*"}); err != nil || len(got) != 0 {
+		t.Fatalf("wildcard = %v, %v", got, err)
+	}
+	for _, bad := range [][]string{{"bad tool"}, {"a;b"}, {strings.Repeat("x", 121)}} {
+		if _, err := NormalizeAllowedTools("github", bad); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("%v: err = %v", bad, err)
+		}
 	}
 }
 
 func TestBeginOAuthConnectScopes(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	if _, err := svc.BeginOAuthConnect(ctx, newTestUser(), "GitHub"); err != nil {
 		t.Fatal(err)
@@ -72,7 +159,7 @@ func TestBeginOAuthConnectScopes(t *testing.T) {
 func TestBeginOAuthConnectUnsupportedAndBusy(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	svc := newTestService(t, sdk, &fakeStore{})
+	svc := newTestService(t, sdk, publishedStore())
 	if _, err := svc.BeginOAuthConnect(ctx, newTestUser(), "notion"); !errors.Is(err, ErrServiceNotSupported) {
 		t.Fatalf("unconfigured service err = %v", err)
 	}
@@ -91,7 +178,7 @@ func TestBeginOAuthConnectUnsupportedAndBusy(t *testing.T) {
 func TestBusyAcrossServiceInstancesAndExpiry(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	// Two instances sharing one store model two replicas.
 	a, b := newTestService(t, sdk, store), newTestService(t, sdk, store)
 	now := time.Unix(1_700_000_000, 0)
@@ -111,7 +198,7 @@ func TestBusyAcrossServiceInstancesAndExpiry(t *testing.T) {
 func TestCallbackSurvivesRestartAndIsSingleUse(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	sdk.requestSeq = []openconnector.ConnectionRequestStatus{connectedStatus("app-1")}
 	sdk.connByID["app-1"] = &openconnector.Connection{ID: "app-1", Service: "github", ConnectionName: "alias-1"}
 	user := newTestUser()
@@ -140,7 +227,7 @@ func connectedStatus(appID string) openconnector.ConnectionRequestStatus {
 func TestCompleteCallbackRetriesInitiated(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	user := newTestUser()
 	sdk.connByID["app-1"] = &openconnector.Connection{ID: "app-1", Service: "github", ConnectionName: "alias-1", AuthType: "oauth2", AccountLabel: "octocat"}
@@ -182,7 +269,7 @@ func TestCompleteCallbackFailures(t *testing.T) {
 	t.Run("still initiated after retries", func(t *testing.T) {
 		sdk := defaultSDK()
 		sdk.requestSeq = []openconnector.ConnectionRequestStatus{{Status: "initiated"}}
-		svc := newTestService(t, sdk, &fakeStore{})
+		svc := newTestService(t, sdk, publishedStore())
 		_, _ = svc.BeginOAuthConnect(ctx, user, "github")
 		if _, err := svc.CompleteCallback(ctx, stateFromReturnURI(t, sdk)); !errors.Is(err, ErrConnectNotSuccessful) {
 			t.Fatalf("err = %v", err)
@@ -194,7 +281,7 @@ func TestCompleteCallbackFailures(t *testing.T) {
 	t.Run("failed request", func(t *testing.T) {
 		sdk := defaultSDK()
 		sdk.requestSeq = []openconnector.ConnectionRequestStatus{{Status: "failed"}}
-		store := &fakeStore{}
+		store := publishedStore()
 		svc := newTestService(t, sdk, store)
 		_, _ = svc.BeginOAuthConnect(ctx, user, "github")
 		if _, err := svc.CompleteCallback(ctx, stateFromReturnURI(t, sdk)); !errors.Is(err, ErrConnectNotSuccessful) || len(store.rows) != 0 {
@@ -205,7 +292,7 @@ func TestCompleteCallbackFailures(t *testing.T) {
 		sdk := defaultSDK()
 		sdk.requestSeq = []openconnector.ConnectionRequestStatus{connectedStatus("app-x")}
 		sdk.connByID["app-x"] = &openconnector.Connection{ID: "app-x", Service: "notion"}
-		store := &fakeStore{}
+		store := publishedStore()
 		svc := newTestService(t, sdk, store)
 		_, _ = svc.BeginOAuthConnect(ctx, user, "github")
 		if _, err := svc.CompleteCallback(ctx, stateFromReturnURI(t, sdk)); !errors.Is(err, ErrConnectNotSuccessful) || len(store.rows) != 0 {
@@ -216,7 +303,7 @@ func TestCompleteCallbackFailures(t *testing.T) {
 		sdk := defaultSDK()
 		sdk.requestSeq = []openconnector.ConnectionRequestStatus{connectedStatus("app-1")}
 		sdk.connByID["app-1"] = &openconnector.Connection{ID: "app-1", Service: "github"}
-		svc := newTestService(t, sdk, &fakeStore{})
+		svc := newTestService(t, sdk, publishedStore())
 		_, _ = svc.BeginOAuthConnect(ctx, user, "github")
 		state := stateFromReturnURI(t, sdk)
 		if _, err := svc.CompleteCallback(ctx, state); err != nil {
@@ -229,7 +316,7 @@ func TestCompleteCallbackFailures(t *testing.T) {
 	t.Run("expired and tampered state", func(t *testing.T) {
 		sdk := defaultSDK()
 		now := time.Unix(1_700_000_000, 0)
-		svc := newTestService(t, sdk, &fakeStore{})
+		svc := newTestService(t, sdk, publishedStore())
 		svc.now = func() time.Time { return now }
 		_, _ = svc.BeginOAuthConnect(ctx, user, "github")
 		state := stateFromReturnURI(t, sdk)
@@ -250,7 +337,7 @@ func TestConnectWithAPIKey(t *testing.T) {
 
 	sdk := defaultSDK()
 	sdk.apiKeyConn = &openconnector.Connection{ID: "app-k", Service: "openai", ConnectionName: "uuid-alias", AuthType: "api_key"}
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	view, err := svc.ConnectWithAPIKey(ctx, user, "openai", key, nil, " work ")
 	if err != nil {
@@ -280,7 +367,7 @@ func TestConnectWithAPIKeyNeverLeaksKeyInError(t *testing.T) {
 	sdk := defaultSDK()
 	// A hostile or buggy upstream that echoes the submitted key in its message.
 	sdk.apiKeyErr = &openconnector.APIError{Status: 400, Code: "credential_verification_failed", Message: "bad key " + key}
-	svc := newTestService(t, sdk, &fakeStore{})
+	svc := newTestService(t, sdk, publishedStore())
 	_, err := svc.ConnectWithAPIKey(context.Background(), newTestUser(), "openai", key, map[string]string{"region": "eu-secret"}, "")
 	if err == nil {
 		t.Fatal("expected error")
@@ -301,7 +388,7 @@ func TestConnectWithAPIKeyNeverLeaksKeyInError(t *testing.T) {
 func TestDisconnectIdempotentAndPromotesDefault(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	user := newTestUser()
 	for _, id := range []string{"a", "b"} {
@@ -332,7 +419,7 @@ func TestDisconnectIdempotentAndPromotesDefault(t *testing.T) {
 func TestSetDefaultAndLabel(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	user := newTestUser()
 	for _, id := range []string{"a", "b"} {
@@ -357,7 +444,7 @@ func TestSetDefaultAndLabel(t *testing.T) {
 func TestSyncStatuses(t *testing.T) {
 	ctx := context.Background()
 	sdk := defaultSDK()
-	store := &fakeStore{}
+	store := publishedStore()
 	svc := newTestService(t, sdk, store)
 	user := newTestUser()
 	for _, id := range []string{"a", "b", "c"} {
@@ -380,7 +467,7 @@ func TestSyncStatuses(t *testing.T) {
 }
 
 func TestCallbackRedirect(t *testing.T) {
-	svc := newTestService(t, defaultSDK(), &fakeStore{})
+	svc := newTestService(t, defaultSDK(), publishedStore())
 	if got := svc.CallbackRedirect("github", true); got != "https://app.example.com/settings?tab=integrations&connected=github" {
 		t.Fatal(got)
 	}

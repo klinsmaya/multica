@@ -11,6 +11,155 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminCountConnectorConnectionsByService = `-- name: AdminCountConnectorConnectionsByService :many
+
+SELECT service,
+       count(*) FILTER (WHERE status = 'active')::bigint              AS active_count,
+       count(*) FILTER (WHERE status = 'reauth_required')::bigint     AS reauth_count,
+       count(*) FILTER (WHERE status = 'revoked')::bigint             AS revoked_count,
+       count(DISTINCT user_id) FILTER (WHERE status <> 'revoked')::bigint AS user_count
+FROM user_connector_connection
+WHERE provider = $1
+GROUP BY service
+ORDER BY service ASC
+`
+
+type AdminCountConnectorConnectionsByServiceRow struct {
+	Service      string `json:"service"`
+	ActiveCount  int64  `json:"active_count"`
+	ReauthCount  int64  `json:"reauth_count"`
+	RevokedCount int64  `json:"revoked_count"`
+	UserCount    int64  `json:"user_count"`
+}
+
+// =====================
+// Connector connection counts (platform admin)
+// =====================
+func (q *Queries) AdminCountConnectorConnectionsByService(ctx context.Context, provider string) ([]AdminCountConnectorConnectionsByServiceRow, error) {
+	rows, err := q.db.Query(ctx, adminCountConnectorConnectionsByService, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminCountConnectorConnectionsByServiceRow{}
+	for rows.Next() {
+		var i AdminCountConnectorConnectionsByServiceRow
+		if err := rows.Scan(
+			&i.Service,
+			&i.ActiveCount,
+			&i.ReauthCount,
+			&i.RevokedCount,
+			&i.UserCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminCountConnectorUsers = `-- name: AdminCountConnectorUsers :one
+SELECT count(DISTINCT c.user_id)
+FROM user_connector_connection c
+JOIN "user" u ON u.id = c.user_id
+WHERE c.provider = $1
+  AND ($2::text IS NULL OR c.service = $2::text)
+  AND ($3::text IS NULL
+       OR u.email ILIKE '%' || $3::text || '%'
+       OR u.name ILIKE '%' || $3::text || '%')
+`
+
+type AdminCountConnectorUsersParams struct {
+	Provider string      `json:"provider"`
+	Service  pgtype.Text `json:"service"`
+	Q        pgtype.Text `json:"q"`
+}
+
+func (q *Queries) AdminCountConnectorUsers(ctx context.Context, arg AdminCountConnectorUsersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountConnectorUsers, arg.Provider, arg.Service, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const adminListConnectorUsers = `-- name: AdminListConnectorUsers :many
+SELECT u.id AS user_id, u.name, u.email, u.disabled_at,
+       count(*) FILTER (WHERE c.status = 'active')::bigint          AS active_count,
+       count(*) FILTER (WHERE c.status = 'reauth_required')::bigint AS reauth_count,
+       count(*) FILTER (WHERE c.status = 'revoked')::bigint         AS revoked_count,
+       COALESCE(array_agg(DISTINCT c.service) FILTER (WHERE c.status <> 'revoked'), '{}')::text[] AS services,
+       max(c.connected_at)::timestamptz AS last_connected_at
+FROM user_connector_connection c
+JOIN "user" u ON u.id = c.user_id
+WHERE c.provider = $1
+  AND ($2::text IS NULL OR c.service = $2::text)
+  AND ($3::text IS NULL
+       OR u.email ILIKE '%' || $3::text || '%'
+       OR u.name ILIKE '%' || $3::text || '%')
+GROUP BY u.id, u.name, u.email, u.disabled_at
+ORDER BY active_count DESC, u.email ASC
+LIMIT $5 OFFSET $4
+`
+
+type AdminListConnectorUsersParams struct {
+	Provider   string      `json:"provider"`
+	Service    pgtype.Text `json:"service"`
+	Q          pgtype.Text `json:"q"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
+}
+
+type AdminListConnectorUsersRow struct {
+	UserID          pgtype.UUID        `json:"user_id"`
+	Name            string             `json:"name"`
+	Email           string             `json:"email"`
+	DisabledAt      pgtype.Timestamptz `json:"disabled_at"`
+	ActiveCount     int64              `json:"active_count"`
+	ReauthCount     int64              `json:"reauth_count"`
+	RevokedCount    int64              `json:"revoked_count"`
+	Services        []string           `json:"services"`
+	LastConnectedAt pgtype.Timestamptz `json:"last_connected_at"`
+}
+
+func (q *Queries) AdminListConnectorUsers(ctx context.Context, arg AdminListConnectorUsersParams) ([]AdminListConnectorUsersRow, error) {
+	rows, err := q.db.Query(ctx, adminListConnectorUsers,
+		arg.Provider,
+		arg.Service,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListConnectorUsersRow{}
+	for rows.Next() {
+		var i AdminListConnectorUsersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.DisabledAt,
+			&i.ActiveCount,
+			&i.ReauthCount,
+			&i.RevokedCount,
+			&i.Services,
+			&i.LastConnectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const consumeConnectorOAuthState = `-- name: ConsumeConnectorOAuthState :one
 UPDATE connector_oauth_state
 SET consumed_at = $1
@@ -108,6 +257,32 @@ func (q *Queries) GetConnectorOAuthStateByNonceHash(ctx context.Context, arg Get
 	return i, err
 }
 
+const getConnectorServicePolicy = `-- name: GetConnectorServicePolicy :one
+SELECT provider, service, enabled, allowed_tools, allowed_user_ids, updated_by, created_at, updated_at FROM connector_service_policy
+WHERE provider = $1 AND service = $2
+`
+
+type GetConnectorServicePolicyParams struct {
+	Provider string `json:"provider"`
+	Service  string `json:"service"`
+}
+
+func (q *Queries) GetConnectorServicePolicy(ctx context.Context, arg GetConnectorServicePolicyParams) (ConnectorServicePolicy, error) {
+	row := q.db.QueryRow(ctx, getConnectorServicePolicy, arg.Provider, arg.Service)
+	var i ConnectorServicePolicy
+	err := row.Scan(
+		&i.Provider,
+		&i.Service,
+		&i.Enabled,
+		&i.AllowedTools,
+		&i.AllowedUserIds,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserConnectorConnection = `-- name: GetUserConnectorConnection :one
 SELECT id, provider, user_id, service, connection_id, connection_name, auth_type, status, is_default, label, connected_at, last_used_at, created_at, updated_at FROM user_connector_connection
 WHERE id = $1 AND user_id = $2
@@ -170,6 +345,45 @@ func (q *Queries) InsertConnectorOAuthState(ctx context.Context, arg InsertConne
 		arg.ExpiresAt,
 	)
 	return err
+}
+
+const listConnectorServicePolicies = `-- name: ListConnectorServicePolicies :many
+
+SELECT provider, service, enabled, allowed_tools, allowed_user_ids, updated_by, created_at, updated_at FROM connector_service_policy
+WHERE provider = $1
+ORDER BY service ASC
+`
+
+// =====================
+// Connector service policy (platform admin)
+// =====================
+func (q *Queries) ListConnectorServicePolicies(ctx context.Context, provider string) ([]ConnectorServicePolicy, error) {
+	rows, err := q.db.Query(ctx, listConnectorServicePolicies, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ConnectorServicePolicy{}
+	for rows.Next() {
+		var i ConnectorServicePolicy
+		if err := rows.Scan(
+			&i.Provider,
+			&i.Service,
+			&i.Enabled,
+			&i.AllowedTools,
+			&i.AllowedUserIds,
+			&i.UpdatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserConnectorConnections = `-- name: ListUserConnectorConnections :many
@@ -282,6 +496,87 @@ type MarkUserConnectorConnectionRevokedParams struct {
 func (q *Queries) MarkUserConnectorConnectionRevoked(ctx context.Context, arg MarkUserConnectorConnectionRevokedParams) error {
 	_, err := q.db.Exec(ctx, markUserConnectorConnectionRevoked, arg.ID, arg.UserID)
 	return err
+}
+
+const setConnectorServiceEnabled = `-- name: SetConnectorServiceEnabled :one
+INSERT INTO connector_service_policy (provider, service, enabled, updated_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider, service) DO UPDATE SET
+    enabled    = EXCLUDED.enabled,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = now()
+RETURNING provider, service, enabled, allowed_tools, allowed_user_ids, updated_by, created_at, updated_at
+`
+
+type SetConnectorServiceEnabledParams struct {
+	Provider  string      `json:"provider"`
+	Service   string      `json:"service"`
+	Enabled   bool        `json:"enabled"`
+	UpdatedBy pgtype.UUID `json:"updated_by"`
+}
+
+// Publishes or delists a service, leaving its tool and user allowlists intact.
+func (q *Queries) SetConnectorServiceEnabled(ctx context.Context, arg SetConnectorServiceEnabledParams) (ConnectorServicePolicy, error) {
+	row := q.db.QueryRow(ctx, setConnectorServiceEnabled,
+		arg.Provider,
+		arg.Service,
+		arg.Enabled,
+		arg.UpdatedBy,
+	)
+	var i ConnectorServicePolicy
+	err := row.Scan(
+		&i.Provider,
+		&i.Service,
+		&i.Enabled,
+		&i.AllowedTools,
+		&i.AllowedUserIds,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setConnectorServicePolicy = `-- name: SetConnectorServicePolicy :one
+INSERT INTO connector_service_policy (provider, service, allowed_tools, allowed_user_ids, updated_by)
+VALUES ($1, $2, $3::text[], $4::uuid[], $5)
+ON CONFLICT (provider, service) DO UPDATE SET
+    allowed_tools    = EXCLUDED.allowed_tools,
+    allowed_user_ids = EXCLUDED.allowed_user_ids,
+    updated_by       = EXCLUDED.updated_by,
+    updated_at       = now()
+RETURNING provider, service, enabled, allowed_tools, allowed_user_ids, updated_by, created_at, updated_at
+`
+
+type SetConnectorServicePolicyParams struct {
+	Provider       string        `json:"provider"`
+	Service        string        `json:"service"`
+	AllowedTools   []string      `json:"allowed_tools"`
+	AllowedUserIds []pgtype.UUID `json:"allowed_user_ids"`
+	UpdatedBy      pgtype.UUID   `json:"updated_by"`
+}
+
+// Replaces the tool and user allowlists; a service without a row stays delisted.
+func (q *Queries) SetConnectorServicePolicy(ctx context.Context, arg SetConnectorServicePolicyParams) (ConnectorServicePolicy, error) {
+	row := q.db.QueryRow(ctx, setConnectorServicePolicy,
+		arg.Provider,
+		arg.Service,
+		arg.AllowedTools,
+		arg.AllowedUserIds,
+		arg.UpdatedBy,
+	)
+	var i ConnectorServicePolicy
+	err := row.Scan(
+		&i.Provider,
+		&i.Service,
+		&i.Enabled,
+		&i.AllowedTools,
+		&i.AllowedUserIds,
+		&i.UpdatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const setUserConnectorConnectionDefault = `-- name: SetUserConnectorConnectionDefault :exec

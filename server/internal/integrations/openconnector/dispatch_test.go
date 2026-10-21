@@ -30,7 +30,7 @@ func dispatchFixture(t *testing.T) (*Service, *fakeSDK, *fakeStore, db.Agent) {
 	t.Helper()
 	sdk := defaultSDK()
 	sdk.tokenResp = &openconnector.CreatedRuntimeToken{Token: testToken, Record: openconnector.RuntimeToken{ID: "tok-1"}}
-	store := &fakeStore{}
+	store := (&fakeStore{}).publish("github").publish("openai").publish("notion")
 	owner := newTestUser()
 	seedConnection(t, store, owner, "github", "app-gh1", "alias-gh1", "work", true)
 	seedConnection(t, store, owner, "github", "app-gh2", "alias-gh2", "", false)
@@ -116,6 +116,35 @@ func TestBuildTaskOverlaySkipsReauthRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := strings.Join(sdk.tokenReqs[0].AllowedConnections, ","); got != "app-gh1,app-oa" {
+		t.Fatalf("allowedConnections = %s", got)
+	}
+}
+
+func TestBuildTaskOverlayFollowsServicePolicy(t *testing.T) {
+	svc, sdk, store, agent := dispatchFixture(t)
+	ctx := context.Background()
+
+	// A tool allowlist narrows allowedActions to the listed actions.
+	store.policies[0].AllowedTools = []string{"create_issue", "list_repos"}
+	if _, err := svc.BuildTaskOverlay(ctx, pgtype.UUID{}, pgtype.UUID{}, agent); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(sdk.tokenReqs[0].AllowedActions, ","); got != "github.create_issue,github.list_repos,openai.*" {
+		t.Fatalf("allowedActions = %s", got)
+	}
+
+	// A delisted service, or one restricted to other users, is not mounted.
+	store.policies[0].Enabled = false
+	store.policies[1].AllowedUserIds = []pgtype.UUID{newTestUser()}
+	res, err := svc.BuildTaskOverlay(ctx, pgtype.UUID{}, pgtype.UUID{}, agent)
+	if err != nil || len(res.MCPOverlay) != 0 || len(sdk.tokenReqs) != 1 {
+		t.Fatalf("delisted: res=%+v err=%v tokens=%d", res, err, len(sdk.tokenReqs))
+	}
+	store.policies[1].AllowedUserIds = []pgtype.UUID{agent.OwnerID}
+	if _, err := svc.BuildTaskOverlay(ctx, pgtype.UUID{}, pgtype.UUID{}, agent); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(sdk.tokenReqs[1].AllowedConnections, ","); got != "app-oa" {
 		t.Fatalf("allowedConnections = %s", got)
 	}
 }

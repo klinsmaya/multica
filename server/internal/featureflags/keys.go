@@ -18,8 +18,11 @@ const (
 	// The access model exists to gate Composio sharing, so the two ship on the
 	// same switch.
 	ComposioMCPApps = "composio_mcp_apps"
-	// OpenConnectorApps gates the open-connector app management UI and the
-	// per-agent connector_service_allowlist, parallel to ComposioMCPApps.
+	// OpenConnectorApps is published to clients so they show the open-connector
+	// app management UI and the per-agent connector_service_allowlist. It is
+	// not an operator-set flag: handler.Config sets it from whether the
+	// integration is wired (OPEN_CONNECTOR_BASE_URL / ADMIN_TOKEN), and which
+	// services are offered is decided per service in the admin console.
 	OpenConnectorApps = "open_connector_apps"
 	// PluginsV1 gates the user-facing Plugin catalog and lifecycle management
 	// APIs while the first product slice is dogfooded. It deliberately does not
@@ -64,7 +67,6 @@ const (
 var frontendPublicFlags = []string{
 	BillingWorkspaceSubscriptions,
 	ComposioMCPApps,
-	OpenConnectorApps,
 	PluginsV1,
 	ProjectWorkflowsV1,
 }
@@ -75,10 +77,6 @@ func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featurefla
 
 func ComposioMCPAppsEnabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, ComposioMCPApps, false)
-}
-
-func OpenConnectorAppsEnabled(ctx context.Context, flags *featureflag.Service) bool {
-	return flags.IsEnabled(ctx, OpenConnectorApps, false)
 }
 
 func PluginsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {

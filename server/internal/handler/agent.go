@@ -1237,7 +1237,7 @@ func (h *Handler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		} else if actorType == "agent" || uuidToString(a.OwnerID) != userID {
 			redactComposioToolkitAllowlist(&resp)
 		}
-		if !h.openConnectorAppsEnabled(r.Context()) {
+		if !h.openConnectorWired() {
 			suppressConnectorServiceAllowlist(&resp)
 		} else if actorType == "agent" || uuidToString(a.OwnerID) != userID {
 			redactConnectorServiceAllowlist(&resp)
@@ -1314,7 +1314,7 @@ func (h *Handler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	} else if actorType == "agent" || uuidToString(agent.OwnerID) != userID {
 		redactComposioToolkitAllowlist(&resp)
 	}
-	if !h.openConnectorAppsEnabled(r.Context()) {
+	if !h.openConnectorWired() {
 		suppressConnectorServiceAllowlist(&resp)
 	} else if actorType == "agent" || uuidToString(agent.OwnerID) != userID {
 		redactConnectorServiceAllowlist(&resp)
@@ -1573,7 +1573,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		allowlist = nil
 	}
 	connectorAllowlist := normaliseServiceAllowlist(req.ConnectorServiceAllowlist)
-	if !h.openConnectorAppsEnabled(r.Context()) {
+	if !h.openConnectorWired() {
 		connectorAllowlist = nil
 	}
 
@@ -1687,7 +1687,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	if !h.composioMCPAppsEnabled(r.Context()) {
 		suppressComposioToolkitAllowlist(&resp)
 	}
-	if !h.openConnectorAppsEnabled(r.Context()) {
+	if !h.openConnectorWired() {
 		suppressConnectorServiceAllowlist(&resp)
 	}
 	writeJSON(w, http.StatusCreated, resp)
@@ -2303,8 +2303,8 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	shouldClearConnectorAllowlist := false
 	if _, hasAllowlist := rawFields["connector_service_allowlist"]; hasAllowlist {
 		isAgentOwner := uuidToString(existing.OwnerID) == requestUserID(r)
-		if !h.openConnectorAppsEnabled(r.Context()) {
-			slog.Debug("update agent: connector_service_allowlist write dropped because feature flag is disabled",
+		if !h.openConnectorWired() {
+			slog.Debug("update agent: connector_service_allowlist write dropped because open-connector is not configured",
 				append(logger.RequestAttrs(r), "agent_id", id)...)
 		} else if !isAgentOwner {
 			slog.Debug("update agent: connector_service_allowlist write by non-owner silently dropped",
@@ -2424,7 +2424,7 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	} else if uuidToString(updated.OwnerID) != userID {
 		redactComposioToolkitAllowlist(&resp)
 	}
-	if !h.openConnectorAppsEnabled(r.Context()) {
+	if !h.openConnectorWired() {
 		suppressConnectorServiceAllowlist(&resp)
 	} else if uuidToString(updated.OwnerID) != userID {
 		redactConnectorServiceAllowlist(&resp)

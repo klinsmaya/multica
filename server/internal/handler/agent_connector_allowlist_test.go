@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/multica-ai/multica/server/internal/featureflags"
 )
 
 func readConnectorAllowlistColumn(t *testing.T, agentID string) ([]string, bool) {
@@ -27,7 +25,7 @@ func TestUpdateAgent_ConnectorAllowlistRoundtripAndNonOwnerDrop(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	withFeatureFlag(t, testHandler, featureflags.OpenConnectorApps, true)
+	withOpenConnector(t, testHandler, newOpenConnectorService(t, &ocFakeSDK{}))
 	agentID, ownerID := allowlistFixture(t)
 
 	put := func(userID string, body map[string]any) *httptest.ResponseRecorder {
@@ -88,7 +86,7 @@ func TestGetAgent_ConnectorAllowlistVisibility(t *testing.T) {
 		return resp
 	}
 
-	withFeatureFlag(t, testHandler, featureflags.OpenConnectorApps, true)
+	withOpenConnector(t, testHandler, newOpenConnectorService(t, &ocFakeSDK{}))
 	if r := get(ownerID); len(r.ConnectorServiceAllowlist) != 1 || r.ConnectorServiceAllowlistRedacted {
 		t.Errorf("owner view = %v redacted=%v", r.ConnectorServiceAllowlist, r.ConnectorServiceAllowlistRedacted)
 	}
@@ -97,8 +95,8 @@ func TestGetAgent_ConnectorAllowlistVisibility(t *testing.T) {
 		t.Errorf("non-owner view = %v redacted=%v", r.ConnectorServiceAllowlist, r.ConnectorServiceAllowlistRedacted)
 	}
 
-	withFeatureFlag(t, testHandler, featureflags.OpenConnectorApps, false)
+	withOpenConnector(t, testHandler, nil)
 	if r := get(ownerID); len(r.ConnectorServiceAllowlist) != 0 || r.ConnectorServiceAllowlistRedacted {
-		t.Errorf("flag-off owner view = %v redacted=%v", r.ConnectorServiceAllowlist, r.ConnectorServiceAllowlistRedacted)
+		t.Errorf("unwired owner view = %v redacted=%v", r.ConnectorServiceAllowlist, r.ConnectorServiceAllowlistRedacted)
 	}
 }

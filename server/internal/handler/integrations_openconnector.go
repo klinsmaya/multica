@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/featureflags"
 	openconnector "github.com/multica-ai/multica/server/internal/integrations/openconnector"
 )
 
@@ -18,9 +16,12 @@ import (
 // workspace, so like Composio these live outside the workspace-membership
 // group. All endpoints but the callback are user-scoped (requireUserID); the
 // callback is a public route (outside the Auth group) whose identity comes
-// from the signed state. A missing deployment capability (service not wired or
-// open_connector_apps flag off) is a non-retryable 403 `open_connector_not_configured`,
-// matching Composio and writeFeatureDisabled, not a transient 503.
+// from the signed state. A missing deployment capability (service not wired:
+// OPEN_CONNECTOR_BASE_URL / OPEN_CONNECTOR_ADMIN_TOKEN unset) is a
+// non-retryable 403 `open_connector_not_configured`, matching Composio and
+// writeFeatureDisabled, not a transient 503. Which services users may connect
+// is decided per service by the platform admin policy (see admin_openconnector.go),
+// not by a feature flag.
 
 const maxOpenConnectorBodyBytes = 64 << 10
 
@@ -50,14 +51,15 @@ type OpenConnectorUpdateConnectionRequest struct {
 	Label     *string `json:"label"`
 }
 
-func (h *Handler) openConnectorAppsEnabled(ctx context.Context) bool {
-	return featureflags.OpenConnectorAppsEnabled(ctx, h.FeatureFlags)
-}
+// openConnectorWired reports whether the integration is configured on this
+// deployment. It also decides the `open_connector_apps` value published to
+// clients and whether agent.connector_service_allowlist is exposed.
+func (h *Handler) openConnectorWired() bool { return h.OpenConnector != nil }
 
-// openConnectorReady reports whether the integration is wired and enabled and
-// writes the 403 otherwise.
+// openConnectorReady reports whether the integration is wired and writes the
+// 403 otherwise.
 func (h *Handler) openConnectorReady(w http.ResponseWriter, r *http.Request) bool {
-	if h.OpenConnector == nil || !h.openConnectorAppsEnabled(r.Context()) {
+	if !h.openConnectorWired() {
 		writeFeatureDisabled(w, "open_connector_not_configured", "open-connector integration not configured")
 		return false
 	}
@@ -98,6 +100,8 @@ func writeOpenConnectorError(w http.ResponseWriter, r *http.Request, err error, 
 		writeError(w, http.StatusBadRequest, "invalid request")
 	case errors.Is(err, openconnector.ErrConnectionNotFound):
 		writeError(w, http.StatusNotFound, "open-connector connection not found")
+	case errors.Is(err, openconnector.ErrUserNotAllowed):
+		writeErrorCode(w, http.StatusForbidden, "open_connector_user_not_allowed", "this service is not available to your account")
 	default:
 		slog.Warn("open-connector request failed", "path", r.URL.Path, "error", err)
 		writeError(w, http.StatusBadGateway, fallback)
@@ -153,16 +157,14 @@ func (h *Handler) OpenConnectorConnectAPIKey(w http.ResponseWriter, r *http.Requ
 }
 
 // ListOpenConnectorApps (GET /api/integrations/open-connector/apps) returns the
-// connectable services. An upstream failure is a 502 so the UI shows its
-// load-failed state rather than an empty catalog.
+// services published to the caller. An upstream failure is a 502 so the UI
+// shows its load-failed state rather than an empty catalog.
 func (h *Handler) ListOpenConnectorApps(w http.ResponseWriter, r *http.Request) {
-	if !h.openConnectorReady(w, r) {
+	userUUID, ok := h.openConnectorUser(w, r)
+	if !ok {
 		return
 	}
-	if _, ok := requireUserID(w, r); !ok {
-		return
-	}
-	apps, err := h.OpenConnector.ListApps(r.Context())
+	apps, err := h.OpenConnector.ListApps(r.Context(), userUUID)
 	if err != nil {
 		writeOpenConnectorError(w, r, err, "failed to list open-connector apps")
 		return

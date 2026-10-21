@@ -58,9 +58,10 @@ type ComposioToolkitResponse struct {
 }
 
 // connectorOverlayEnabled reports whether any connector provider's runtime MCP
-// overlay should be honoured at claim time: any provider's flag enables it.
+// overlay should be honoured at claim time: Composio's flag or a wired
+// open-connector enables it.
 func (h *Handler) connectorOverlayEnabled(ctx context.Context) bool {
-	return h.composioMCPAppsEnabled(ctx) || h.openConnectorAppsEnabled(ctx)
+	return h.composioMCPAppsEnabled(ctx) || h.openConnectorWired()
 }
 
 func (h *Handler) composioMCPAppsEnabled(ctx context.Context) bool {

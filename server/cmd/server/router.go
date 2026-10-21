@@ -1977,12 +1977,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/workspaces/{id}", h.AdminGetWorkspace)
 				r.Get("/audit", h.AdminListAudit)
 				r.Get("/admins", h.AdminListPlatformAdmins)
+				// open-connector operations: health, service catalog with
+				// publication policy, connection counts. See admin_openconnector.go.
+				r.Get("/open-connector/health", h.AdminOpenConnectorHealth)
+				r.Get("/open-connector/services", h.AdminOpenConnectorListServices)
+				r.Get("/open-connector/users", h.AdminOpenConnectorListUsers)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleOperator))
 				r.Post("/users/{id}/disable", h.AdminDisableUser)
 				r.Post("/users/{id}/enable", h.AdminEnableUser)
 				r.Post("/users/{id}/tokens/{tokenId}/revoke", h.AdminRevokeUserToken)
+				r.Post("/open-connector/services/{service}/enable", h.AdminOpenConnectorEnableService)
+				r.Post("/open-connector/services/{service}/disable", h.AdminOpenConnectorDisableService)
+				r.Put("/open-connector/services/{service}/policy", h.AdminOpenConnectorSetPolicy)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleSuperAdmin))
@@ -2753,9 +2761,9 @@ func composioCallbackBaseURL(publicURL string) string {
 }
 
 // wireOpenConnector enables the open-connector integration when
-// OPEN_CONNECTOR_BASE_URL and OPEN_CONNECTOR_ADMIN_TOKEN are both set. The
-// open_connector_apps flag is evaluated per request by the handlers, so it is
-// not checked here.
+// OPEN_CONNECTOR_BASE_URL and OPEN_CONNECTOR_ADMIN_TOKEN are both set. Which
+// services users can connect is decided in the admin console
+// (connector_service_policy), not here.
 func wireOpenConnector(h *handler.Handler, queries *db.Queries, publicURL string) {
 	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_BASE_URL")), "/")
 	adminToken := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_ADMIN_TOKEN"))
@@ -2790,7 +2798,7 @@ func wireOpenConnector(h *handler.Handler, queries *db.Queries, publicURL string
 		CallbackBaseURL: callbackBase,
 		FrontendBaseURL: appURLFromEnv(),
 		MCPURL:          mcpURL,
-		APIKeyServices:  splitCommaList(os.Getenv("OPEN_CONNECTOR_API_KEY_SERVICES")),
+		BaseURL:         baseURL,
 	}
 	if raw := strings.TrimSpace(os.Getenv("OPEN_CONNECTOR_OAUTH_SCOPES")); raw != "" {
 		var overrides map[string][]string
@@ -2823,18 +2831,6 @@ func openConnectorStateSecret() []byte {
 		return sum[:]
 	}
 	return nil
-}
-
-// splitCommaList returns the trimmed non-empty items of a comma-separated
-// list, or nil when there are none (so the caller's default applies).
-func splitCommaList(raw string) []string {
-	var out []string
-	for _, item := range strings.Split(raw, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
-		}
-	}
-	return out
 }
 
 // WecomRelay is what the WeCom adapter needs from the realtime relay:

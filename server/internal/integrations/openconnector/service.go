@@ -49,6 +49,9 @@ var (
 	ErrConnectionNotFound = errors.New("open-connector: connection not found")
 	// ErrInvalidInput: a request field is missing or out of range.
 	ErrInvalidInput = errors.New("open-connector: invalid input")
+	// ErrUserNotAllowed: the service's policy restricts who may connect it and
+	// the user is not on that list.
+	ErrUserNotAllowed = errors.New("open-connector: user not allowed for this service")
 )
 
 const (
@@ -66,13 +69,6 @@ const (
 	authTypeOAuth  = "oauth"
 	authTypeAPIKey = "api_key"
 )
-
-// defaultAPIKeyServices is the fixed candidate list of services offered for
-// API key connections. Checking every provider's setup would cost ~1650
-// calls, so only these (that also list api_key in the catalog) are offered.
-var defaultAPIKeyServices = []string{
-	"airtable", "anthropic", "openai", "sendgrid", "stripe", "17track",
-}
 
 // SDK is the subset of *openconnector.Client the service depends on, declared
 // as an interface so tests can inject a fake.
@@ -106,6 +102,7 @@ type Store interface {
 	InsertConnectorOAuthState(ctx context.Context, arg db.InsertConnectorOAuthStateParams) error
 	ConsumeConnectorOAuthState(ctx context.Context, arg db.ConsumeConnectorOAuthStateParams) (db.ConnectorOauthState, error)
 	ExistsPendingConnectorOAuthForService(ctx context.Context, arg db.ExistsPendingConnectorOAuthForServiceParams) (bool, error)
+	ListConnectorServicePolicies(ctx context.Context, provider string) ([]db.ConnectorServicePolicy, error)
 }
 
 var _ Store = (*db.Queries)(nil)
@@ -126,9 +123,9 @@ type Config struct {
 	// ScopeOverrides maps a service to the authorizationOptionIds to request,
 	// replacing the computed minimal default.
 	ScopeOverrides map[string][]string
-	// APIKeyServices overrides the candidate list of API key services. Nil
-	// uses the built-in list.
-	APIKeyServices []string
+	// BaseURL is the open-connector origin, reported by Health so an operator
+	// can tell which instance the API talks to. Optional.
+	BaseURL string
 	// PollInterval is the wait between callback status polls. Zero uses 2s.
 	PollInterval time.Duration
 	// Now is overridable for deterministic tests. Nil uses time.Now.
@@ -144,8 +141,8 @@ type Service struct {
 	callbackURL string
 	frontendURL string
 	mcpURL      string
+	baseURL     string
 	scopes      map[string][]string
-	apiKeySet   map[string]struct{}
 	pollEvery   time.Duration
 	now         func() time.Time
 
@@ -186,14 +183,6 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 	if poll <= 0 {
 		poll = defaultPollEvery
 	}
-	keys := cfg.APIKeyServices
-	if keys == nil {
-		keys = defaultAPIKeyServices
-	}
-	apiKeySet := make(map[string]struct{}, len(keys))
-	for _, k := range keys {
-		apiKeySet[normalizeService(k)] = struct{}{}
-	}
 	return &Service{
 		sdk:         client,
 		store:       store,
@@ -201,8 +190,8 @@ func NewService(client SDK, store Store, cfg Config) (*Service, error) {
 		callbackURL: base + callbackPath,
 		frontendURL: strings.TrimRight(strings.TrimSpace(cfg.FrontendBaseURL), "/"),
 		mcpURL:      mcpURL,
+		baseURL:     strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
 		scopes:      cfg.ScopeOverrides,
-		apiKeySet:   apiKeySet,
 		pollEvery:   poll,
 		now:         now,
 	}, nil
@@ -251,10 +240,11 @@ func rowToView(row db.UserConnectorConnection) ConnectionView {
 	return v
 }
 
-// ListApps returns the services a user can connect: catalog providers that
-// support OAuth with a configured client, or API key from the fixed candidate
-// list. The result is cached for five minutes.
-func (s *Service) ListApps(ctx context.Context) ([]AppView, error) {
+// Catalog returns every service the open-connector instance can connect:
+// catalog providers with a configured OAuth client, or that accept an API
+// key. It is the admin-facing superset; ListApps narrows it by policy. The
+// result is cached for five minutes.
+func (s *Service) Catalog(ctx context.Context) ([]AppView, error) {
 	s.appsMu.Lock()
 	defer s.appsMu.Unlock()
 	if s.apps != nil && s.now().Before(s.appsExp) {
@@ -268,14 +258,13 @@ func (s *Service) ListApps(ctx context.Context) ([]AppView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open-connector: list oauth configs: %w", err)
 	}
-	apps := make([]AppView, 0, len(configured)+len(s.apiKeySet))
+	apps := make([]AppView, 0, len(configured))
 	for _, p := range providers {
-		service := normalizeService(p.Service)
 		types := []string{}
 		if _, ok := configured[p.Service]; ok && p.SupportsAuthType(openconnector.AuthTypeOAuth2) {
 			types = append(types, authTypeOAuth)
 		}
-		if _, ok := s.apiKeySet[service]; ok && p.SupportsAuthType(openconnector.AuthTypeAPIKey) {
+		if p.SupportsAuthType(openconnector.AuthTypeAPIKey) {
 			types = append(types, authTypeAPIKey)
 		}
 		if len(types) == 0 {
@@ -297,23 +286,139 @@ func (s *Service) ListApps(ctx context.Context) ([]AppView, error) {
 	return append([]AppView(nil), apps...), nil
 }
 
-// supports reports whether service is connectable with authType.
-func (s *Service) supports(ctx context.Context, service, authType string) (bool, error) {
-	apps, err := s.ListApps(ctx)
+// InvalidateCatalog drops the cached catalog so the next Catalog call hits
+// open-connector again (used after an operator changes OAuth clients).
+func (s *Service) InvalidateCatalog() {
+	s.appsMu.Lock()
+	s.apps, s.appsExp = nil, time.Time{}
+	s.appsMu.Unlock()
+}
+
+// Policies returns the per-service policy rows keyed by normalized service.
+func (s *Service) Policies(ctx context.Context) (map[string]db.ConnectorServicePolicy, error) {
+	rows, err := s.store.ListConnectorServicePolicies(ctx, ProviderName)
 	if err != nil {
-		return false, err
+		return nil, fmt.Errorf("open-connector: list service policies: %w", err)
 	}
+	out := make(map[string]db.ConnectorServicePolicy, len(rows))
+	for _, r := range rows {
+		out[normalizeService(r.Service)] = r
+	}
+	return out, nil
+}
+
+// userAllowed reports whether the policy lets userID connect and mount the
+// service. A missing row delists the service; an empty user list allows everyone.
+func userAllowed(p db.ConnectorServicePolicy, ok bool, userID pgtype.UUID) bool {
+	if !ok || !p.Enabled {
+		return false
+	}
+	if len(p.AllowedUserIds) == 0 {
+		return true
+	}
+	for _, id := range p.AllowedUserIds {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// ListApps returns the services userID can connect: the catalog narrowed to
+// services an operator published whose user allowlist admits the user.
+func (s *Service) ListApps(ctx context.Context, userID pgtype.UUID) ([]AppView, error) {
+	apps, err := s.Catalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	policies, err := s.Policies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AppView, 0, len(apps))
+	for _, a := range apps {
+		p, ok := policies[normalizeService(a.Service)]
+		if userAllowed(p, ok, userID) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// HealthView is the result of one reachability probe of the instance.
+type HealthView struct {
+	BaseURL         string `json:"base_url"`
+	Reachable       bool   `json:"reachable"`
+	LatencyMS       int64  `json:"latency_ms"`
+	Error           string `json:"error,omitempty"`
+	ProvidersTotal  int    `json:"providers_total"`
+	OAuthConfigured int    `json:"oauth_configured"`
+	CheckedAt       string `json:"checked_at"`
+}
+
+// healthTimeout bounds one probe so a hung instance cannot hold an admin
+// request open indefinitely.
+const healthTimeout = 10 * time.Second
+
+// Health probes open-connector with the admin token (catalog + OAuth
+// configs), bypassing the catalog cache so the result reflects the instance
+// right now. The upstream error text is kept: it is only shown to platform
+// admins and the SDK never echoes the admin token.
+func (s *Service) Health(ctx context.Context) HealthView {
+	ctx, cancel := context.WithTimeout(ctx, healthTimeout)
+	defer cancel()
+	start := s.now()
+	view := HealthView{BaseURL: s.baseURL, CheckedAt: start.UTC().Format(time.RFC3339)}
+	providers, err := s.sdk.ListProviders(ctx)
+	if err == nil {
+		var configured map[string]struct{}
+		configured, err = s.sdk.ConfiguredOAuthServices(ctx)
+		view.ProvidersTotal = len(providers)
+		view.OAuthConfigured = len(configured)
+	}
+	view.LatencyMS = time.Since(start).Milliseconds()
+	if err != nil {
+		view.Error = err.Error()
+		return view
+	}
+	view.Reachable = true
+	return view
+}
+
+// supports returns nil when userID may connect service with authType:
+// ErrServiceNotSupported when the catalog or policy does not offer it, and
+// ErrUserNotAllowed when it is published but not to this user.
+func (s *Service) supports(ctx context.Context, userID pgtype.UUID, service, authType string) error {
+	apps, err := s.Catalog(ctx)
+	if err != nil {
+		return err
+	}
+	offered := false
 	for _, a := range apps {
 		if normalizeService(a.Service) != service {
 			continue
 		}
 		for _, t := range a.AuthTypes {
 			if t == authType {
-				return true, nil
+				offered = true
 			}
 		}
 	}
-	return false, nil
+	if !offered {
+		return ErrServiceNotSupported
+	}
+	policies, err := s.Policies(ctx)
+	if err != nil {
+		return err
+	}
+	p, ok := policies[service]
+	if !ok || !p.Enabled {
+		return ErrServiceNotSupported
+	}
+	if !userAllowed(p, ok, userID) {
+		return ErrUserNotAllowed
+	}
+	return nil
 }
 
 func (s *Service) serviceLock(service string) *sync.Mutex {
@@ -353,12 +458,8 @@ func (s *Service) BeginOAuthConnect(ctx context.Context, userID pgtype.UUID, ser
 	if service == "" {
 		return "", ErrInvalidInput
 	}
-	ok, err := s.supports(ctx, service, authTypeOAuth)
-	if err != nil {
+	if err := s.supports(ctx, userID, service, authTypeOAuth); err != nil {
 		return "", err
-	}
-	if !ok {
-		return "", ErrServiceNotSupported
 	}
 	optionIDs, err := s.authorizationOptionIDs(ctx, service)
 	if err != nil {
@@ -542,12 +643,8 @@ func (s *Service) ConnectWithAPIKey(ctx context.Context, userID pgtype.UUID, ser
 	if len([]rune(label)) > maxLabelLen {
 		return ConnectionView{}, ErrInvalidInput
 	}
-	ok, err := s.supports(ctx, service, authTypeAPIKey)
-	if err != nil {
+	if err := s.supports(ctx, userID, service, authTypeAPIKey); err != nil {
 		return ConnectionView{}, err
-	}
-	if !ok {
-		return ConnectionView{}, ErrServiceNotSupported
 	}
 	conn, err := s.sdk.ConnectWithAPIKey(ctx, service, openconnector.APIKeyConnectRequest{
 		APIKey: apiKey, Extra: extra, Comment: label,

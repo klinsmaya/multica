@@ -18,9 +18,10 @@ import (
 type fakeSDK struct {
 	mu sync.Mutex
 
-	providers  []openconnector.Provider
-	configured map[string]struct{}
-	setup      map[string]*openconnector.ProviderSetup
+	providers    []openconnector.Provider
+	providersErr error
+	configured   map[string]struct{}
+	setup        map[string]*openconnector.ProviderSetup
 
 	beginCalls   []openconnector.BeginOAuthConnectRequest
 	beginResp    *openconnector.ConnectionRequest
@@ -41,7 +42,7 @@ type fakeSDK struct {
 }
 
 func (f *fakeSDK) ListProviders(context.Context) ([]openconnector.Provider, error) {
-	return f.providers, nil
+	return f.providers, f.providersErr
 }
 func (f *fakeSDK) ConfiguredOAuthServices(context.Context) (map[string]struct{}, error) {
 	return f.configured, nil
@@ -96,9 +97,37 @@ func (f *fakeSDK) DeleteRuntimeToken(_ context.Context, id string) error {
 }
 
 type fakeStore struct {
-	mu     sync.Mutex
-	rows   []db.UserConnectorConnection
-	states map[string]*db.ConnectorOauthState
+	mu       sync.Mutex
+	rows     []db.UserConnectorConnection
+	states   map[string]*db.ConnectorOauthState
+	policies []db.ConnectorServicePolicy
+}
+
+// publish adds an enabled policy row for service, restricted to users when
+// any are given. Tests that never call it see an empty, fully delisted catalog.
+func (s *fakeStore) publish(service string, users ...pgtype.UUID) *fakeStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.policies = append(s.policies, db.ConnectorServicePolicy{
+		Provider: ProviderName, Service: service, Enabled: true, AllowedUserIds: users,
+	})
+	return s
+}
+
+// publishedStore is the common fixture: both connectable services of
+// defaultSDK are published to every user.
+func publishedStore() *fakeStore { return (&fakeStore{}).publish("github").publish("openai") }
+
+func (s *fakeStore) ListConnectorServicePolicies(_ context.Context, provider string) ([]db.ConnectorServicePolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []db.ConnectorServicePolicy
+	for _, p := range s.policies {
+		if p.Provider == provider {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (s *fakeStore) InsertConnectorOAuthState(_ context.Context, a db.InsertConnectorOAuthStateParams) error {

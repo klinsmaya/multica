@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/featureflags"
 	openconnector "github.com/multica-ai/multica/server/internal/integrations/openconnector"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -65,25 +64,55 @@ func (f *ocFakeSDK) CreateRuntimeToken(context.Context, sdk.CreateRuntimeTokenRe
 }
 func (f *ocFakeSDK) DeleteRuntimeToken(context.Context, string) error { return nil }
 
-func newOpenConnectorTestHandler(t *testing.T, fake *ocFakeSDK) (*Handler, *db.Queries) {
+func newOpenConnectorService(t *testing.T, fake *ocFakeSDK) *openconnector.Service {
 	t.Helper()
 	if testPool == nil {
 		t.Skip("database not available")
 	}
-	queries := db.New(testPool)
-	svc, err := openconnector.NewService(fake, queries, openconnector.Config{
+	svc, err := openconnector.NewService(fake, db.New(testPool), openconnector.Config{
 		StateSecret:     []byte("handler-test-secret"),
 		CallbackBaseURL: "https://api.example.com",
 		FrontendBaseURL: "https://app.example.com",
 		MCPURL:          "https://oc.example.com/mcp",
-		APIKeyServices:  []string{"openai"},
+		BaseURL:         "https://oc.example.com",
 	})
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	h := &Handler{OpenConnector: svc}
-	withFeatureFlag(t, h, featureflags.OpenConnectorApps, true)
-	return h, queries
+	return svc
+}
+
+// withOpenConnector wires svc into h for the test, the way router.go does
+// when OPEN_CONNECTOR_BASE_URL / ADMIN_TOKEN are set. nil unwires it.
+func withOpenConnector(t *testing.T, h *Handler, svc *openconnector.Service) {
+	t.Helper()
+	prev := h.OpenConnector
+	h.OpenConnector = svc
+	t.Cleanup(func() { h.OpenConnector = prev })
+}
+
+// publishOCService inserts an enabled policy row, which is what makes a
+// catalog service visible to users. Tests that test the delisted state call
+// nothing and rely on the table being empty for the service.
+func publishOCService(t *testing.T, service string, allowedUserIDs ...pgtype.UUID) {
+	t.Helper()
+	ids := make([]string, 0, len(allowedUserIDs))
+	for _, id := range allowedUserIDs {
+		ids = append(ids, util.UUIDToString(id))
+	}
+	dbfx.Exec(t, `INSERT INTO connector_service_policy (provider, service, enabled, allowed_user_ids)
+		VALUES ($1, $2, TRUE, $3::uuid[])
+		ON CONFLICT (provider, service) DO UPDATE SET enabled = TRUE, allowed_user_ids = EXCLUDED.allowed_user_ids`,
+		openconnector.ProviderName, service, ids)
+	dbfx.Cleanup(t, `DELETE FROM connector_service_policy WHERE provider = $1 AND service = $2`, openconnector.ProviderName, service)
+}
+
+func newOpenConnectorTestHandler(t *testing.T, fake *ocFakeSDK) (*Handler, *db.Queries) {
+	t.Helper()
+	svc := newOpenConnectorService(t, fake)
+	publishOCService(t, "github")
+	publishOCService(t, "openai")
+	return &Handler{OpenConnector: svc}, db.New(testPool)
 }
 
 func newOCUser(t *testing.T) (string, pgtype.UUID) {
@@ -133,10 +162,42 @@ func TestOpenConnector_NotConfigured(t *testing.T) {
 	}
 }
 
-func TestOpenConnector_FlagOffIsNotConfigured(t *testing.T) {
-	h, _ := newOpenConnectorTestHandler(t, &ocFakeSDK{})
-	withFeatureFlag(t, h, featureflags.OpenConnectorApps, false)
-	testutil.Call(t, h.ListOpenConnectorApps, ocReq(testUserID, http.MethodGet, "/", nil)).Want(http.StatusForbidden)
+func TestOpenConnector_PolicyDecidesWhatUsersSee(t *testing.T) {
+	h := &Handler{OpenConnector: newOpenConnectorService(t, &ocFakeSDK{})}
+	alice, aliceID := newOCUser(t)
+	bob, _ := newOCUser(t)
+
+	// Nothing published: the instance offers two services, users see none.
+	var apps []openconnector.AppView
+	testutil.Call(t, h.ListOpenConnectorApps, ocReq(alice, http.MethodGet, "/", nil)).Want(http.StatusOK).JSON(&apps)
+	if len(apps) != 0 {
+		t.Fatalf("unpublished apps = %+v", apps)
+	}
+	testutil.Call(t, h.OpenConnectorConnectInit,
+		ocReq(alice, http.MethodPost, "/", map[string]any{"service": "github"})).Want(http.StatusBadRequest)
+
+	// github for everyone, openai only for alice.
+	publishOCService(t, "github")
+	publishOCService(t, "openai", aliceID)
+	apps = nil
+	testutil.Call(t, h.ListOpenConnectorApps, ocReq(alice, http.MethodGet, "/", nil)).Want(http.StatusOK).JSON(&apps)
+	if len(apps) != 2 {
+		t.Fatalf("alice apps = %+v", apps)
+	}
+	apps = nil
+	testutil.Call(t, h.ListOpenConnectorApps, ocReq(bob, http.MethodGet, "/", nil)).Want(http.StatusOK).JSON(&apps)
+	if len(apps) != 1 || apps[0].Service != "github" {
+		t.Fatalf("bob apps = %+v", apps)
+	}
+	var denied struct {
+		Code string `json:"code"`
+	}
+	testutil.Call(t, h.OpenConnectorConnectAPIKey, ocReq(bob, http.MethodPost, "/", map[string]any{
+		"service": "openai", "api_key": ocSecretAPIKey,
+	})).Want(http.StatusForbidden).JSON(&denied)
+	if denied.Code != "open_connector_user_not_allowed" {
+		t.Fatalf("denied code = %q", denied.Code)
+	}
 }
 
 func TestOpenConnector_ListApps(t *testing.T) {

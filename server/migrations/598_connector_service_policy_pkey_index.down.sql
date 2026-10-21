@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS connector_service_policy_pkey_uidx;

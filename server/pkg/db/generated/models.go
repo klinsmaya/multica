@@ -646,6 +646,19 @@ type ConnectorOauthState struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type ConnectorServicePolicy struct {
+	Provider string `json:"provider"`
+	Service  string `json:"service"`
+	Enabled  bool   `json:"enabled"`
+	// Action names (without the service prefix) a task runtime token may call. Empty = every action of the service.
+	AllowedTools []string `json:"allowed_tools"`
+	// Users who may connect and mount this service. Empty = every user.
+	AllowedUserIds []pgtype.UUID      `json:"allowed_user_ids"`
+	UpdatedBy      pgtype.UUID        `json:"updated_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ContactSalesInquiry struct {
 	ID              pgtype.UUID        `json:"id"`
 	FirstName       string             `json:"first_name"`

@@ -44,13 +44,16 @@ var _ runtimeapps.ConnectorProvider = (*Service)(nil)
 func (s *Service) Name() string { return ProviderName }
 
 // BuildTaskOverlay mints a runtime token scoped to (agent owner's active
-// connections ∩ agent.connector_service_allowlist) and returns the MCP overlay
-// that mounts open-connector with it. A zero result means no overlay.
+// connections ∩ agent.connector_service_allowlist ∩ services whose platform
+// policy is published to the owner) and returns the MCP overlay that mounts
+// open-connector with it. A zero result means no overlay.
 //
 // The token's allowedConnections is exactly the set of connection ids listed in
-// ConnectedApps; allowedProxies and allowedTriggers are empty. The returned
-// ResourceHandle is the token id, which ReleaseTaskResources deletes. The
-// plaintext token appears only in the overlay and is never logged.
+// ConnectedApps; allowedActions follows each service's policy tool allowlist
+// (`service.tool` per entry, `service.*` when the list is empty);
+// allowedProxies and allowedTriggers are empty. The returned ResourceHandle is
+// the token id, which ReleaseTaskResources deletes. The plaintext token appears
+// only in the overlay and is never logged.
 //
 // The task id is not known while the overlay is built (the queue row is
 // inserted afterwards), so originatorUserID is unused: like Composio the
@@ -67,12 +70,22 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, _ pgtype.UUID, _ pgtype.
 	if err != nil {
 		return runtimeapps.MCPOverlayResult{}, fmt.Errorf("open-connector: build task overlay: list connections: %w", err)
 	}
+	policies, err := s.Policies(ctx)
+	if err != nil {
+		return runtimeapps.MCPOverlayResult{}, fmt.Errorf("open-connector: build task overlay: %w", err)
+	}
 	var picked []db.UserConnectorConnection
 	for _, r := range rows {
 		if r.Status != statusActive {
 			continue
 		}
-		if _, ok := allow[normalizeService(r.Service)]; !ok {
+		service := normalizeService(r.Service)
+		if _, ok := allow[service]; !ok {
+			continue
+		}
+		// A delisted service, or one no longer published to the owner, is
+		// not mounted even though the connection itself still exists.
+		if p, ok := policies[service]; !userAllowed(p, ok, agent.OwnerID) {
 			continue
 		}
 		picked = append(picked, r)
@@ -101,7 +114,7 @@ func (s *Service) BuildTaskOverlay(ctx context.Context, _ pgtype.UUID, _ pgtype.
 		connIDs = append(connIDs, r.ConnectionID)
 		if _, dup := seenSvc[r.Service]; !dup {
 			seenSvc[r.Service] = struct{}{}
-			actions = append(actions, r.Service+".*")
+			actions = append(actions, allowedActions(r.Service, policies[normalizeService(r.Service)].AllowedTools)...)
 		}
 	}
 	if len(connIDs) > maxTokenListLen {
@@ -165,6 +178,19 @@ func (s *Service) ReleaseTaskResources(ctx context.Context, _ pgtype.UUID, handl
 		return fmt.Errorf("open-connector: delete runtime token: %w", err)
 	}
 	return nil
+}
+
+// allowedActions expands a policy tool allowlist into runtime-token action
+// patterns: every action of the service when the list is empty.
+func allowedActions(service string, tools []string) []string {
+	if len(tools) == 0 {
+		return []string{service + ".*"}
+	}
+	out := make([]string, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, service+"."+t)
+	}
+	return out
 }
 
 func allowlistSet(allow []string) map[string]struct{} {
