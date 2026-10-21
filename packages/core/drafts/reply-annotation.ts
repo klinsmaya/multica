@@ -53,17 +53,40 @@ function quoteText(text: string): string {
     });
 }
 
-export function composeAnnotatedReply(content: string, annotations: readonly ReplyAnnotation[]): string {
+const DESCRIPTION_SOURCE_PREFIX = "description:";
+
+/** Resolves a link to an annotation's source, or null when there is none. */
+export type ReplyAnnotationSourceLink = (annotation: ReplyAnnotation) => string | null;
+
+/** Quote line pointing back at the source comment; null when it cannot link. */
+function sourceAttribution(annotation: ReplyAnnotation, sourceLink?: ReplyAnnotationSourceLink): string | null {
+  if (!sourceLink || annotation.sourceCommentId.startsWith(DESCRIPTION_SOURCE_PREFIX)) return null;
+  const href = sourceLink(annotation)?.trim();
+  // Only http(s) and in-app paths: a resolver must never publish a mention:// link.
+  if (!href || !/^(https?:\/\/|\/(?!\/))/i.test(href)) return null;
+  const label = quoteText(annotation.sourceActorName.replace(/\s+/g, " ").trim()) || "↗";
+  const target = href.replace(/[()<>\s]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+  return `> — [${label}](${target})`;
+}
+
+export function composeAnnotatedReply(
+  content: string,
+  annotations: readonly ReplyAnnotation[],
+  sourceLink?: ReplyAnnotationSourceLink,
+): string {
   const body = content.trim();
   const saved = annotations.filter((a) => a.note.trim());
   if (!saved.length) return body;
   // /note must remain the first token so annotations cannot change triggering.
   const command = body.match(/^\/note(?=\s|$)/i)?.[0];
   const reply = command ? body.slice(command.length).trim() : body;
-  const quotes = saved.map((a) =>
-    a.quote.split(/\r?\n/).map((line) => `> ${quoteText(line)}`).join("\n") +
-      `\n\n${a.note.trim()}`,
-  );
+  const quotes = saved.map((a) => {
+    const lines = a.quote.split(/\r?\n/).map((line) => `> ${quoteText(line)}`);
+    // A bare ">" line keeps the attribution out of the quote's last paragraph.
+    const attribution = sourceAttribution(a, sourceLink);
+    if (attribution) lines.push(">", attribution);
+    return `${lines.join("\n")}\n\n${a.note.trim()}`;
+  });
   // Markdown collapses extra newlines. A blank paragraph keeps one visible
   // empty line between annotations.
   const sections = [quotes.join("\n\n&nbsp;\n\n"), reply].filter(Boolean).join("\n\n---\n\n");

@@ -6,6 +6,10 @@ import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import type { Attachment } from "@multica/core/types";
 import { useCommentComposerStore, useCommentDraftStore } from "@multica/core/issues/stores";
 import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { issueKeys } from "@multica/core/issues/queries";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { NavigationProvider } from "../../navigation";
+import type { NavigationAdapter } from "../../navigation/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CommentInput } from "./comment-input";
 import { ReplyInput } from "./reply-input";
@@ -1332,5 +1336,52 @@ describe.each(["reply", "description"])("annotations in %s drafts", (source) => 
     act(() => { useCommentDraftStore.getState().addAnnotation(draftKey, { ...annotation, id: "b", quote: "Another point" }); });
     await act(async () => accept("reply-new"));
     expect(useCommentDraftStore.getState().getAnnotations(draftKey)).toHaveLength(2);
+  });
+});
+
+describe.each(["comment", "reply"])("quote source links in the %s composer", (kind) => {
+  const draftKey = kind === "reply" ? "reply:issue-1:comment-1" as const : "new:issue-1" as const;
+  const annotation = { id: "a", sourceCommentId: "comment-src", sourceActorName: "Emacs", quote: "Selected text", note: "Please revise", start: 0, prefix: "", suffix: "" };
+
+  function renderWithNavigation(onSubmit: NonNullable<Parameters<typeof renderCommentInput>[0]>) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(workspaceKeys.list(), [{ id: "ws-1", slug: "acme", name: "Acme" }]);
+    queryClient.setQueryData(issueKeys.detail("ws-1", "issue-1"), { id: "issue-1", identifier: "MUL-7" });
+    const adapter: NavigationAdapter = {
+      push: vi.fn(), replace: vi.fn(), back: vi.fn(), pathname: "/acme/issues/MUL-7",
+      searchParams: new URLSearchParams(), hash: "",
+      getShareableUrl: (path) => `https://app.example${path}`,
+    };
+    return renderWithI18n(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceSlugProvider slug="acme">
+          <NavigationProvider value={adapter}>
+            {kind === "reply"
+              ? <ReplyInput issueId="issue-1" parentId="comment-1" avatarType="member" avatarId="user-1" draftKey={draftKey} onSubmit={onSubmit} />
+              : <CommentInput issueId="issue-1" onSubmit={onSubmit} />}
+          </NavigationProvider>
+        </WorkspaceSlugProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  async function sendPublished(source: typeof annotation) {
+    useCommentDraftStore.getState().addAnnotation(draftKey, source);
+    const onSubmit = vi.fn().mockResolvedValue("reply-new");
+    renderWithNavigation(onSubmit);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    return onSubmit.mock.calls[0]?.[0] as string;
+  }
+
+  it("links a quoted comment back to its #comment- deep link", async () => {
+    const published = await sendPublished(annotation);
+    expect(published).toContain("> Selected text\n>\n> — [Emacs](https://app.example/acme/issues/MUL-7#comment-comment-src)");
+  });
+
+  it("does not link a quoted description", async () => {
+    const published = await sendPublished({ ...annotation, sourceCommentId: "description:issue-1" });
+    expect(published).toBe("> Selected text\n\nPlease revise");
+    expect(published).not.toContain("#comment-");
   });
 });

@@ -54,6 +54,52 @@ describe("annotated reply serialization", () => {
   });
 });
 
+describe("source links on quoted replies", () => {
+  const href = "https://app.example/acme/issues/MUL-1#comment-source";
+  const link = () => href;
+
+  it("is byte-identical without a resolver or when it returns null", () => {
+    const plain = composeAnnotatedReply("Overall", [annotation]);
+    expect(composeAnnotatedReply("Overall", [annotation], undefined)).toBe(plain);
+    expect(composeAnnotatedReply("Overall", [annotation], () => null)).toBe(plain);
+  });
+
+  it("ends the blockquote with a link to the source comment", () => {
+    expect(composeAnnotatedReply("Overall", [annotation], link)).toBe(
+      `> first\n> second\n>\n> — [Emacs](${href})\n\nPlease revise.\n\n---\n\nOverall`,
+    );
+  });
+
+  it("never links description sources, even when the resolver returns an href", () => {
+    const description = { ...annotation, sourceCommentId: "description:issue-1" };
+    expect(composeAnnotatedReply("", [description], link)).toBe(composeAnnotatedReply("", [description]));
+  });
+
+  it("links per annotation and keeps /note as the first token", () => {
+    const description = { ...annotation, id: "b", sourceCommentId: "description:issue-1", quote: "other" };
+    expect(composeAnnotatedReply("/note Private", [annotation, description], (a) => `${href}-${a.id}`)).toBe(
+      `/note\n\n> first\n> second\n>\n> — [Emacs](${href}-a)\n\nPlease revise.\n\n&nbsp;\n\n> other\n\nPlease revise.\n\n---\n\nPrivate`,
+    );
+  });
+
+  it("keeps the actor name and href inert", () => {
+    const mention = "[@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)";
+    const content = composeAnnotatedReply("", [{ ...annotation, sourceActorName: `${mention}\nA` }], () => "https://app.example/a b)c");
+    expect(parseMentions(content)).toHaveLength(0);
+    expect(content).not.toContain("mention://");
+    expect(content).toContain("(https://app.example/a%20b%29c)");
+  });
+
+  it("refuses hrefs that are neither http(s) nor an in-app path", () => {
+    const plain = composeAnnotatedReply("", [annotation]);
+    for (const bad of ["mention://agent/x", "javascript:alert(1)", "//evil.example/x", " "]) {
+      expect(composeAnnotatedReply("", [annotation], () => bad)).toBe(plain);
+    }
+    expect(composeAnnotatedReply("", [annotation], () => "/acme/issues/MUL-1#comment-source"))
+      .toContain("(/acme/issues/MUL-1#comment-source)");
+  });
+});
+
 describe("quote anchors", () => {
   const anchor = { ...annotation, quote: "same", prefix: "left ", suffix: " right", start: 5 };
   it("relocates a unique quote with unchanged context", () => {

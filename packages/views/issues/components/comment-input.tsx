@@ -19,6 +19,7 @@ import { SteerAttachmentNotice } from "./steer-attachment-notice";
 import { useStopRunsBeforeSend } from "./use-stop-runs-before-send";
 import { useCommentUploads } from "./use-comment-uploads";
 import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
+import { useAnnotationSourceLink } from "../hooks/use-annotation-source-link";
 import { useStickyComposer } from "../hooks/use-sticky-composer";
 
 interface CommentInputProps {
@@ -51,6 +52,7 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   // Quick actions in the `/` menu: picking one inserts the server-rendered
   // body so the user can edit before sending, instead of firing immediately.
   const quickActionMenu = useQuickActionMenu(issueId);
+  const annotationSourceLink = useAnnotationSourceLink(issueId);
   const draftKey = `new:${issueId}` as const;
   const [initialDraft] = useState(() =>
     useCommentDraftStore.getState().getDraft(draftKey),
@@ -59,7 +61,7 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
   const [content, setContent] = useState(initialDraft ?? "");
   const [isEmpty, setIsEmpty] = useState(() => !initialDraft?.trim());
   const annotations = useCommentDraftStore((s) => s.getAnnotations(draftKey));
-  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations), [content, annotations]);
+  const composedContent = useMemo(() => composeAnnotatedReply(content, annotations, annotationSourceLink), [content, annotations, annotationSourceLink]);
   const canSend = annotations.length ? hasReplyIntent(content, annotations) : !isEmpty;
   const triggerPreview = useCommentTriggerPreview({ issueId, content: canSend ? composedContent : "" });
   // Uploads for this composer session (MUL-5181). Owned by the module-level
@@ -161,7 +163,7 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation }: Comme
     uploadGate: gate,
     normalize: (raw) => {
       const current = useCommentDraftStore.getState().getAnnotations(draftKey);
-      return hasReplyIntent(raw, current) ? composeAnnotatedReply(raw, current) : "";
+      return hasReplyIntent(raw, current) ? composeAnnotatedReply(raw, current, annotationSourceLink) : "";
     },
     // A top-level comment ends a turn: the caret is dropped rather than kept,
     // so the composer stops reading as "still writing" once the comment is
