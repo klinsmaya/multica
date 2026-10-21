@@ -10,6 +10,7 @@ function summary(overrides: Partial<IssueThreadSummary> = {}): IssueThreadSummar
     issue_id: "issue-1",
     reply_count: 1,
     last_reply_at: "2026-10-02T00:00:00Z",
+    last_reply_excerpt: null,
     open_thread_count: 0,
     participants: [{ type: "agent", id: "agent-1" }],
     last_read_at: null,

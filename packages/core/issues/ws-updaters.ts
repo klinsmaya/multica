@@ -22,6 +22,7 @@ import {
 } from "./cache-helpers";
 import { cleanupDeletedIssueCaches } from "./delete-cache";
 import { parseMentions } from "./comment-trigger-outcomes";
+import { commentExcerpt } from "./comment-excerpt";
 import { parseProgressChecklist } from "./progress-checklist";
 import type {
   Comment,
@@ -815,6 +816,9 @@ function isCountedThreadComment(comment: Comment): boolean {
 
 const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
 
+// Matches the server's last_reply_excerpt length.
+const THREAD_SUMMARY_EXCERPT_CHARS = 80;
+
 // A new agent progress report with a checklist replaces the stored one when it
 // is not older; anything else leaves the server's value in place.
 function nextLatestProgress(
@@ -851,6 +855,10 @@ function applyCommentToThreadSummary(
     issue_id: comment.issue_id,
     reply_count: (existing?.reply_count ?? 0) + 1,
     last_reply_at: lastReplyAt,
+    last_reply_excerpt:
+      lastReplyAt === comment.created_at
+        ? commentExcerpt(comment.content ?? "", THREAD_SUMMARY_EXCERPT_CHARS) || null
+        : (existing?.last_reply_excerpt ?? null),
     open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
     participants,
     last_read_at: existing?.last_read_at ?? null,

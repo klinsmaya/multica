@@ -219,6 +219,8 @@ export interface IssueThreadSummary {
   issue_id: string;
   reply_count: number;
   last_reply_at: string | null;
+  /** The newest counted comment flattened to one line; null when there is none. */
+  last_reply_excerpt: string | null;
   open_thread_count: number;
   participants: IssueThreadParticipant[];
   /** The caller's own read cursor on the issue; null when never opened. */

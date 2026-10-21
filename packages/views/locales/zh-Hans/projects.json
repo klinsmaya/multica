@@ -194,5 +194,20 @@
     "empty": "此项目还没有自动化",
     "next_run": "下次 {{time}}",
     "last_run": "上次运行 {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "等你处理",
+    "group_running": "进行中",
+    "group_idle": "空闲",
+    "group_resolved": "已解决",
+    "empty_needs_you": "没有等你处理的任务",
+    "empty_running": "没有智能体在工作",
+    "empty_idle": "没有空闲的任务",
+    "empty_resolved": "还没有已解决的任务",
+    "empty_project": "该项目还没有任务",
+    "load_failed": "无法加载任务",
+    "truncated": "仅显示最近活跃的 {{limit}} 个任务",
+    "sub_issue_progress": "子任务已完成 {{done}}/{{total}}",
+    "deliverables": "文件：{{count}}"
   }
 }

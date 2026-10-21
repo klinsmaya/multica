@@ -196,5 +196,20 @@
     "empty": "No automations in this project yet",
     "next_run": "Next {{time}}",
     "last_run": "Last run {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "Needs you",
+    "group_running": "Running",
+    "group_idle": "Idle",
+    "group_resolved": "Resolved",
+    "empty_needs_you": "Nothing is waiting on you",
+    "empty_running": "No agents are working",
+    "empty_idle": "No idle issues",
+    "empty_resolved": "Nothing resolved yet",
+    "empty_project": "No issues in this project yet",
+    "load_failed": "Couldn't load issues",
+    "truncated": "Showing the {{limit}} most recently active issues",
+    "sub_issue_progress": "Sub-issues done: {{done}} of {{total}}",
+    "deliverables": "Files: {{count}}"
   }
 }

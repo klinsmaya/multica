@@ -1241,6 +1241,7 @@ describe("thread summary realtime updates", () => {
     issue_id: issueA,
     reply_count: 2,
     last_reply_at: "2026-10-01T00:00:00Z",
+    last_reply_excerpt: "older reply",
     open_thread_count: 1,
     participants: [
       { type: "agent", id: "agent-1" },
@@ -1272,6 +1273,7 @@ describe("thread summary realtime updates", () => {
       issue_id: issueA,
       reply_count: 3,
       last_reply_at: "2026-10-02T00:00:00Z",
+      last_reply_excerpt: "hi",
       open_thread_count: 2,
       participants: [
         { type: "member", id: "user-1" },
@@ -1348,6 +1350,17 @@ describe("thread summary realtime updates", () => {
     );
 
     expect(rowA()?.last_reply_at).toBe("2026-10-01T00:00:00Z");
+    expect(rowA()?.last_reply_excerpt).toBe("older reply");
+  });
+
+  it("sets the excerpt from the newest comment with mentions flattened", () => {
+    onCommentCreatedPatchThreadSummaries(
+      qc,
+      WS_ID,
+      makeComment({ content: "Thanks [@Ada](mention://member/6f1c0a52-0000-4000-8000-000000000001)\n\nlooks good" }),
+    );
+
+    expect(rowA()?.last_reply_excerpt).toBe("Thanks @Ada looks good");
   });
 
   it("skips system-authored, system-type and deleted comments", () => {
@@ -1382,6 +1395,7 @@ describe("thread summary realtime updates", () => {
       issue_id: issueB,
       reply_count: 1,
       last_reply_at: "2026-10-02T00:00:00Z",
+      last_reply_excerpt: "hi",
       open_thread_count: 1,
       participants: [{ type: "agent", id: "agent-9" }],
       last_read_at: null,

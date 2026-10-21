@@ -194,5 +194,20 @@
     "empty": "このプロジェクトにはまだ自動化がありません",
     "next_run": "次回 {{time}}",
     "last_run": "前回の実行 {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "対応待ち",
+    "group_running": "実行中",
+    "group_idle": "待機中",
+    "group_resolved": "解決済み",
+    "empty_needs_you": "対応待ちのタスクはありません",
+    "empty_running": "作業中のエージェントはいません",
+    "empty_idle": "待機中のタスクはありません",
+    "empty_resolved": "解決済みのタスクはまだありません",
+    "empty_project": "このプロジェクトにはまだタスクがありません",
+    "load_failed": "タスクを読み込めませんでした",
+    "truncated": "最近動きのあった {{limit}} 件のタスクを表示しています",
+    "sub_issue_progress": "サブタスク {{done}}/{{total}} 完了",
+    "deliverables": "ファイル: {{count}}"
   }
 }

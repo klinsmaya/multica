@@ -156,6 +156,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     issue_id: "issue-1",
     reply_count: 0,
     last_reply_at: null,
+    last_reply_excerpt: null,
     open_thread_count: 0,
     participants: [],
     last_read_at: null,

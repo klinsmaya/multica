@@ -194,5 +194,20 @@
     "empty": "이 프로젝트에는 아직 자동화가 없습니다",
     "next_run": "다음 {{time}}",
     "last_run": "마지막 실행 {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "확인 필요",
+    "group_running": "진행 중",
+    "group_idle": "대기 중",
+    "group_resolved": "해결됨",
+    "empty_needs_you": "확인할 작업이 없습니다",
+    "empty_running": "작업 중인 에이전트가 없습니다",
+    "empty_idle": "대기 중인 작업이 없습니다",
+    "empty_resolved": "해결된 작업이 아직 없습니다",
+    "empty_project": "이 프로젝트에는 아직 작업이 없습니다",
+    "load_failed": "작업을 불러오지 못했습니다",
+    "truncated": "최근 활동이 있는 작업 {{limit}}개를 표시합니다",
+    "sub_issue_progress": "하위 작업 {{done}}/{{total}} 완료",
+    "deliverables": "파일: {{count}}"
   }
 }

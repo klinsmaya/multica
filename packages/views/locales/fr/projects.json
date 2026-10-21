@@ -196,5 +196,20 @@
     "empty": "Aucune automatisation dans ce projet",
     "next_run": "Prochaine : {{time}}",
     "last_run": "Dernière exécution : {{time}}"
+  },
+  "overview": {
+    "group_needs_you": "À traiter",
+    "group_running": "En cours",
+    "group_idle": "Inactives",
+    "group_resolved": "Résolues",
+    "empty_needs_you": "Rien n'attend votre réponse",
+    "empty_running": "Aucun agent au travail",
+    "empty_idle": "Aucune tâche inactive",
+    "empty_resolved": "Aucune tâche résolue pour l'instant",
+    "empty_project": "Ce projet n'a pas encore de tâches",
+    "load_failed": "Impossible de charger les tâches",
+    "truncated": "Affichage des {{limit}} tâches les plus récemment actives",
+    "sub_issue_progress": "Sous-tâches terminées : {{done}} sur {{total}}",
+    "deliverables": "Fichiers : {{count}}"
   }
 }

@@ -1128,6 +1128,7 @@ describe("ApiClient schema fallback", () => {
           issue_id: "issue-1",
           reply_count: 0,
           last_reply_at: null,
+          last_reply_excerpt: null,
           open_thread_count: 0,
           participants: [],
           last_read_at: null,
@@ -1212,6 +1213,26 @@ describe("ApiClient schema fallback", () => {
         ["queued", "none"],
         ["open", "none"],
       ]);
+    });
+
+    it("keeps the last reply excerpt and nulls an explicit null", async () => {
+      stubFetchJson({
+        summaries: [
+          { issue_id: "issue-1", last_reply_excerpt: "Looks good" },
+          { issue_id: "issue-2", last_reply_excerpt: null },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries.map((s) => s.last_reply_excerpt)).toEqual(["Looks good", null]);
+    });
+
+    it("falls back to no summaries when last_reply_excerpt is malformed", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", last_reply_excerpt: 5 }] });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
     });
 
     it("keeps an explicit null last_deliverable_at", async () => {
