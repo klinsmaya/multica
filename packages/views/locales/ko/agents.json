@@ -649,6 +649,19 @@
       "started_prefix": "{{when}} 시작됨",
       "dispatched_prefix": "{{when}} 디스패치됨",
       "queued_prefix": "{{when}} 대기 시작"
+    },
+    "open_connector_mcp": {
+      "heading": "Open Connector",
+      "loading": "연결을 불러오는 중…",
+      "load_failed": "연결된 앱을 불러오지 못했습니다. 잠시 후 다시 시도하세요.",
+      "empty_title": "연결된 앱이 아직 없습니다",
+      "toggle_aria": "이 에이전트에 {{service}} 허용",
+      "saving": "저장 중…",
+      "save_failed_toast": "저장하지 못했습니다. 다시 시도하세요",
+      "redacted_title": "구성됨 — 표시되지 않음",
+      "redacted_hint": "에이전트가 사용할 수 있는 앱은 생성자만 보거나 변경할 수 있습니다.",
+      "shared_warning": "이 에이전트는 공유되어 있습니다. 실행할 수 있는 사람은 여기서 활성화한 Open Connector 앱을 사용할 수 있습니다.",
+      "workspace_warning": "워크스페이스 공개: 모든 워크스페이스 멤버가 이 에이전트를 통해 이러한 Open Connector 앱을 사용할 수 있습니다."
     }
   },
   "char_counter": {
@@ -696,7 +709,8 @@
     "public_group": "공개 액세스",
     "owner_only_readonly": "이 에이전트를 실행할 수 있는 대상은 소유자만 변경할 수 있습니다.",
     "members_empty": "선택할 워크스페이스 구성원이 없습니다",
-    "composio_switch_hint": "참고 — 이 에이전트에는 Composio 앱이 활성화되어 있습니다. 공유하면 접근 권한이 있는 모든 사람이 이 에이전트를 통해 해당 앱을 사용할 수 있습니다."
+    "composio_switch_hint": "참고 — 이 에이전트에는 Composio 앱이 활성화되어 있습니다. 공유하면 접근 권한이 있는 모든 사람이 이 에이전트를 통해 해당 앱을 사용할 수 있습니다.",
+    "connector_switch_hint": "알림: 이 에이전트에는 Open Connector 앱이 활성화되어 있습니다. 공유하면 접근 권한이 있는 모든 사람이 이 에이전트를 통해 해당 앱을 사용할 수 있습니다."
   },
   "profile_card": {
     "unavailable": "에이전트를 사용할 수 없습니다",

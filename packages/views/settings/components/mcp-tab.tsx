@@ -39,7 +39,7 @@ import {
   SettingsTab,
 } from "./settings-layout";
 import { AppLink, useOptionalNavigation } from "../../navigation";
-import { useComposioAvailable } from "./connected-apps-tab";
+import { useConnectedAppsAvailable } from "./connected-apps-tab";
 import { settingsHref } from "./settings-navigation";
 
 /**
@@ -362,7 +362,7 @@ export function McpTab() {
 function ToolSourcesOverview() {
   const { t } = useT("settings");
   const navigation = useOptionalNavigation();
-  const appsAvailable = useComposioAvailable();
+  const appsAvailable = useConnectedAppsAvailable();
   const tabHref = (tab: string) =>
     navigation
       ? settingsHref(navigation.pathname, navigation.searchParams, tab)

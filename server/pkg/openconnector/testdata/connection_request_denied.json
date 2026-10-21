@@ -1,0 +1,1 @@
+{"success":true,"message":"OK","data":{"connectionRequestId":"859c5953-e0e6-4780-8c88-faeddcd5a981","service":"github","status":"failed","appId":null,"errorCode":"invalid_input","errorMessage":"Authorization was denied.","expiresAt":"2026-10-20T17:14:42.360Z","createdAt":1792515882360,"updatedAt":1792515956166},"meta":{}}

@@ -848,6 +848,13 @@ func main() {
 	if err := schedulerMgr.Register(scheduler.AutopilotScheduleDispatchJob(pool, queries, autopilotSvc)); err != nil {
 		slog.Warn("scheduler: failed to register autopilot_schedule_dispatch job", "error", err)
 	}
+	// Connector runtime tokens are released best-effort at task terminal; this
+	// job retries the ones that failed. Without providers there is nothing to do.
+	if len(taskSvc.ConnectorProviders) > 0 {
+		if err := schedulerMgr.Register(scheduler.ConnectorResourceReleaseJob(taskSvc)); err != nil {
+			slog.Warn("scheduler: failed to register connector_resource_release job", "error", err)
+		}
+	}
 	// Manifest-declared Plugin schedules share the same durable lease and retry
 	// machinery. The job is inert while plugins_v1 is disabled.
 	if err := schedulerMgr.Register(scheduler.PluginHookScheduleDispatchJob(queries, h.PluginService)); err != nil {

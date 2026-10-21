@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/analytics"
 	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/runtimeapps"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
@@ -175,12 +176,12 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 	wakeup := &stubWakeup{}
 	createdOverlay := json.RawMessage(`{"mcpServers":{"creator":{"url":"https://creator.example"}}}`)
 	taskService := &TaskService{
-		Queries:      q,
-		TxStarter:    pool,
-		Bus:          bus,
-		Composio:     &stubOverlayBuilder{resp: createdOverlay},
-		FeatureFlags: composioMCPAppsTestFlags(true),
-		Wakeup:       wakeup,
+		Queries:            q,
+		TxStarter:          pool,
+		Bus:                bus,
+		ConnectorProviders: []runtimeapps.ConnectorProvider{&stubOverlayBuilder{resp: createdOverlay}},
+		FeatureFlags:       composioMCPAppsTestFlags(true),
+		Wakeup:             wakeup,
 	}
 	var competingTaskID pgtype.UUID
 	var competingErr error
@@ -510,9 +511,9 @@ func TestHydrateDeferredChannelIssueTaskOverlayDoesNotOverwriteMergedCommentPlan
 		resp: json.RawMessage(`{"mcpServers":{"stale":{"url":"https://stale.example"}}}`),
 	}
 	hydratingService := &TaskService{
-		Queries:      q,
-		Composio:     hydrationBuilder,
-		FeatureFlags: composioMCPAppsTestFlags(true),
+		Queries:            q,
+		ConnectorProviders: []runtimeapps.ConnectorProvider{hydrationBuilder},
+		FeatureFlags:       composioMCPAppsTestFlags(true),
 	}
 	if err := hydratingService.hydrateDeferredChannelIssueTaskOverlay(ctx, task); err != nil {
 		t.Fatalf("hydrateDeferredChannelIssueTaskOverlay: %v", err)

@@ -1,0 +1,1 @@
+{"success":true,"message":"OK","data":{"service":"17track","auth":[{"type":"api_key","fields":[{"key":"apiKey","label":"API Key","inputType":"password","required":true,"secret":true,"placeholder":"17TRACK_API_KEY","description":"17TRACK API key sent in the 17token header. Get or change the key in 17TRACK API Settings: https://api.17track.net/admin/settings."}]}]},"meta":{}}
