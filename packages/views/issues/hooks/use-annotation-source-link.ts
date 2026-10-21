@@ -11,8 +11,9 @@ import { useOptionalNavigation } from "../../navigation/context";
 /**
  * Resolver for `composeAnnotatedReply`: the `#comment-<id>` deep link that
  * `IssueDetailRoute` scrolls to and highlights, built like the issue's
- * "copy comment link" action. Composers can mount outside a workspace route
- * or navigation provider, where it degrades to "no link".
+ * "copy comment link" action; a quoted file links to its preview page.
+ * Composers can mount outside a workspace route or navigation provider, where
+ * it degrades to "no link".
  */
 export function useAnnotationSourceLink(issueId: string) {
   const queryClient = useQueryClient();
@@ -23,6 +24,11 @@ export function useAnnotationSourceLink(issueId: string) {
   return useCallback(
     (annotation: ReplyAnnotation) => {
       if (!slug || !navigation) return null;
+      // A quoted file links to its standalone preview page.
+      if (annotation.source?.type === "attachment") {
+        const preview = paths.workspace(slug).attachmentPreview(annotation.source.id);
+        return navigation.getShareableUrl(`${preview}?name=${encodeURIComponent(annotation.source.filename)}`);
+      }
       // Cache-only read: the identifier form is the shareable one, and the
       // composer never needs to fetch the issue just to label a quote.
       const identifier = wsId

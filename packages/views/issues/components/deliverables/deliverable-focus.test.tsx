@@ -30,6 +30,9 @@ vi.mock("../../../editor/hooks/use-inline-media-url", () => ({
 vi.mock("@multica/core/workspace/avatar-url", () => ({ resolvePublicFileUrl: (url: string) => url }));
 vi.mock("../../../platform", () => ({ useImmersiveMode: () => {} }));
 vi.mock("../../../navigation", () => ({ useNavigation: () => ({}) }));
+vi.mock("@multica/core/auth", () => ({
+  useAuthStore: (select: (s: { user: { id: string } }) => unknown) => select({ user: { id: "user-1" } }),
+}));
 vi.mock("@multica/core/paths", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useWorkspaceSlug: () => "acme",

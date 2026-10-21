@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { isImeComposing } from "@multica/core/utils";
 import { Button } from "@multica/ui/components/ui/button";
 import { useCommentDraftStore, type CommentDraftKey } from "@multica/core/issues/stores";
-import { MAX_ANNOTATION_QUOTE_LENGTH, MAX_REPLY_ANNOTATIONS, type ReplyAnnotation } from "@multica/core/drafts/reply-annotation";
+import { MAX_ANNOTATION_QUOTE_LENGTH, MAX_REPLY_ANNOTATIONS, type ReplyAnnotation, type ReplyAnnotationSource } from "@multica/core/drafts/reply-annotation";
 import { useT } from "../../i18n";
 import { annotationRange, captureCommentSelection, findAnnotationSource } from "./comment-annotation-selection";
 import { CommentSelectionBubble } from "./comment-selection-bubble";
@@ -14,13 +14,15 @@ import { CommentSelectionBubble } from "./comment-selection-bubble";
 type CapturedSelection = NonNullable<ReturnType<typeof captureCommentSelection>>;
 type SourceAnchor = { id: string; range: Range; root: HTMLElement };
 
-export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, editable = false }: {
+export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, editable = false, container }: {
   draftKey: CommentDraftKey;
-  sources: { id: string; name: string; revision?: number }[];
+  sources: { id: string; name: string; revision?: number; source?: ReplyAnnotationSource }[];
   enabled: boolean;
   onAdded?: () => void;
   /** Editable descriptions use their existing toolbar to call addSelection. */
   editable?: boolean;
+  /** Where popups mount; defaults to document.body. */
+  container?: HTMLElement | null;
 }) {
   const { t } = useT("issues");
   const cardRef = useRef<HTMLDivElement>(null);
@@ -197,7 +199,7 @@ export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, edi
     setSelection(captured);
     const next = duplicate ?? {
       id: crypto.randomUUID(), sourceCommentId, sourceActorName: source.name,
-      sourceRevision: source.revision, quote, start, prefix, suffix, note: "",
+      sourceRevision: source.revision, ...(source.source ? { source: source.source } : {}), quote, start, prefix, suffix, note: "",
     };
     pendingFocusId.current = next.id;
     setEditor({ annotation: next, existing: !!duplicate });
@@ -254,7 +256,7 @@ export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, edi
       {enabled && anchors.map((anchor) => {
         const index = annotations.findIndex((a) => a.id === anchor.id);
         if (index < 0) return null;
-        return <CommentSelectionBubble key={anchor.id} range={anchor.range} source={anchor.root} owner={draftKey}
+        return <CommentSelectionBubble key={anchor.id} range={anchor.range} source={anchor.root} owner={draftKey} container={container}
           markerRanges={markerRanges.get(anchor.root)}>
           <Button variant="brandSubtle" size="icon-sm" className="size-6 rounded-full text-caption tabular-nums aria-expanded:ring-2 aria-expanded:ring-brand"
             aria-expanded={editingId === anchor.id}
@@ -262,7 +264,7 @@ export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, edi
             onClick={() => editAnnotation(anchor.id)}>{index + 1}</Button>
         </CommentSelectionBubble>;
       })}
-      {enabled && selection && <CommentSelectionBubble range={selection.range} source={selection.root} owner={draftKey} onPositioned={focusNote}>
+      {enabled && selection && <CommentSelectionBubble range={selection.range} source={selection.root} owner={draftKey} container={container} onPositioned={focusNote}>
         <div className="bubble-menu max-w-[calc(100vw-16px)] focus-within:outline-1 focus-within:outline-ring">
           {editing ? <div className="flex w-80 max-w-[calc(100vw-26px)] flex-col gap-1"><textarea ref={inputRef} value={editing.note} rows={Math.min(4, Math.max(1, editing.note.split("\n").length))}
             aria-label={t(($) => $.reply.annotations.note_label)}
@@ -294,7 +296,9 @@ export function useCommentAnnotations({ draftKey, sources, enabled, onAdded, edi
             </div>
             </div> : <Button ref={actionRef} variant="ghost" size="sm"
               onMouseDown={(event) => event.preventDefault()} onClick={() => add(selection)}>
-              <MessageSquarePlus />{t(($) => editable ? $.reply.annotations.add_comment : $.reply.annotations.add)}
+              <MessageSquarePlus />{t(($) => sourcesRef.current.find((s) => s.id === selection.sourceCommentId)?.source
+                ? $.reply.annotations.add_document
+                : editable ? $.reply.annotations.add_comment : $.reply.annotations.add)}
             </Button>}
         </div>
         {error && <p role="alert" className="mt-1 max-w-72 rounded-lg bg-popover p-2 text-caption text-destructive shadow-[var(--menu-shadow)]">

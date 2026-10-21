@@ -19,6 +19,19 @@ beforeEach(() => {
 });
 
 describe("reply annotation summary", () => {
+  it("names the file a quote comes from, and only then", async () => {
+    const user = userEvent.setup();
+    useCommentDraftStore.getState().addAnnotation(draftKey, {
+      ...annotation, id: "two", sourceCommentId: "attachment:att-1", sourceActorName: "report.md", quote: "Doc text", start: 5,
+      source: { type: "attachment", id: "att-1", filename: "report.md" },
+    });
+    renderWithI18n(<Fixture />);
+    await user.hover(screen.getByRole("button", { name: "2 annotations" }));
+    expect(await screen.findByText("Doc text")).toBeVisible();
+    expect(screen.getAllByText("report.md")).toHaveLength(1);
+    expect(screen.getByText("Source text").closest("button")).not.toHaveTextContent("report.md");
+  });
+
   it("opens on hover in a portal and returns to the source without expanding the composer", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn(() => true);

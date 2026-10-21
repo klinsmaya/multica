@@ -651,6 +651,7 @@
       "confirm_add": "주석 추가",
       "save": "주석 저장",
       "add_comment": "댓글에 추가",
+      "add_document": "주석 달기",
       "add": "답글에 추가",
       "note_label": "코멘트",
       "count_other": "주석 {{count}}개",

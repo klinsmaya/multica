@@ -673,6 +673,7 @@ function PreviewPanel({
   locate,
   onOpenOverview,
   extraActions,
+  annotationSource,
   renderHtmlFrame = renderViewerHtmlFrame,
   initialHtmlAddress = "",
   onHtmlAddressChange,
@@ -693,6 +694,8 @@ function PreviewPanel({
   onOpenOverview?: () => void;
   /** Host controls at the end of the top bar, before the close button. */
   extraActions?: ReactNode;
+  /** Marks a Markdown or text body as a quotable source (`data-comment-content`). */
+  annotationSource?: string;
   renderHtmlFrame?: HtmlFrameRenderer;
   /** Query and fragment an HTML file opens at. */
   initialHtmlAddress?: string;
@@ -1047,6 +1050,7 @@ function PreviewPanel({
               source={source}
               state={state}
               view={view}
+              annotationSource={annotationSource}
               onDownload={onDownload}
               onBackdropClick={closeOnBackdrop}
             />
@@ -1316,6 +1320,7 @@ function PreviewContent({
   source,
   state,
   view,
+  annotationSource,
   onDownload,
   onBackdropClick,
 }: {
@@ -1323,6 +1328,7 @@ function PreviewContent({
   source: PreviewSource;
   state: PreviewState;
   view: StageView;
+  annotationSource?: string;
   onDownload: () => void;
   onBackdropClick: (e: React.MouseEvent) => void;
 }) {
@@ -1351,8 +1357,11 @@ function PreviewContent({
     );
   }
 
-  const code = (text: string, language: string | undefined) => (
-    <DocumentSheet width="code" onBackdropClick={onBackdropClick}>
+  const quotable = (body: ReactNode) =>
+    annotationSource ? <div data-comment-content={annotationSource}>{body}</div> : body;
+
+  const code = (text: string, language: string | undefined, quote = false) => {
+    const block = (
       <CodeBlockStatic
         language={language}
         body={text}
@@ -1360,8 +1369,13 @@ function PreviewContent({
         wrap={view.wrap}
         className="min-h-full"
       />
-    </DocumentSheet>
-  );
+    );
+    return (
+      <DocumentSheet width="code" onBackdropClick={onBackdropClick}>
+        {quote ? quotable(block) : block}
+      </DocumentSheet>
+    );
+  };
 
   switch (kind) {
     case "pdf":
@@ -1397,11 +1411,13 @@ function PreviewContent({
           onDownload={onDownload}
           render={(text) => (
             <DocumentSheet width="prose" onBackdropClick={onBackdropClick}>
-              <ReadonlyContent
-                content={text}
-                className="px-10 py-8"
-                attachments={source.kind === "full" ? [source.attachment] : []}
-              />
+              {quotable(
+                <ReadonlyContent
+                  content={text}
+                  className="px-10 py-8"
+                  attachments={source.kind === "full" ? [source.attachment] : []}
+                />,
+              )}
             </DocumentSheet>
           )}
         />
@@ -1481,7 +1497,7 @@ function PreviewContent({
         <TextBackedPreview
           attachmentId={state.attachmentId!}
           onDownload={onDownload}
-          render={(text) => code(text, extensionToLanguage(state.filename))}
+          render={(text) => code(text, extensionToLanguage(state.filename), true)}
         />
       );
   }
@@ -1654,12 +1670,15 @@ export function AttachmentPreviewPanel({
   sequence,
   titleAccessory,
   extraActions,
+  annotationSource,
   onClose,
 }: {
   attachment: Attachment;
   sequence?: PreviewSequence;
   titleAccessory?: ReactNode;
   extraActions?: ReactNode;
+  /** See PreviewPanel: lets the host quote Markdown and text bodies. */
+  annotationSource?: string;
   onClose: () => void;
 }) {
   const download = useDownloadAttachment();
@@ -1681,6 +1700,7 @@ export function AttachmentPreviewPanel({
       reduceMotion={shouldReduceMotion}
       titleAccessory={titleAccessory}
       extraActions={extraActions}
+      annotationSource={annotationSource}
     />
   );
 }

@@ -100,6 +100,49 @@ describe("source links on quoted replies", () => {
   });
 });
 
+describe("attachment sources", () => {
+  const file = {
+    ...annotation, sourceCommentId: "attachment:att-1", sourceActorName: "report.md",
+    source: { type: "attachment" as const, id: "att-1", filename: "report.md" },
+  };
+  const href = "https://app.example/acme/attachments/att-1/preview?name=report.md";
+
+  it("attributes the quote to the file, linked when the resolver can", () => {
+    expect(composeAnnotatedReply("", [file], (a) => a.source ? href : null)).toBe(
+      `> first\n> second\n>\n> — [report&#46;md](${href})\n\nPlease revise.`,
+    );
+  });
+
+  it("falls back to the plain file name without a link", () => {
+    const plain = "> first\n> second\n>\n> — report&#46;md\n\nPlease revise.";
+    expect(composeAnnotatedReply("", [file])).toBe(plain);
+    expect(composeAnnotatedReply("", [file], () => null)).toBe(plain);
+    expect(composeAnnotatedReply("", [file], () => "mention://agent/x")).toBe(plain);
+  });
+
+  it("lets the resolver branch on the source", () => {
+    const seen: (string | undefined)[] = [];
+    composeAnnotatedReply("", [annotation, file], (a) => { seen.push(a.source?.id); return null; });
+    expect(seen).toEqual([undefined, "att-1"]);
+  });
+
+  it("keeps the file name inert", () => {
+    const named = { ...file, source: { ...file.source, filename: "[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\nb.md" } };
+    const content = composeAnnotatedReply("", [named]);
+    expect(parseMentions(content)).toHaveLength(0);
+    expect(content).not.toContain("mention://");
+  });
+
+  it("preserves a valid source and drops an unreadable one without losing the annotation", () => {
+    expect(normalizeReplyAnnotations([file])).toEqual([file]);
+    const { source: _source, ...bare } = file;
+    for (const bad of [{ type: "attachment", id: "x" }, { type: "url", id: "x", filename: "f" }, "att-1", null]) {
+      expect(normalizeReplyAnnotations([{ ...file, source: bad }])).toEqual([bare]);
+    }
+    expect(normalizeReplyAnnotations([annotation])).toEqual([annotation]);
+  });
+});
+
 describe("quote anchors", () => {
   const anchor = { ...annotation, quote: "same", prefix: "left ", suffix: " right", start: 5 };
   it("relocates a unique quote with unchanged context", () => {

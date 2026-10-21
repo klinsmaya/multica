@@ -1181,6 +1181,8 @@ interface IssueDetailProps {
   belowHeader?: ReactNode;
   /** Thread only: the deliverable the host is showing; the reply box offers to reference it. */
   replyContext?: { attachmentId: string; filename: string };
+  /** Thread: returns an annotation chip to a source the host renders (a file beside the thread). */
+  onEditAnnotationSource?: (annotationId: string) => boolean;
 }
 
 // Not found
@@ -1312,7 +1314,7 @@ export function IssueDetailSkeleton({
 /** How long an issue must stay open before it counts as read. */
 const MARK_READ_DELAY_MS = 1500;
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader, replyContext }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader, replyContext, onEditAnnotationSource }: IssueDetailProps) {
   const isThread = variant === "thread";
   // The thread is a peek with the content sections removed, so every
   // single-column switch below applies to it as well.
@@ -3992,7 +3994,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               issueId={id}
               onSubmit={submitComment}
               onAccepted={scrollToTimelineBottom}
-              onEditAnnotation={(annotationId) => descriptionAnnotations.editAnnotation(annotationId, true)}
+              onEditAnnotation={(annotationId) => descriptionAnnotations.editAnnotation(annotationId, true) || !!onEditAnnotationSource?.(annotationId)}
               replyContext={isThread ? replyContext : undefined}
             />
           </div>

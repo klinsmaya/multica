@@ -1,8 +1,16 @@
+/** A quoted deliverable file. Comments and descriptions carry no `source`. */
+export interface ReplyAnnotationSource {
+  type: "attachment";
+  id: string;
+  filename: string;
+}
+
 /** Private, workspace-scoped reply metadata. Published replies remain Markdown. */
 export interface ReplyAnnotation {
   id: string;
-  /** Local source key. Descriptions use description:<issueId>, never a reply target. */
+  /** Local source key. Descriptions use description:<issueId>, files attachment:<attachmentId>; never a reply target. */
   sourceCommentId: string;
+  source?: ReplyAnnotationSource;
   sourceActorName: string;
   sourceRevision?: number;
   quote: string;
@@ -17,6 +25,17 @@ export const MAX_REPLY_ANNOTATIONS = 20;
 export const MAX_ANNOTATION_QUOTE_LENGTH = 4000;
 export const EMPTY_REPLY_ANNOTATIONS: ReplyAnnotation[] = [];
 
+function isAttachmentSource(value: unknown): value is ReplyAnnotationSource {
+  const source = value as Partial<ReplyAnnotationSource> | null;
+  return !!source && typeof source === "object" && source.type === "attachment" &&
+    typeof source.id === "string" && !!source.id &&
+    typeof source.filename === "string" && !!source.filename.trim();
+}
+
+function withoutSource({ source: _source, ...rest }: ReplyAnnotation): ReplyAnnotation {
+  return rest;
+}
+
 export function normalizeReplyAnnotations(value: unknown): ReplyAnnotation[] {
   if (!Array.isArray(value)) return EMPTY_REPLY_ANNOTATIONS;
   const valid = value.filter((a): a is ReplyAnnotation =>
@@ -27,7 +46,9 @@ export function normalizeReplyAnnotations(value: unknown): ReplyAnnotation[] {
     typeof a.note === "string" && a.note.trim().length > 0 && Number.isInteger(a.start) && a.start >= 0 &&
     typeof a.prefix === "string" && typeof a.suffix === "string" &&
     (a.sourceRevision === undefined || Number.isInteger(a.sourceRevision)),
-  ).slice(0, MAX_REPLY_ANNOTATIONS);
+  ).slice(0, MAX_REPLY_ANNOTATIONS)
+    // An unreadable source is dropped, not the annotation: the quote is still usable.
+    .map((a) => a.source === undefined || isAttachmentSource(a.source) ? a : withoutSource(a));
   return valid.length ? valid : EMPTY_REPLY_ANNOTATIONS;
 }
 
@@ -55,17 +76,21 @@ function quoteText(text: string): string {
 
 const DESCRIPTION_SOURCE_PREFIX = "description:";
 
-/** Resolves a link to an annotation's source, or null when there is none. */
+/** Resolves a link to an annotation's source (branch on `annotation.source`), or null when there is none. */
 export type ReplyAnnotationSourceLink = (annotation: ReplyAnnotation) => string | null;
 
 /** Quote line pointing back at the source comment; null when it cannot link. */
 function sourceAttribution(annotation: ReplyAnnotation, sourceLink?: ReplyAnnotationSourceLink): string | null {
-  if (!sourceLink || annotation.sourceCommentId.startsWith(DESCRIPTION_SOURCE_PREFIX)) return null;
-  const href = sourceLink(annotation)?.trim();
+  const file = annotation.source?.type === "attachment";
+  // A file is always named; a comment or description only when it can be linked.
+  if (!file && (!sourceLink || annotation.sourceCommentId.startsWith(DESCRIPTION_SOURCE_PREFIX))) return null;
+  const href = sourceLink?.(annotation)?.trim();
   // Only http(s) and in-app paths: a resolver must never publish a mention:// link.
-  if (!href || !/^(https?:\/\/|\/(?!\/))/i.test(href)) return null;
-  const label = quoteText(annotation.sourceActorName.replace(/\s+/g, " ").trim()) || "↗";
-  const target = href.replace(/[()<>\s]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+  const safeHref = href && /^(https?:\/\/|\/(?!\/))/i.test(href) ? href : null;
+  const name = (file ? annotation.source!.filename : annotation.sourceActorName).replace(/\s+/g, " ").trim();
+  if (!safeHref) return file && name ? `> — ${quoteText(name)}` : null;
+  const label = quoteText(name) || "↗";
+  const target = safeHref.replace(/[()<>\s]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
   return `> — [${label}](${target})`;
 }
 

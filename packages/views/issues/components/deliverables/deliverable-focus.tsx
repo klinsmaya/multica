@@ -16,13 +16,13 @@ import {
 import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../../i18n";
 import {
-  AttachmentPreviewPanel,
   ChromeButton,
   ChromeDivider,
   ownsArrowKeys,
 } from "../../../editor";
 import { useImmersiveMode } from "../../../platform";
 import { IssueDetail } from "../issue-detail";
+import { AnnotatablePreviewPanel, useDocumentAnnotations } from "./document-annotations";
 import { VersionBadge } from "./version-badge";
 
 // The focus covers the whole window, drag strip included, so it opts out of
@@ -131,6 +131,7 @@ function DeliverableFocus({
 
   const attachment = current?.file.versions[current.version - 1];
   const title = attachment?.filename ?? "";
+  const documentAnnotations = useDocumentAnnotations({ issueId, attachment, enabled: discussionOpen });
 
   return (
     <>
@@ -138,7 +139,8 @@ function DeliverableFocus({
         {/* Names the dialog for assistive tech; the bar below shows it. */}
         <DialogTitle className="sr-only">{title || t(($) => $.deliverables.section_title)}</DialogTitle>
         {attachment && current ? (
-          <AttachmentPreviewPanel
+          <AnnotatablePreviewPanel
+            documentAnnotations={documentAnnotations}
             attachment={attachment}
             sequence={{ index, total: files.length, onPrev, onNext }}
             titleAccessory={
@@ -177,6 +179,7 @@ function DeliverableFocus({
             issueId={issueId}
             variant="thread"
             replyContext={attachment ? { attachmentId: attachment.id, filename: attachment.filename } : undefined}
+            onEditAnnotationSource={documentAnnotations.editSource}
           />
         </aside>
       )}
