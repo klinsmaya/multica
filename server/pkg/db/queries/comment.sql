@@ -954,17 +954,35 @@ FOR UPDATE OF c;
 -- name: ListIssueThreadSummaries :many
 -- Per-issue comment rollup for the project feed. System rows (platform
 -- notices) and soft-deleted comments are not conversation, so they are not
--- counted. A thread is open when its root comment is unresolved.
-SELECT issue_id,
-       COUNT(*)::bigint AS reply_count,
-       MAX(created_at)::timestamptz AS last_reply_at,
-       COUNT(*) FILTER (WHERE parent_id IS NULL AND resolved_at IS NULL)::bigint AS open_thread_count
-FROM comment
-WHERE workspace_id = sqlc.arg('workspace_id')
-  AND issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
-  AND deleted_at IS NULL
-  AND author_type <> 'system'
-GROUP BY issue_id;
+-- counted. A thread is open when its root comment is unresolved. The newest
+-- counted comment's body is returned (capped) for the caller to flatten into
+-- a one-line excerpt.
+SELECT s.issue_id,
+       s.reply_count,
+       s.last_reply_at,
+       s.open_thread_count,
+       l.content AS last_reply_content
+FROM (
+    SELECT cm.issue_id,
+           COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at)::timestamptz AS last_reply_at,
+           COUNT(*) FILTER (WHERE cm.parent_id IS NULL AND cm.resolved_at IS NULL)::bigint AS open_thread_count
+    FROM comment cm
+    WHERE cm.workspace_id = sqlc.arg('workspace_id')
+      AND cm.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+    GROUP BY cm.issue_id
+) s
+CROSS JOIN LATERAL (
+    SELECT LEFT(c.content, 2000)::text AS content
+    FROM comment c
+    WHERE c.issue_id = s.issue_id
+      AND c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY c.created_at DESC, c.id DESC
+    LIMIT 1
+) l;
 
 -- name: ListIssueThreadParticipants :many
 -- Distinct commenters per issue, most recently active first; the caller keeps

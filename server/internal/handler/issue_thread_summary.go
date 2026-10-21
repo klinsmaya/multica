@@ -29,6 +29,9 @@ const (
 	issueAwaitingMeExcerptRunes = 140
 )
 
+// Runes kept of the newest comment for last_reply_excerpt.
+const issueLastReplyExcerptRunes = 80
+
 // Linked PRs listed per issue on the output strip, newest first.
 const issueThreadSummaryPullRequestLimit = 3
 
@@ -46,11 +49,14 @@ type ThreadParticipantResponse struct {
 }
 
 type IssueThreadSummaryResponse struct {
-	IssueID         string                      `json:"issue_id"`
-	ReplyCount      int64                       `json:"reply_count"`
-	LastReplyAt     *string                     `json:"last_reply_at"`
-	OpenThreadCount int64                       `json:"open_thread_count"`
-	Participants    []ThreadParticipantResponse `json:"participants"`
+	IssueID     string  `json:"issue_id"`
+	ReplyCount  int64   `json:"reply_count"`
+	LastReplyAt *string `json:"last_reply_at"`
+	// LastReplyExcerpt is the newest counted comment flattened to one line
+	// (mentions collapsed to "@Label"); null when the issue has none.
+	LastReplyExcerpt *string                     `json:"last_reply_excerpt"`
+	OpenThreadCount  int64                       `json:"open_thread_count"`
+	Participants     []ThreadParticipantResponse `json:"participants"`
 	// LastReadAt is the caller's own read cursor on the issue; null when the
 	// caller never opened it.
 	LastReadAt *string `json:"last_read_at"`
@@ -319,6 +325,9 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		if row != nil {
 			summary.ReplyCount = row.ReplyCount
 			summary.LastReplyAt = timestampToNanoPtr(row.LastReplyAt)
+			if excerpt := commentExcerpt(row.LastReplyContent, issueLastReplyExcerptRunes); excerpt != "" {
+				summary.LastReplyExcerpt = &excerpt
+			}
 			summary.OpenThreadCount = row.OpenThreadCount
 		}
 		if d, ok := deliverables[issueID]; ok {

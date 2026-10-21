@@ -118,6 +118,41 @@ func TestListIssueThreadSummaries_SystemCommentsAreNotCounted(t *testing.T) {
 	}
 }
 
+func TestListIssueThreadSummaries_LastReplyExcerptIsNewestCountedComment(t *testing.T) {
+	issueID := dbfx.Issue(t, "thread summary excerpt")
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	at := func(minutes int) time.Time { return base.Add(time.Duration(minutes) * time.Minute) }
+
+	dbfx.Comment(t, issueID, "older comment", testutil.Cols{"created_at": at(1)})
+	dbfx.Comment(t, issueID, "Ping [@Alice](mention://member/"+uuid.NewString()+")\n\nsee   [MUL-7](mention://issue/"+uuid.NewString()+") please", testutil.Cols{
+		"created_at": at(2),
+	})
+	// Newer, but a deleted comment and a platform notice are not conversation.
+	dbfx.Comment(t, issueID, "deleted reply", testutil.Cols{"created_at": at(3), "deleted_at": at(4)})
+	dbfx.Comment(t, issueID, "child done", testutil.Cols{
+		"author_type": "system", "author_id": uuid.Nil.String(), "type": "system", "created_at": at(5),
+	})
+
+	got := listThreadSummaries(t, issueID)
+	if len(got.Summaries) != 1 {
+		t.Fatalf("summaries = %+v, want exactly one row", got.Summaries)
+	}
+	excerpt := got.Summaries[0].LastReplyExcerpt
+	if excerpt == nil || *excerpt != "Ping @Alice see MUL-7 please" {
+		t.Errorf("last_reply_excerpt = %v, want %q", excerpt, "Ping @Alice see MUL-7 please")
+	}
+
+	long := dbfx.Issue(t, "thread summary long excerpt")
+	dbfx.Comment(t, long, strings.Repeat("word ", 60))
+	gotLong := listThreadSummaries(t, long)
+	if len(gotLong.Summaries) != 1 || gotLong.Summaries[0].LastReplyExcerpt == nil {
+		t.Fatalf("summaries = %+v, want one row with an excerpt", gotLong.Summaries)
+	}
+	if n := len([]rune(*gotLong.Summaries[0].LastReplyExcerpt)); n > issueLastReplyExcerptRunes+1 {
+		t.Errorf("excerpt has %d runes, want at most %d plus the ellipsis", n, issueLastReplyExcerptRunes)
+	}
+}
+
 func TestListIssueThreadSummaries_OtherWorkspaceAndEmptyIssuesYieldNoRow(t *testing.T) {
 	otherWorkspaceID := dbfx.Workspace(t, "Thread summaries other", "thread-summaries-"+uuid.NewString())
 	foreign := dbfx.Issue(t, "foreign issue", testutil.Cols{"workspace_id": otherWorkspaceID})
