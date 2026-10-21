@@ -73,6 +73,21 @@ vi.mock("react-virtuoso", () => ({
   }),
 }));
 
+const composerFocus = vi.hoisted(() => vi.fn());
+
+// The composer has its own tests; here it only reports a sent issue and
+// exposes the focus handle the quick actions call.
+vi.mock("./feed-composer", () => ({
+  FeedComposer: forwardRef(function MockComposer({ projectId, onSent }: any, ref) {
+    useImperativeHandle(ref, () => ({ focus: composerFocus }));
+    return (
+      <button data-testid="composer" onClick={() => onSent?.({ id: "sent" })}>
+        {projectId}
+      </button>
+    );
+  }),
+}));
+
 const navigation: NavigationAdapter = {
   push: vi.fn(),
   replace: vi.fn(),
@@ -119,7 +134,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
   };
 }
 
-function renderFeed(issues: Issue[]) {
+function renderFeed(issues: Issue[], projectId: string | null = null) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -127,7 +142,7 @@ function renderFeed(issues: Issue[]) {
     <QueryClientProvider client={queryClient}>
       <NavigationProvider value={navigation}>
         <IssuePeekActionsContext.Provider value={peek}>
-          <FeedView issues={current} projectId={null} />
+          <FeedView issues={current} projectId={projectId} />
         </IssuePeekActionsContext.Provider>
       </NavigationProvider>
     </QueryClientProvider>
@@ -258,16 +273,12 @@ describe("FeedView", () => {
     expect(screen.getByRole("button", { name: "New issue" })).toBeInTheDocument();
   });
 
-  it("focuses the composer input from the new-issue action when one exists", () => {
-    renderFeed([makeIssue({ id: "a" })]);
-    const input = document.createElement("textarea");
-    input.setAttribute("data-feed-composer-input", "");
-    document.body.appendChild(input);
+  it("focuses the composer from the new-issue action", () => {
+    renderFeed([makeIssue({ id: "a" })], "p-1");
 
     fireEvent.click(screen.getByRole("button", { name: "New issue" }));
 
-    expect(document.activeElement).toBe(input);
-    input.remove();
+    expect(composerFocus).toHaveBeenCalledTimes(1);
   });
 
   it("marks the open-thread count with the brand accent only when threads are open", async () => {
@@ -333,5 +344,34 @@ describe("FeedView", () => {
       expect(virtuoso.scrollToIndex).not.toHaveBeenCalled();
       expect(screen.queryByRole("button", { name: "New messages" })).not.toBeInTheDocument();
     });
+  });
+
+  it("mounts the composer only for a project, also under the empty state", () => {
+    const { unmount } = renderFeed([makeIssue({ id: "a" })]);
+    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
+    unmount();
+
+    renderFeed([], "p-1");
+    expect(screen.getByText("No issues in this feed")).toBeInTheDocument();
+    expect(screen.getByTestId("composer")).toHaveTextContent("p-1");
+  });
+
+  it("scrolls to the bottom once the sent issue reaches the list", () => {
+    const older = makeIssue({ id: "old", created_at: "2026-10-01T00:00:00Z" });
+    const { update } = renderFeed([older], "p-1");
+
+    fireEvent.click(screen.getByTestId("composer"));
+    expect(virtuoso.scrollToIndex).not.toHaveBeenCalled();
+
+    act(() => {
+      update([
+        older,
+        makeIssue({ id: "sent", created_at: "2026-10-02T00:00:00Z" }),
+      ]);
+    });
+    expect(virtuoso.scrollToIndex).toHaveBeenCalledWith(
+      expect.objectContaining({ index: "LAST", align: "end" }),
+    );
+
   });
 });

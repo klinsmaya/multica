@@ -29,6 +29,11 @@ export {
 export { useCommentComposerStore, type RunningAgentReply } from "./comment-composer-store";
 export { useCommentDraftStore, type CommentDraftKey } from "./comment-draft-store";
 export {
+  useFeedComposerStore,
+  feedComposerDraftKey,
+  type FeedComposerDraftKey,
+} from "./feed-composer-store";
+export {
   myIssuesViewStore,
   type MyIssuesViewState,
   type MyIssuesScope,

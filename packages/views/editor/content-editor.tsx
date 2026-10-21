@@ -136,6 +136,11 @@ interface ContentEditorBaseProps {
   className?: string;
   debounceMs?: number;
   onSubmit?: () => void;
+  /**
+   * Send on plain Enter instead of the configured send shortcut; Shift+Enter
+   * inserts a new paragraph. For chat-style composers only.
+   */
+  submitOnEnter?: boolean;
   onBlur?: () => void;
   /**
    * Upload transport. `uploadId` is minted by the editor when it inserts the
@@ -369,6 +374,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
       className,
       debounceMs = 300,
       onSubmit,
+      submitOnEnter = false,
       onBlur,
       onUploadFile,
       pasteAsFileThreshold,
@@ -397,6 +403,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     const pendingBaseRef = useRef<string | null>(null);
     const onUpdateRef = useRef(onUpdate);
     const onSubmitRef = useRef(onSubmit);
+    const submitOnEnterRef = useRef(submitOnEnter);
     const onBlurRef = useRef(onBlur);
     const onReadyRef = useRef(onReady);
     const onUploadingChangeRef = useRef(onUploadingChange);
@@ -506,6 +513,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     // Keep refs in sync without recreating editor
     onUpdateRef.current = onUpdate;
     onSubmitRef.current = onSubmit;
+    submitOnEnterRef.current = submitOnEnter;
     onBlurRef.current = onBlur;
     onReadyRef.current = onReady;
     onUploadingChangeRef.current = onUploadingChange;
@@ -608,6 +616,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
         placeholder: () => placeholderRef.current,
         queryClient,
         onSubmitRef,
+        submitOnEnterRef,
         onUploadFileRef,
         pasteAsFileThresholdRef,
         disableMentions,

@@ -691,7 +691,14 @@
       "plan_title": "計画を立てる",
       "new": "新規タスク"
     },
-    "new_messages": "新着メッセージ"
+    "new_messages": "新着メッセージ",
+    "composer": {
+      "placeholder": "メッセージを送信。1行目がタイトル、@ で担当者を指定",
+      "send": "送信",
+      "sending": "送信中…",
+      "failed": "送信できませんでした",
+      "retry": "再試行"
+    }
   },
   "filtered_empty": {
     "title": "フィルター条件に一致するタスクがありません",

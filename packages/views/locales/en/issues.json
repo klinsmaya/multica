@@ -720,7 +720,14 @@
       "plan_title": "Make a plan",
       "new": "New issue"
     },
-    "new_messages": "New messages"
+    "new_messages": "New messages",
+    "composer": {
+      "placeholder": "Send a message — first line is the title, @ to assign",
+      "send": "Send",
+      "sending": "Sending…",
+      "failed": "Couldn't send",
+      "retry": "Retry"
+    }
   },
   "filtered_empty": {
     "title": "No issues match these filters",

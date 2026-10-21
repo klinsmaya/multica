@@ -720,7 +720,14 @@
       "plan_title": "Établir un plan",
       "new": "Nouvelle tâche"
     },
-    "new_messages": "Nouveaux messages"
+    "new_messages": "Nouveaux messages",
+    "composer": {
+      "placeholder": "Écrire un message : la première ligne est le titre, @ pour assigner",
+      "send": "Envoyer",
+      "sending": "Envoi…",
+      "failed": "Échec de l'envoi",
+      "retry": "Réessayer"
+    }
   },
   "filtered_empty": {
     "title": "Aucune tâche ne correspond à ces filtres",

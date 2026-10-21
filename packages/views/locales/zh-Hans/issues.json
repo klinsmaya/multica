@@ -691,7 +691,14 @@
       "plan_title": "制定计划",
       "new": "新建任务"
     },
-    "new_messages": "有新消息"
+    "new_messages": "有新消息",
+    "composer": {
+      "placeholder": "发消息，首行是标题，@ 可指派",
+      "send": "发送",
+      "sending": "发送中...",
+      "failed": "无法发送",
+      "retry": "重试"
+    }
   },
   "filtered_empty": {
     "title": "没有符合筛选条件的任务",

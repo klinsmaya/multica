@@ -691,7 +691,14 @@
       "plan_title": "계획 세우기",
       "new": "새 태스크"
     },
-    "new_messages": "새 메시지"
+    "new_messages": "새 메시지",
+    "composer": {
+      "placeholder": "메시지 보내기. 첫 줄은 제목, @로 담당자 지정",
+      "send": "보내기",
+      "sending": "전송 중…",
+      "failed": "전송하지 못했습니다",
+      "retry": "다시 시도"
+    }
   },
   "filtered_empty": {
     "title": "필터 조건에 맞는 태스크가 없습니다",

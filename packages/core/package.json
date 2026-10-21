@@ -48,6 +48,7 @@
     "./issues/timeline-pages": "./issues/timeline-pages.ts",
     "./issues/comment-deletion": "./issues/comment-deletion.ts",
     "./issues/comment-trigger-outcomes": "./issues/comment-trigger-outcomes.ts",
+    "./issues/feed-message": "./issues/feed-message.ts",
     "./issues/run-steering": "./issues/run-steering.ts",
     "./issues/date": "./issues/date.ts",
     "./issues/ws-updaters": "./issues/ws-updaters.ts",
