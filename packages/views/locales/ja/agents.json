@@ -645,15 +645,15 @@
     "open_connector_mcp": {
       "heading": "Open Connector",
       "loading": "接続を読み込み中…",
-      "load_failed": "接続済みのアプリを読み込めませんでした。しばらくしてからお試しください。",
+      "load_failed": "接続済みアプリを読み込めませんでした。しばらくしてから再試行してください。",
       "empty_title": "接続済みのアプリはまだありません",
       "toggle_aria": "このエージェントに {{service}} を許可",
       "saving": "保存中…",
       "save_failed_toast": "保存できませんでした。もう一度お試しください",
-      "redacted_title": "設定済み（非表示）",
-      "redacted_hint": "エージェントが使用できるアプリは作成者のみが確認・変更できます。",
-      "shared_warning": "このエージェントは共有されています。実行できる人は、ここで有効にした Open Connector アプリを使用できます。",
-      "workspace_warning": "ワークスペースに公開: ワークスペースの全メンバーがこのエージェント経由でこれらの Open Connector アプリを使用できます。"
+      "redacted_title": "設定済み — あなたには非表示",
+      "redacted_hint": "このエージェントが使用できるアプリを閲覧・変更できるのは作成者のみです。",
+      "shared_warning": "このエージェントは共有されています。このエージェントを実行できる人は、ここで有効化した Open Connector アプリを利用できます。",
+      "workspace_warning": "ワークスペースに公開：ワークスペースの全メンバーがこのエージェントを通じてこれらの Open Connector アプリを利用できます。"
     }
   },
   "char_counter": {
@@ -702,7 +702,7 @@
     "owner_only_readonly": "このエージェントを実行できる相手は、オーナーのみが変更できます。",
     "members_empty": "選択できるワークスペースメンバーがいません",
     "composio_switch_hint": "ご注意 — このエージェントは Composio アプリが有効です。共有すると、アクセス権を持つ全員がこのエージェントを通じてこれらのアプリを利用できます。",
-    "connector_switch_hint": "注意: このエージェントでは Open Connector アプリが有効です。共有すると、アクセス権のある全員がこのエージェント経由でそれらのアプリを使用できます。"
+    "connector_switch_hint": "ご注意 — このエージェントは Open Connector アプリが有効です。共有すると、アクセス権を持つ全員がこのエージェントを通じてこれらのアプリを利用できます。"
   },
   "profile_card": {
     "unavailable": "エージェントを利用できません",
