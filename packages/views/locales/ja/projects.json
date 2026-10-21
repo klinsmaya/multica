@@ -219,5 +219,20 @@
     "truncated": "最近動きのあった {{limit}} 件のタスクを表示しています",
     "sub_issue_progress": "サブタスク {{done}}/{{total}} 完了",
     "deliverables": "ファイル: {{count}}"
+  },
+  "library": {
+    "add": "追加",
+    "add_failed": "ファイルをアップロードできませんでした",
+    "deliverables": "成果物",
+    "files": "ファイル",
+    "view_list": "リスト表示",
+    "view_grid": "グリッド表示",
+    "filter_label": "種類で絞り込み",
+    "load_more": "さらに読み込む",
+    "empty": "ファイルはまだありません",
+    "empty_filtered": "条件に一致するファイルはありません",
+    "load_failed": "ファイルを読み込めませんでした",
+    "retry": "再試行",
+    "open_issue": "タスク {{identifier}} を開く"
   }
 }

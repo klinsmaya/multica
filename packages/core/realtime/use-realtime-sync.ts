@@ -11,7 +11,7 @@ import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
-import { projectKeys, projectPullRequestKeys } from "../projects/queries";
+import { projectAttachmentKeys, projectKeys, projectPullRequestKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
@@ -1124,6 +1124,13 @@ export function useRealtimeSync(
       if (wsId) onIssueCreated(qc, wsId, issue);
     });
 
+    // Any project's library may list the changed file, and the event does not
+    // name the project, so the whole workspace's libraries go stale; only a
+    // mounted library tab refetches.
+    const invalidateProjectLibraries = (wsId: string) => {
+      qc.invalidateQueries({ queryKey: projectAttachmentKeys.all(wsId) });
+    };
+
     const unsubIssueDeleted = ws.on("issue:deleted", (p) => {
       const { issue_id } = p as IssueDeletedPayload;
       if (!issue_id) return;
@@ -1131,6 +1138,7 @@ export function useRealtimeSync(
       if (wsId) {
         onIssueDeleted(qc, wsId, issue_id);
         void onInboxIssueDeleted(qc, wsId, issue_id);
+        invalidateProjectLibraries(wsId);
       }
     });
 
@@ -1146,7 +1154,10 @@ export function useRealtimeSync(
       if (!issue_id) return;
       qc.invalidateQueries({ queryKey: issueKeys.attachments(issue_id) });
       const wsId = getCurrentWsId();
-      if (wsId) onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
+      if (wsId) {
+        invalidateProjectLibraries(wsId);
+        onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
+      }
     });
 
     const unsubIssueMetadataChanged = ws.on("issue_metadata:changed", (p) => {
@@ -1231,6 +1242,8 @@ export function useRealtimeSync(
           comment,
           authStore.getState().user?.id,
         );
+        // A comment that carries files adds rows to its project's library.
+        if ((comment.attachments?.length ?? 0) > 0) invalidateProjectLibraries(wsId);
         // A comment carries only the aggregate owner revision, not a full
         // Issue snapshot. Mark stale projections for an authoritative fetch
         // without making a later full snapshot look older than the cache.
@@ -1249,6 +1262,9 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        // A deleted comment with replies stays as a tombstone, announced here;
+        // its files leave the project library.
+        if (comment.deleted_at) invalidateProjectLibraries(wsId);
         if (issue_revision) {
           onIssueAuxiliaryRevision(qc, wsId, comment.issue_id, issue_revision);
         } else {
@@ -1265,6 +1281,8 @@ export function useRealtimeSync(
       if (wsId) {
         invalidateLastActivitySortedIssueLists(qc, wsId);
         invalidateThreadSummaries(qc, wsId);
+        // Deleting a comment removes its files from the project library.
+        invalidateProjectLibraries(wsId);
         if (issue_revision) {
           onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
         } else {

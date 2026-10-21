@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { WSClient } from "../api/ws-client";
 import { issueKeys, type IssueSortParam } from "../issues/queries";
+import { projectAttachmentKeys } from "../projects/queries";
 import type { Issue, IssueThreadSummary, ListIssuesCache } from "../types";
 import { useRealtimeSync, type RealtimeSyncStores } from "./use-realtime-sync";
 
@@ -108,6 +109,39 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
     expect(
       qc.getQueryState(issueKeys.timeline("issue-1"))?.isInvalidated,
     ).toBe(true);
+  });
+
+  it("invalidates the project libraries when files are added or removed", () => {
+    const libraryKey = projectAttachmentKeys.list("ws-1", "project-1", {});
+    const { ws, handlers } = createRecordingWs();
+    renderHook(() => useRealtimeSync(ws, createStores()), {
+      wrapper: createWrapper(qc),
+    });
+    // Writing fresh data clears the invalidated flag.
+    const settled = () => qc.setQueryData(libraryKey, { attachments: [] });
+
+    settled();
+    handlers["comment:created"]?.({ comment: { id: "c1", issue_id: "issue-1", attachments: [] } });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(false);
+
+    handlers["comment:created"]?.({
+      comment: { id: "c1", issue_id: "issue-1", attachments: [{ id: "a1" }] },
+    });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["issue_attachments:changed"]?.({ issue_id: "issue-1" });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["comment:deleted"]?.({ comment_id: "c1", issue_id: "issue-1" });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
+
+    settled();
+    handlers["comment:updated"]?.({
+      comment: { id: "c1", issue_id: "issue-1", deleted_at: "2026-01-01T00:00:00Z" },
+    });
+    expect(qc.getQueryState(libraryKey)?.isInvalidated).toBe(true);
   });
 
   it("uses update/delete owner revisions and re-sorts only last_activity", () => {

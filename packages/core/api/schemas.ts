@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { normalizeIssueStatusCategory } from "../issues/config/status";
 import type {
+  ListProjectAttachmentsResponse,
+  ProjectLibraryIssue,
+} from "../types/project-library";
+import type {
   WorkflowHandoffPreview,
   IssueWorkflow,
   IssueWorkflowDryRunResponse,
@@ -3955,3 +3959,58 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+// --- Project library (GET /api/projects/{id}/attachments, POST .../library-issue) ---
+
+// A row without an id or its issue cannot be opened, so it is dropped on its
+// own instead of failing the whole page. Every other field defaults, so an
+// older or newer server never blanks the library.
+const ProjectAttachmentSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  issue_id: z.string().nullable().default(null),
+  comment_id: z.string().nullable().default(null),
+  chat_session_id: z.string().nullable().default(null),
+  chat_message_id: z.string().nullable().default(null),
+  uploader_type: z.string().default(""),
+  uploader_id: z.string().default(""),
+  filename: z.string().default(""),
+  url: z.string().default(""),
+  download_url: z.string().default(""),
+  attachment_download_url: z.string().optional(),
+  markdown_url: z.string().default(""),
+  content_type: z.string().default(""),
+  size_bytes: z.number().default(0),
+  created_at: z.string().default(""),
+  issue: z.object({
+    id: z.string(),
+    identifier: z.string().default(""),
+    title: z.string().default(""),
+  }).loose(),
+}).loose();
+
+export const ProjectAttachmentsResponseSchema = z.object({
+  attachments: z.array(z.unknown()).default([]).transform((rows) =>
+    rows.flatMap((row) => {
+      const parsed = ProjectAttachmentSchema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  ),
+  total: z.number().default(0),
+  deliverable_total: z.number().default(0),
+  upload_total: z.number().default(0),
+}).loose();
+
+export const EMPTY_PROJECT_ATTACHMENTS_RESPONSE: ListProjectAttachmentsResponse = {
+  attachments: [],
+  total: 0,
+  deliverable_total: 0,
+  upload_total: 0,
+};
+
+export const ProjectLibraryIssueSchema = z.object({
+  id: z.string(),
+  identifier: z.string().default(""),
+}).loose();
+
+export const EMPTY_PROJECT_LIBRARY_ISSUE: ProjectLibraryIssue = { id: "", identifier: "" };

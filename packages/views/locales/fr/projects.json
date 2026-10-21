@@ -221,5 +221,20 @@
     "truncated": "Affichage des {{limit}} tâches les plus récemment actives",
     "sub_issue_progress": "Sous-tâches terminées : {{done}} sur {{total}}",
     "deliverables": "Fichiers : {{count}}"
+  },
+  "library": {
+    "add": "Ajouter",
+    "add_failed": "Impossible d'importer le fichier",
+    "deliverables": "Livrables",
+    "files": "Fichiers",
+    "view_list": "Vue en liste",
+    "view_grid": "Vue en grille",
+    "filter_label": "Filtrer par type",
+    "load_more": "Afficher plus",
+    "empty": "Aucun fichier pour l'instant",
+    "empty_filtered": "Aucun fichier ne correspond à ce filtre",
+    "load_failed": "Impossible de charger les fichiers",
+    "retry": "Réessayer",
+    "open_issue": "Ouvrir la tâche {{identifier}}"
   }
 }

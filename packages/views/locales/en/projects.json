@@ -221,5 +221,20 @@
     "truncated": "Showing the {{limit}} most recently active issues",
     "sub_issue_progress": "Sub-issues done: {{done}} of {{total}}",
     "deliverables": "Files: {{count}}"
+  },
+  "library": {
+    "add": "Add",
+    "add_failed": "Couldn't upload the file",
+    "deliverables": "Deliverables",
+    "files": "Files",
+    "view_list": "List view",
+    "view_grid": "Grid view",
+    "filter_label": "Filter by type",
+    "load_more": "Load more",
+    "empty": "No files yet",
+    "empty_filtered": "No files match this filter",
+    "load_failed": "Couldn't load files",
+    "retry": "Retry",
+    "open_issue": "Open issue {{identifier}}"
   }
 }

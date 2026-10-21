@@ -219,5 +219,20 @@
     "truncated": "최근 활동이 있는 작업 {{limit}}개를 표시합니다",
     "sub_issue_progress": "하위 작업 {{done}}/{{total}} 완료",
     "deliverables": "파일: {{count}}"
+  },
+  "library": {
+    "add": "추가",
+    "add_failed": "파일을 업로드하지 못했습니다",
+    "deliverables": "산출물",
+    "files": "파일",
+    "view_list": "목록 보기",
+    "view_grid": "그리드 보기",
+    "filter_label": "유형별 필터",
+    "load_more": "더 보기",
+    "empty": "아직 파일이 없습니다",
+    "empty_filtered": "필터와 일치하는 파일이 없습니다",
+    "load_failed": "파일을 불러오지 못했습니다",
+    "retry": "다시 시도",
+    "open_issue": "태스크 {{identifier}} 열기"
   }
 }

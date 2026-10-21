@@ -244,6 +244,11 @@ import type {
   CreateCommentSubIssueAgentRequest,
   CreateCommentSubIssueRequest,
 } from "../types";
+import type {
+  ListProjectAttachmentsResponse,
+  ProjectAttachmentsParams,
+  ProjectLibraryIssue,
+} from "../types/project-library";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type {
   CreateFeedbackResponse,
@@ -266,6 +271,10 @@ import {
   AgentTaskPageSchema,
   AgentActivityBucketListSchema,
   AttachmentResponseSchema,
+  ProjectAttachmentsResponseSchema,
+  ProjectLibraryIssueSchema,
+  EMPTY_PROJECT_ATTACHMENTS_RESPONSE,
+  EMPTY_PROJECT_LIBRARY_ISSUE,
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
   ChatMessageListSchema,
@@ -4059,6 +4068,35 @@ export class ApiClient {
 
   async deleteAttachment(id: string): Promise<void> {
     await this.fetch(`/api/attachments/${id}`, { method: "DELETE" });
+  }
+
+  // Project library: every attachment of every issue in the project.
+  async listProjectAttachments(
+    projectId: string,
+    params?: ProjectAttachmentsParams,
+  ): Promise<ListProjectAttachmentsResponse> {
+    const search = new URLSearchParams();
+    if (params?.source) search.set("source", params.source);
+    if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.offset) search.set("offset", String(params.offset));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${projectId}/attachments${query ? `?${query}` : ""}`,
+    );
+    return parseWithFallback(raw, ProjectAttachmentsResponseSchema, EMPTY_PROJECT_ATTACHMENTS_RESPONSE, {
+      endpoint: "GET /api/projects/{id}/attachments",
+    });
+  }
+
+  // The issue that holds files uploaded straight to a project; created on
+  // first use. An empty id means the response was unusable.
+  async getProjectLibraryIssue(projectId: string): Promise<ProjectLibraryIssue> {
+    const raw = await this.fetch<unknown>(`/api/projects/${projectId}/library-issue`, {
+      method: "POST",
+    });
+    return parseWithFallback(raw, ProjectLibraryIssueSchema, EMPTY_PROJECT_LIBRARY_ISSUE, {
+      endpoint: "POST /api/projects/{id}/library-issue",
+    });
   }
 
   // Fetches the raw bytes of a text-previewable attachment.

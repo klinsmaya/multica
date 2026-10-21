@@ -219,5 +219,20 @@
     "truncated": "仅显示最近活跃的 {{limit}} 个任务",
     "sub_issue_progress": "子任务已完成 {{done}}/{{total}}",
     "deliverables": "文件：{{count}}"
+  },
+  "library": {
+    "add": "添加",
+    "add_failed": "文件上传失败",
+    "deliverables": "产出",
+    "files": "文件",
+    "view_list": "列表视图",
+    "view_grid": "网格视图",
+    "filter_label": "按类型筛选",
+    "load_more": "加载更多",
+    "empty": "还没有文件",
+    "empty_filtered": "没有符合筛选条件的文件",
+    "load_failed": "文件加载失败",
+    "retry": "重试",
+    "open_issue": "打开任务 {{identifier}}"
   }
 }
