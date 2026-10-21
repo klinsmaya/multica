@@ -1,0 +1,11 @@
+{
+  "name": "release-notes",
+  "version": "1.0.0",
+  "displayName": "Release Notes",
+  "description": "A skill for turning a list of merged changes into release notes people can read.",
+  "author": { "name": "Multica" },
+  "keywords": ["release", "changelog", "writing"],
+  "metadata": {
+    "registry": { "category": "writing" }
+  }
+}

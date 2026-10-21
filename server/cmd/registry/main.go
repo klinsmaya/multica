@@ -2,6 +2,9 @@
 // own, against the same database, for deployments that put the registry on a
 // separate host from Multica. Operator writes stay in Multica's /admin.
 //
+// `registry seed` instead loads the starter templates (internal/registry/seed)
+// into the database and exits; it is safe to run again.
+//
 // Environment: DATABASE_URL (required), PORT (default 8090), and
 // REGISTRY_PUBLIC_URL, the absolute origin bundle URLs are built from.
 package main
@@ -17,8 +20,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/registry"
+	"github.com/multica-ai/multica/server/internal/registry/seed"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -42,6 +47,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	if len(os.Args) > 1 && os.Args[1] == "seed" {
+		result, err := seed.Apply(ctx, pool, db.New(pool), registry.NewService(db.New(pool)), pgtype.UUID{})
+		if err != nil {
+			slog.Error("seed registry", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("registry seeded", "created", result.Created, "skipped", result.Skipped)
+		return
+	}
 
 	public := &registry.Public{
 		Service: registry.NewService(db.New(pool)),
