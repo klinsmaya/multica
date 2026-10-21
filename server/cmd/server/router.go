@@ -435,6 +435,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AppURL:                   appURLFromEnv(),
 		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
 		CloudURL:                 strings.TrimSpace(os.Getenv("MULTICA_CLOUD_URL")),
+		PlatformAdminEmails:      splitAndTrim(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		CloudTimeout:             35 * time.Second,
 		AttachmentDownloadMode:   os.Getenv("ATTACHMENT_DOWNLOAD_MODE"),
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
@@ -1944,6 +1945,33 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// authoritative server-set X-Actor-Source header and 403s
 		// any task-token request. See actor_guards.go for the full
 		// rationale.
+		// Platform admin console. Gated on the platform_admin table, not on
+		// workspace membership; every write is audited. See handler/admin.go.
+		r.Route("/api/admin", func(r chi.Router) {
+			r.Group(func(r chi.Router) {
+				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleViewer))
+				r.Get("/me", h.AdminMe)
+				r.Get("/overview", h.AdminOverview)
+				r.Get("/users", h.AdminListUsers)
+				r.Get("/users/{id}", h.AdminGetUser)
+				r.Get("/workspaces", h.AdminListWorkspaces)
+				r.Get("/workspaces/{id}", h.AdminGetWorkspace)
+				r.Get("/audit", h.AdminListAudit)
+				r.Get("/admins", h.AdminListPlatformAdmins)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleOperator))
+				r.Post("/users/{id}/disable", h.AdminDisableUser)
+				r.Post("/users/{id}/enable", h.AdminEnableUser)
+				r.Post("/users/{id}/tokens/{tokenId}/revoke", h.AdminRevokeUserToken)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleSuperAdmin))
+				r.Put("/admins", h.AdminSetPlatformAdmin)
+				r.Delete("/admins/{userId}", h.AdminRemovePlatformAdmin)
+			})
+		})
+
 		r.Route("/api/cloud-billing", func(r chi.Router) {
 			r.Use(handler.RequireHumanActor)
 

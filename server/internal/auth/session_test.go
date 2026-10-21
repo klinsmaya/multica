@@ -248,18 +248,15 @@ func TestRenewSessionToken_MintsSessionIDForLegacyToken(t *testing.T) {
 // so the disabled-user check has to live there too — otherwise disabling an
 // abusive account leaves their session renewing itself forever.
 func TestRenewSessionToken_RejectsDisabledUser(t *testing.T) {
-	// One of the ids on the standing emergency denylist.
-	var disabledID string
-	for id := range temporarilyDisabledUserIDs {
-		disabledID = id
-		break
-	}
+	const disabledID = "514492f7-b30f-4147-bd33-c0e8ce5d6d4f"
+	MarkUserDisabled(disabledID, "")
+	t.Cleanup(func() { MarkUserEnabled(disabledID, "") })
 	claims := sessionClaims(t, time.Now().Add(time.Hour), "sid-1")
 	claims["sub"] = disabledID
 
 	_, _, err := RenewSessionToken(claims)
-	if err != ErrTemporarilyDisabledUser {
-		t.Fatalf("err = %v, want ErrTemporarilyDisabledUser", err)
+	if err != ErrDisabledUser {
+		t.Fatalf("err = %v, want ErrDisabledUser", err)
 	}
 }
 

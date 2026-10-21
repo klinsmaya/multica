@@ -20,6 +20,7 @@ const (
 // handler deletion graph must then implement that decision before CI passes.
 var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"activity_log":                       workspaceDelete,
+	"admin_audit_log":                    workspaceDeleteKeep, // Platform-level audit history, not workspace-owned.
 	"agent":                              workspaceDelete,
 	"agent_builder_draft":                workspaceDelete,
 	"agent_invocation_target":            workspaceDelete,
@@ -104,6 +105,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"workspace_mcp_server":               workspaceDelete,
 	"notification_preference":            workspaceDelete,
 	"personal_access_token":              workspaceDeleteKeep,
+	"platform_admin":                     workspaceDeleteKeep, // Platform-level roles, not workspace-owned.
 	"pinned_item":                        workspaceDelete,
 	"plugin_installation":                workspaceDelete,
 	"plugin_hook_schedule":               workspaceDelete,

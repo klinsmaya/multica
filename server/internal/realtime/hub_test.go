@@ -67,7 +67,9 @@ func (s staticPATResolver) ResolveToken(_ context.Context, token string) (string
 	return userID, ok
 }
 
-func TestAuthenticateTokenRejectsTemporarilyDisabledJWTUser(t *testing.T) {
+func TestAuthenticateTokenRejectsDisabledJWTUser(t *testing.T) {
+	auth.MarkUserDisabled("514492f7-b30f-4147-bd33-c0e8ce5d6d4f", "")
+	t.Cleanup(func() { auth.MarkUserEnabled("514492f7-b30f-4147-bd33-c0e8ce5d6d4f", "") })
 	token := makeTestTokenForUser(t, "514492f7-b30f-4147-bd33-c0e8ce5d6d4f", "")
 
 	uid, errMsg := authenticateToken(token, nil, context.Background())
@@ -79,7 +81,9 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledJWTUser(t *testing.T) {
 	}
 }
 
-func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
+func TestAuthenticateTokenRejectsDisabledPATUser(t *testing.T) {
+	auth.MarkUserDisabled("1d542296-17c6-484a-9914-dcee589be116", "")
+	t.Cleanup(func() { auth.MarkUserEnabled("1d542296-17c6-484a-9914-dcee589be116", "") })
 	uid, errMsg := authenticateToken("mul_disabled", staticPATResolver{
 		"mul_disabled": "1d542296-17c6-484a-9914-dcee589be116",
 	}, context.Background())

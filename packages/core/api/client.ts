@@ -1,3 +1,34 @@
+import {
+  AdminAuditPageSchema,
+  AdminMeSchema,
+  AdminOverviewSchema,
+  AdminUserDetailSchema,
+  AdminUserPageSchema,
+  AdminWorkspaceDetailSchema,
+  AdminWorkspacePageSchema,
+  EMPTY_ADMIN_ME,
+  EMPTY_ADMIN_OVERVIEW,
+  EMPTY_ADMIN_USER_DETAIL,
+  EMPTY_ADMIN_WORKSPACE_DETAIL,
+  EMPTY_PLATFORM_ADMIN,
+  PlatformAdminListSchema,
+  PlatformAdminSchema,
+  emptyAdminPage,
+  type AdminActionRequest,
+  type AdminAuditEntry,
+  type AdminAuditListParams,
+  type AdminMe,
+  type AdminOverview,
+  type AdminPage,
+  type AdminUser,
+  type AdminUserDetail,
+  type AdminUserListParams,
+  type AdminWorkspace,
+  type AdminWorkspaceDetail,
+  type AdminWorkspaceListParams,
+  type PlatformAdmin,
+  type SetPlatformAdminRequest,
+} from "../admin/schemas";
 import type { ZodType } from "zod";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -5394,5 +5425,138 @@ export class ApiClient {
       EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
       { endpoint: "POST /api/telegram/binding/redeem" },
     );
+  }
+
+  // Platform admin (/api/admin). Every write carries a reason that the server
+  // records in admin_audit_log; the UI collects it before calling.
+  private adminQuery(params: Record<string, string | number | boolean | undefined>): string {
+    const search = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === "" || v === false) continue;
+      search.set(k, String(v));
+    }
+    const qs = search.toString();
+    return qs ? `?${qs}` : "";
+  }
+
+  async adminMe(): Promise<AdminMe> {
+    const raw = await this.fetch<unknown>("/api/admin/me");
+    return parseWithFallback(raw, AdminMeSchema, EMPTY_ADMIN_ME, {
+      endpoint: "GET /api/admin/me",
+    });
+  }
+
+  async adminOverview(): Promise<AdminOverview> {
+    const raw = await this.fetch<unknown>("/api/admin/overview");
+    return parseWithFallback(raw, AdminOverviewSchema, EMPTY_ADMIN_OVERVIEW, {
+      endpoint: "GET /api/admin/overview",
+    });
+  }
+
+  async adminListUsers(params: AdminUserListParams = {}): Promise<AdminPage<AdminUser>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/users${this.adminQuery({
+        q: params.q,
+        disabled: params.disabled_only,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, AdminUserPageSchema, emptyAdminPage<AdminUser>(), {
+      endpoint: "GET /api/admin/users",
+    });
+  }
+
+  async adminGetUser(id: string): Promise<AdminUserDetail> {
+    const raw = await this.fetch<unknown>(`/api/admin/users/${id}`);
+    return parseWithFallback(raw, AdminUserDetailSchema, EMPTY_ADMIN_USER_DETAIL, {
+      endpoint: "GET /api/admin/users/:id",
+    });
+  }
+
+  async adminDisableUser(id: string, body: AdminActionRequest): Promise<void> {
+    await this.fetch(`/api/admin/users/${id}/disable`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminEnableUser(id: string, body: AdminActionRequest): Promise<void> {
+    await this.fetch(`/api/admin/users/${id}/enable`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminRevokeUserToken(
+    userId: string,
+    tokenId: string,
+    body: AdminActionRequest,
+  ): Promise<void> {
+    await this.fetch(`/api/admin/users/${userId}/tokens/${tokenId}/revoke`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async adminListWorkspaces(
+    params: AdminWorkspaceListParams = {},
+  ): Promise<AdminPage<AdminWorkspace>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/workspaces${this.adminQuery({
+        q: params.q,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, AdminWorkspacePageSchema, emptyAdminPage<AdminWorkspace>(), {
+      endpoint: "GET /api/admin/workspaces",
+    });
+  }
+
+  async adminGetWorkspace(id: string): Promise<AdminWorkspaceDetail> {
+    const raw = await this.fetch<unknown>(`/api/admin/workspaces/${id}`);
+    return parseWithFallback(raw, AdminWorkspaceDetailSchema, EMPTY_ADMIN_WORKSPACE_DETAIL, {
+      endpoint: "GET /api/admin/workspaces/:id",
+    });
+  }
+
+  async adminListAudit(params: AdminAuditListParams = {}): Promise<AdminPage<AdminAuditEntry>> {
+    const raw = await this.fetch<unknown>(
+      `/api/admin/audit${this.adminQuery({
+        actor: params.actor_user_id,
+        action: params.action,
+        target_id: params.target_id,
+        page: params.page,
+        page_size: params.page_size,
+      })}`,
+    );
+    return parseWithFallback(raw, AdminAuditPageSchema, emptyAdminPage<AdminAuditEntry>(), {
+      endpoint: "GET /api/admin/audit",
+    });
+  }
+
+  async adminListPlatformAdmins(): Promise<PlatformAdmin[]> {
+    const raw = await this.fetch<unknown>("/api/admin/admins");
+    return parseWithFallback(raw, PlatformAdminListSchema, [], {
+      endpoint: "GET /api/admin/admins",
+    });
+  }
+
+  async adminSetPlatformAdmin(body: SetPlatformAdminRequest): Promise<PlatformAdmin> {
+    const raw = await this.fetch<unknown>("/api/admin/admins", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, PlatformAdminSchema, EMPTY_PLATFORM_ADMIN, {
+      endpoint: "PUT /api/admin/admins",
+    });
+  }
+
+  async adminRemovePlatformAdmin(userId: string, body: AdminActionRequest): Promise<void> {
+    await this.fetch(`/api/admin/admins/${userId}`, {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    });
   }
 }

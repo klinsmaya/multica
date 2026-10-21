@@ -608,6 +608,13 @@ func main() {
 	defer analyticsClient.Close()
 
 	queries := db.New(pool)
+	// Account suspension is enforced from an in-memory set on every
+	// credential path; load it before the listener opens, then keep it fresh.
+	disabledSource := auth.DisabledUsersFromQueries{Queries: queries}
+	if err := auth.RefreshDisabledUsers(context.Background(), disabledSource); err != nil {
+		slog.Error("failed to load disabled users", "error", err)
+		os.Exit(1)
+	}
 	hub.SetAuthorizer(newScopeAuthorizer(queries))
 	// Order matters: subscriber listeners must register BEFORE notification listeners.
 	// The notification listener queries the subscriber table to determine recipients,
@@ -849,6 +856,7 @@ func main() {
 	go func() {
 		_ = schedulerMgr.Run(sweepCtx)
 	}()
+	go auth.RunDisabledUserRefresh(sweepCtx, disabledSource, auth.DisabledUserRefreshInterval)
 
 	if metricsServer != nil {
 		go func() {
