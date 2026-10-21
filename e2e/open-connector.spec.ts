@@ -11,8 +11,12 @@ import { TestApiClient } from "./fixtures";
 //
 //   OPEN_CONNECTOR_BASE_URL=http://127.0.0.1:18931   (E2E_OPEN_CONNECTOR_PORT)
 //   OPEN_CONNECTOR_ADMIN_TOKEN=e2e-admin-token
-//   FF_OPEN_CONNECTOR_APPS=true
+//   PLATFORM_ADMIN_EMAILS=e2e-oc-admin@multica.ai   (E2E_OPEN_CONNECTOR_ADMIN_EMAIL)
 //   MULTICA_PUBLIC_URL / FRONTEND_ORIGIN pointing at the running API / web
+//
+// Services are only offered once a platform admin publishes them, so the spec
+// signs in as that admin and publishes github through /api/admin before the
+// user flow starts.
 //
 // Run it with E2E_OPEN_CONNECTOR=1. Response shapes mirror a real open-connector
 // (see the SDK testdata in server/pkg/openconnector/testdata).
@@ -20,6 +24,7 @@ import { TestApiClient } from "./fixtures";
 const ENABLED = process.env.E2E_OPEN_CONNECTOR === "1";
 const MOCK_PORT = Number(process.env.E2E_OPEN_CONNECTOR_PORT ?? 18931);
 const ADMIN_TOKEN = process.env.OPEN_CONNECTOR_ADMIN_TOKEN ?? "e2e-admin-token";
+const PLATFORM_ADMIN_EMAIL = process.env.E2E_OPEN_CONNECTOR_ADMIN_EMAIL ?? "e2e-oc-admin@multica.ai";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.PORT || "8080"}`;
 
@@ -178,6 +183,16 @@ test.describe("open-connector integration", () => {
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     const call = (path: string, init: RequestInit = {}) =>
       fetch(`${API_BASE}/api/integrations/open-connector${path}`, { ...init, headers });
+
+    // 0. A platform admin publishes github (audited; PLATFORM_ADMIN_EMAILS bootstraps the role).
+    const admin = new TestApiClient();
+    await admin.login(PLATFORM_ADMIN_EMAIL, "E2E OpenConnector Admin");
+    const publishRes = await fetch(`${API_BASE}/api/admin/open-connector/services/github/enable`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${admin.getToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "e2e open-connector run" }),
+    });
+    expect(publishRes.status).toBe(200);
 
     try {
       // 1. The catalog offers github.

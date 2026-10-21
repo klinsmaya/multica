@@ -72,15 +72,8 @@ docker compose up -d
 | `OPEN_CONNECTOR_STATE_SECRET` | 用于签名 OAuth 连接 state，默认由 `JWT_SECRET` 派生。 |
 | `OPEN_CONNECTOR_CALLBACK_BASE_URL` | OAuth 回调使用的公网 API 地址，默认为 `MULTICA_PUBLIC_URL`。 |
 | `OPEN_CONNECTOR_OAUTH_SCOPES` | 可选。service 到授权选项 ID 的 JSON 映射，例如 `{"github":["repo"]}`，替换默认的最小权限。 |
-| `OPEN_CONNECTOR_API_KEY_SERVICES` | 可选。以逗号分隔的 API key 服务列表，替换内置列表。 |
 
-还需要打开默认关闭的 `open_connector_apps` feature flag。最简单的方式是在 API 上设置环境变量：
-
-```dotenv
-FF_OPEN_CONNECTOR_APPS=true
-```
-
-若用文件管理 flag，把 `MULTICA_FEATURE_FLAGS_FILE` 指向一个 YAML 文件，其中写 `open_connector_apps:` 并设 `default: true`。两种方式修改后都需重启 API。
+在平台管理员上架之前，用户看不到任何服务：打开 `/admin/connectors`（见 `PLATFORM_ADMIN_EMAILS`），确认实例可达，然后逐个打开允许用户连接的服务。同一页面还可按服务设置 task 运行时令牌可调用的操作、允许连接的用户，并按服务和按用户查看连接数。每次修改都需要填写原因并写入审计日志。
 
 ## 3. 登记 OAuth client
 
