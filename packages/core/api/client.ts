@@ -183,6 +183,8 @@ import type {
   PluginInstallRequest,
   PluginConfigRequest,
   IssuePullRequestsResponse,
+  ProjectPullRequestsResponse,
+  ProjectPullRequestState,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -444,6 +446,8 @@ import {
   EMPTY_ISSUE_PROPERTIES_RESPONSE,
   EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
   IssuePullRequestsResponseSchema,
+  ProjectPullRequestsResponseSchema,
+  EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -5047,6 +5051,26 @@ export class ApiClient {
       IssuePullRequestsResponseSchema,
       EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
       { endpoint: "GET /api/issues/:id/pull-requests" },
+    );
+  }
+
+  async listProjectPullRequests(
+    projectId: string,
+    params?: { state?: ProjectPullRequestState; limit?: number; offset?: number },
+  ): Promise<ProjectPullRequestsResponse> {
+    const search = new URLSearchParams();
+    if (params?.state) search.set("state", params.state);
+    if (params?.limit != null) search.set("limit", String(params.limit));
+    if (params?.offset != null) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/projects/${projectId}/pull-requests${qs ? `?${qs}` : ""}`,
+    );
+    return parseWithFallback(
+      raw,
+      ProjectPullRequestsResponseSchema,
+      EMPTY_PROJECT_PULL_REQUESTS_RESPONSE,
+      { endpoint: "GET /api/projects/:id/pull-requests" },
     );
   }
 

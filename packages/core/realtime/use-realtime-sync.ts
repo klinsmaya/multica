@@ -11,7 +11,7 @@ import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
-import { projectKeys } from "../projects/queries";
+import { projectKeys, projectPullRequestKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
@@ -952,7 +952,11 @@ export function useRealtimeSync(
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
         // The feed's output strip carries each issue's newest PRs and their CI.
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
+          // The project PR tab lists PRs across the project's issues.
+          qc.invalidateQueries({ queryKey: projectPullRequestKeys.all(wsId) });
+        }
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the

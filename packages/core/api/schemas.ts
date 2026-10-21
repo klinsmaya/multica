@@ -52,6 +52,7 @@ import type {
   GroupedIssuesResponse,
   GitHubConnectResponse,
   IssuePullRequestsResponse,
+  ProjectPullRequestsResponse,
   InboxItem,
   InboxWorkspaceUnread,
   Label,
@@ -453,6 +454,45 @@ export const IssuePullRequestsResponseSchema = z.object({
 export const EMPTY_ISSUE_PULL_REQUESTS_RESPONSE: IssuePullRequestsResponse = {
   pull_requests: [],
   auto_complete: null,
+};
+
+// Project pull-requests tab (GET /api/projects/:id/pull-requests): the issue PR
+// row plus the project issues it is linked to. `counts` carries every group's
+// size whatever `state` was requested, so collapsed groups can show a count
+// without being fetched.
+export const ProjectPullRequestSchema = GitHubPullRequestSchema.extend({
+  issues: z
+    .array(
+      z
+        .object({
+          id: z.string(),
+          identifier: z.string().optional().default(""),
+          title: z.string().optional().default(""),
+        })
+        .loose(),
+    )
+    .optional()
+    .default([]),
+});
+
+export const ProjectPullRequestsResponseSchema = z.object({
+  pull_requests: z.array(ProjectPullRequestSchema).default([]),
+  total: z.number().optional().default(0),
+  counts: z
+    .object({
+      open: z.number().optional().default(0),
+      merged: z.number().optional().default(0),
+      closed: z.number().optional().default(0),
+    })
+    .loose()
+    .optional()
+    .default({ open: 0, merged: 0, closed: 0 }),
+}).loose();
+
+export const EMPTY_PROJECT_PULL_REQUESTS_RESPONSE: ProjectPullRequestsResponse = {
+  pull_requests: [],
+  total: 0,
+  counts: { open: 0, merged: 0, closed: 0 },
 };
 
 // Label responses are consumed by settings tables and resource pickers. Keep

@@ -152,6 +152,16 @@
     "ref_default_label": "Default branch",
     "ref_default_tooltip": "No branch set — tasks use whatever the repository's default branch is at the time."
   },
+  "pull_requests": {
+    "group_open": "Open",
+    "group_merged": "Merged",
+    "group_closed": "Closed",
+    "empty": "No pull requests yet",
+    "load_more": "Load more",
+    "loading": "Loading…",
+    "load_failed": "Couldn't load pull requests",
+    "retry": "Retry"
+  },
   "delete_dialog": {
     "title": "Delete project",
     "description": "This will delete the project. Issues will not be deleted but will be unlinked.",

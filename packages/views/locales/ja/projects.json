@@ -151,6 +151,16 @@
     "ref_default_label": "デフォルトブランチ",
     "ref_default_tooltip": "ブランチ未設定 — タスクはその時点のリポジトリのデフォルトブランチを使用します。"
   },
+  "pull_requests": {
+    "group_open": "オープン",
+    "group_merged": "マージ済み",
+    "group_closed": "クローズ",
+    "empty": "PR はまだありません",
+    "load_more": "さらに読み込む",
+    "loading": "読み込み中…",
+    "load_failed": "PR を読み込めませんでした",
+    "retry": "再試行"
+  },
   "delete_dialog": {
     "title": "プロジェクトを削除",
     "description": "プロジェクトが削除されます。タスクは削除されませんが、リンクが解除されます。",

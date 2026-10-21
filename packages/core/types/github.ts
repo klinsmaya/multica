@@ -94,6 +94,30 @@ export interface IssuePullRequestsResponse {
   auto_complete: PRAutoComplete | null;
 }
 
+/** Tab group of the project pull-requests list: `open` covers draft PRs,
+ * `closed` is closed without merging. */
+export type ProjectPullRequestState = "open" | "merged" | "closed";
+
+export interface ProjectPullRequestIssue {
+  id: string;
+  /** e.g. `MUL-12`. */
+  identifier: string;
+  title: string;
+}
+
+/** An issue-list PR row plus the project issues it is linked to. */
+export interface ProjectPullRequest extends GitHubPullRequest {
+  issues: ProjectPullRequestIssue[];
+}
+
+export interface ProjectPullRequestsResponse {
+  pull_requests: ProjectPullRequest[];
+  /** PRs matching the requested `state` (all states when omitted). */
+  total: number;
+  /** Every group's size regardless of the requested `state`. */
+  counts: Record<ProjectPullRequestState, number>;
+}
+
 export interface GitHubPullRequest {
   id: string;
   /** Source provider. Older GitHub-only backends omit it. */
