@@ -13,6 +13,7 @@ import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../i18n";
 import { useIssuePeekActions } from "../surface/peek-context";
 import { FeedComposer, type FeedComposerHandle } from "./feed-composer";
+import { FeedDecisionCard } from "./feed-decision-card";
 import { FeedMessageCard } from "./feed-message-card";
 import { getFeedReadState } from "./feed-read-state";
 import { FeedQuickActions } from "./feed-quick-actions";
@@ -143,6 +144,7 @@ export function FeedView({
                   issue={issue}
                   readState={getFeedReadState(summaries?.get(issue.id), currentUserId)}
                 />
+                <FeedDecisionCard issueId={issue.id} summary={summaries?.get(issue.id)} />
                 <FeedThreadBar issue={issue} summary={summaries?.get(issue.id)} />
               </div>
             )}

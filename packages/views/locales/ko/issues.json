@@ -686,6 +686,10 @@
     "open_thread": "스레드 열기",
     "unread": "읽지 않음",
     "awaiting_reply": "답장 대기 중",
+    "decision": {
+      "title": "결정 대기 중",
+      "open_thread": "스레드 보기"
+    },
     "empty": "피드에 표시할 태스크가 없습니다",
     "quick": {
       "continue": "최근 작업 이어가기",

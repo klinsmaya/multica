@@ -1131,6 +1131,7 @@ describe("ApiClient schema fallback", () => {
           open_thread_count: 0,
           participants: [],
           last_read_at: null,
+          awaiting_me: [],
         },
       ]);
     });
@@ -1148,6 +1149,38 @@ describe("ApiClient schema fallback", () => {
         "2026-05-01T10:00:00.123456789Z",
         null,
       ]);
+    });
+
+    it("keeps the caller's awaiting_me entries and defaults their optional fields", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            awaiting_me: [
+              {
+                comment_id: "c-1",
+                actor_id: "agent-1",
+                excerpt: "Ship @Me?",
+                created_at: "2026-05-01T10:00:00Z",
+              },
+              { comment_id: "c-2", actor_id: "agent-2" },
+            ],
+          },
+          { issue_id: "issue-2" },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2"]);
+      expect(res.summaries[0]?.awaiting_me).toEqual([
+        {
+          comment_id: "c-1",
+          actor_id: "agent-1",
+          excerpt: "Ship @Me?",
+          created_at: "2026-05-01T10:00:00Z",
+        },
+        { comment_id: "c-2", actor_id: "agent-2", excerpt: "", created_at: "" },
+      ]);
+      expect(res.summaries[1]?.awaiting_me).toEqual([]);
     });
   });
 

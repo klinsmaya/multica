@@ -180,6 +180,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
       open_thread_count: 1,
       participants: [{ type: "member", id: "u1" }],
       last_read_at: null,
+      awaiting_me: [],
     };
 
     function mount() {

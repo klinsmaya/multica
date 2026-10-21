@@ -33,6 +33,7 @@ import type {
   IssueLabelsResponse,
   IssueTableRowsResponse,
   IssueSubscriber,
+  IssueAwaitingMe,
   IssueThreadSummary,
   IssueUsageSummary,
   Label,
@@ -1246,6 +1247,7 @@ describe("thread summary realtime updates", () => {
       { type: "member", id: "user-2" },
     ],
     last_read_at: null,
+    awaiting_me: [],
   });
 
   const read = (key: readonly unknown[] = cacheKey) =>
@@ -1273,6 +1275,7 @@ describe("thread summary realtime updates", () => {
         { type: "member", id: "user-2" },
       ],
       last_read_at: null,
+      awaiting_me: [],
     });
   });
 
@@ -1374,6 +1377,7 @@ describe("thread summary realtime updates", () => {
       open_thread_count: 1,
       participants: [{ type: "agent", id: "agent-9" }],
       last_read_at: null,
+      awaiting_me: [],
     });
   });
 
@@ -1386,6 +1390,86 @@ describe("thread summary realtime updates", () => {
 
     expect(rowA()?.last_read_at).toBe("2026-10-01T12:00:00Z");
     expect(rowA()?.last_reply_at).toBe("2026-10-02T00:00:00Z");
+  });
+
+  describe("awaiting_me", () => {
+    const question: IssueAwaitingMe = {
+      comment_id: "agent-question",
+      actor_id: "agent-1",
+      excerpt: "Ship it?",
+      created_at: "2026-10-01T00:00:00Z",
+    };
+    const seedQuestion = () =>
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        { ...summaryA(), awaiting_me: [question] },
+      ]);
+    const isInvalidated = () => qc.getQueryState(cacheKey)?.isInvalidated === true;
+
+    it("clears the issue's questions when the caller's own member comment lands", () => {
+      seedQuestion();
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({ author_type: "member", author_id: "user-1" }),
+        "user-1",
+      );
+
+      expect(rowA()?.awaiting_me).toEqual([]);
+      // The reply may have answered only one of several threads.
+      expect(isInvalidated()).toBe(true);
+    });
+
+    it("keeps the questions and refetches when someone else comments", () => {
+      seedQuestion();
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({ author_type: "member", author_id: "user-2" }),
+        "user-1",
+      );
+
+      expect(rowA()?.awaiting_me).toEqual([question]);
+      expect(isInvalidated()).toBe(true);
+    });
+
+    it("refetches when an agent mentions the caller, and not for other mentions", () => {
+      const agentComment = (content: string) =>
+        makeComment({ author_type: "agent", author_id: "agent-1", content });
+
+      const me = "0f0f0f0f-0000-0000-0000-0000000000a1";
+      const bob = "0f0f0f0f-0000-0000-0000-0000000000b2";
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        agentComment(`[@Bob](mention://member/${bob}) ping`),
+        me,
+      );
+      expect(isInvalidated()).toBe(false);
+      expect(rowA()?.awaiting_me).toEqual([]);
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        agentComment(`[@Me](mention://member/${me.toUpperCase()}) decide`),
+        me,
+      );
+      expect(isInvalidated()).toBe(true);
+    });
+
+    it("does not touch a quiet issue's questions for an unrelated member comment", () => {
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({ author_type: "member", author_id: "user-2" }),
+        "user-1",
+      );
+
+      expect(rowA()?.awaiting_me).toEqual([]);
+      expect(isInvalidated()).toBe(false);
+    });
   });
 
   describe("patchThreadSummariesLastRead", () => {

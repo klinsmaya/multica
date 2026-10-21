@@ -23,15 +23,22 @@ const MAX_LABELS = 3;
  * Opens an issue from the feed. The feed's whole purpose is reading threads
  * next to the stream, so a plain click always peeks (regardless of the
  * page/peek preference); outside a peek host it falls back to the full page.
+ * With `commentId`, the opened issue scrolls to that comment.
  */
-export function useOpenFeedIssue(issueId: string) {
+export function useOpenFeedIssue(issueId: string, commentId?: string) {
   const peek = useIssuePeekActions();
   const { push } = useNavigation();
   const paths = useWorkspacePaths();
   return useCallback(() => {
-    if (peek) peek.open(issueId);
-    else push(paths.issueDetail(issueId));
-  }, [peek, push, paths, issueId]);
+    if (peek) {
+      if (commentId) peek.open(issueId, { commentId });
+      else peek.open(issueId);
+    } else if (commentId) {
+      push(`${paths.issueDetail(issueId)}#comment-${commentId}`);
+    } else {
+      push(paths.issueDetail(issueId));
+    }
+  }, [peek, push, paths, issueId, commentId]);
 }
 
 /**

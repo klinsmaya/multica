@@ -2,10 +2,13 @@ package handler
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -16,6 +19,13 @@ const issueThreadSummariesLimit = 100
 
 // Participants shown per issue; the rest are implied by reply_count.
 const issueThreadSummaryParticipantLimit = 3
+
+// Agent questions listed per issue (newest first) and the excerpt length, in
+// runes, of each.
+const (
+	issueAwaitingMeLimit        = 3
+	issueAwaitingMeExcerptRunes = 140
+)
 
 type ThreadParticipantResponse struct {
 	Type string `json:"type"`
@@ -31,6 +41,39 @@ type IssueThreadSummaryResponse struct {
 	// LastReadAt is the caller's own read cursor on the issue; null when the
 	// caller never opened it.
 	LastReadAt *string `json:"last_read_at"`
+	// AwaitingMe lists unresolved threads whose latest comment is an agent
+	// mentioning the caller, newest first, at most issueAwaitingMeLimit. Never
+	// null.
+	AwaitingMe []AwaitingMeResponse `json:"awaiting_me"`
+}
+
+type AwaitingMeResponse struct {
+	CommentID string `json:"comment_id"`
+	ActorID   string `json:"actor_id"`
+	Excerpt   string `json:"excerpt"`
+	CreatedAt string `json:"created_at"`
+}
+
+var whitespaceRunRe = regexp.MustCompile(`\s+`)
+
+// commentExcerpt flattens comment Markdown into a one-line preview: mention
+// links collapse to their label ("@Name"; issue links keep the bare identifier),
+// whitespace runs to a single space, and the result is cut to maxRunes runes
+// with an ellipsis.
+func commentExcerpt(content string, maxRunes int) string {
+	flat := util.MentionRe.ReplaceAllStringFunc(content, func(m string) string {
+		sub := util.MentionRe.FindStringSubmatch(m)
+		if sub[2] == "issue" {
+			return sub[1]
+		}
+		return "@" + sub[1]
+	})
+	flat = strings.TrimSpace(whitespaceRunRe.ReplaceAllString(flat, " "))
+	runes := []rune(flat)
+	if len(runes) <= maxRunes {
+		return flat
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
 }
 
 // ListIssueThreadSummaries returns comment rollups for a batch of issues so a
@@ -40,6 +83,9 @@ type IssueThreadSummaryResponse struct {
 // platform-authored) get a row; callers treat a missing issue as zero.
 // Workspace scope is enforced in the query, so an id from another workspace
 // yields no row rather than an error.
+//
+// awaiting_me carries the caller's open questions from agents: unresolved
+// threads whose latest comment is agent-authored and mentions the caller.
 //
 // Each row also carries the caller's read cursor (last_read_at, null when never
 // opened) so the feed can tell unread cards from read ones; other users'
@@ -119,6 +165,30 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		lastRead[uuidToString(c.IssueID)] = timestampToNanoPtr(c.LastReadAt)
 	}
 
+	questionRows, err := h.Queries.ListAgentQuestionsForIssues(r.Context(), db.ListAgentQuestionsForIssuesParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+		CallerID:    userUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent questions")
+		return
+	}
+	// Rows arrive newest first per issue; keep the first few.
+	awaiting := make(map[string][]AwaitingMeResponse)
+	for _, q := range questionRows {
+		issueID := uuidToString(q.IssueID)
+		if len(awaiting[issueID]) >= issueAwaitingMeLimit {
+			continue
+		}
+		awaiting[issueID] = append(awaiting[issueID], AwaitingMeResponse{
+			CommentID: uuidToString(q.CommentID),
+			ActorID:   uuidToString(q.AuthorID),
+			Excerpt:   commentExcerpt(q.Content, issueAwaitingMeExcerptRunes),
+			CreatedAt: q.CreatedAt.Time.Format(time.RFC3339Nano),
+		})
+	}
+
 	// Rows arrive ordered by issue then most recent activity, so the first
 	// few per issue are the participants to show.
 	participants := make(map[string][]ThreadParticipantResponse, len(rows))
@@ -140,6 +210,10 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		if list == nil {
 			list = []ThreadParticipantResponse{}
 		}
+		awaitingList := awaiting[issueID]
+		if awaitingList == nil {
+			awaitingList = []AwaitingMeResponse{}
+		}
 		summaries[i] = IssueThreadSummaryResponse{
 			IssueID:         issueID,
 			ReplyCount:      row.ReplyCount,
@@ -147,6 +221,7 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 			OpenThreadCount: row.OpenThreadCount,
 			Participants:    list,
 			LastReadAt:      lastRead[issueID],
+			AwaitingMe:      awaitingList,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summaries": summaries})

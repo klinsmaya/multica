@@ -742,6 +742,96 @@ func (q *Queries) HasAgentRepliedInThread(ctx context.Context, arg HasAgentRepli
 	return has_replied, err
 }
 
+const listAgentQuestionsForIssues = `-- name: ListAgentQuestionsForIssues :many
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id
+    FROM comment c
+    WHERE c.workspace_id = $2
+      AND c.issue_id = ANY($3::uuid[])
+      AND c.parent_id IS NULL
+      AND c.resolved_at IS NULL
+      AND c.deleted_at IS NULL
+),
+membership(id, root_id) AS (
+    SELECT r.root_id, r.root_id
+    FROM roots r
+    UNION ALL
+    SELECT c.id, m.root_id
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.workspace_id = $2
+      AND c.issue_id = ANY($3::uuid[])
+),
+latest AS (
+    SELECT DISTINCT ON (m.root_id)
+           c.id, c.issue_id, c.author_type, c.author_id, c.content, c.created_at
+    FROM membership m
+    JOIN comment c ON c.id = m.id
+    WHERE c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY m.root_id, c.created_at DESC, c.id DESC
+)
+SELECT l.issue_id,
+       l.id AS comment_id,
+       l.author_id,
+       l.content,
+       l.created_at
+FROM latest l
+WHERE l.author_type = 'agent'
+  AND l.content ILIKE '%](mention://member/' || $1::uuid::text || ')%'
+ORDER BY l.issue_id, l.created_at DESC, l.id DESC
+`
+
+type ListAgentQuestionsForIssuesParams struct {
+	CallerID    pgtype.UUID   `json:"caller_id"`
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+}
+
+type ListAgentQuestionsForIssuesRow struct {
+	IssueID   pgtype.UUID        `json:"issue_id"`
+	CommentID pgtype.UUID        `json:"comment_id"`
+	AuthorID  pgtype.UUID        `json:"author_id"`
+	Content   string             `json:"content"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+// Threads whose latest word is an agent @-mentioning the caller: the reader's
+// turn to answer. A thread is a top-level comment plus every descendant (same
+// notion of root as ListCommentRepliesForRoots); only unresolved, non-deleted
+// roots qualify. The latest comment is picked by (created_at, id) among
+// non-deleted, non-system rows, so a deleted tail hands the decision back to the
+// comment before it and platform notices never mask a pending question.
+//
+// The mention test runs only on one row per thread, after the latest comment is
+// chosen. Mentions serialize as [@Label](mention://member/<user-id>); ILIKE
+// tolerates an upper-case UUID written by an agent.
+func (q *Queries) ListAgentQuestionsForIssues(ctx context.Context, arg ListAgentQuestionsForIssuesParams) ([]ListAgentQuestionsForIssuesRow, error) {
+	rows, err := q.db.Query(ctx, listAgentQuestionsForIssues, arg.CallerID, arg.WorkspaceID, arg.IssueIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAgentQuestionsForIssuesRow{}
+	for rows.Next() {
+		var i ListAgentQuestionsForIssuesRow
+		if err := rows.Scan(
+			&i.IssueID,
+			&i.CommentID,
+			&i.AuthorID,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChildCommentsForParents = `-- name: ListChildCommentsForParents :many
 SELECT id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id, resolved_at, resolved_by_type, resolved_by_id, source_task_id, quick_action_id, via_plugin_id, revision, recovery_settled_at, deleted_at, suppressed_agent_ids FROM comment
 WHERE parent_id = ANY($1::uuid[])

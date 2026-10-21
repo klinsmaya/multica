@@ -173,6 +173,16 @@ export interface IssueThreadParticipant {
   id: string;
 }
 
+/** An unresolved thread whose latest comment is an agent @-mentioning the caller. */
+export interface IssueAwaitingMe {
+  comment_id: string;
+  /** The agent that wrote the comment. */
+  actor_id: string;
+  /** Plain-text preview, mentions reduced to `@Label`. */
+  excerpt: string;
+  created_at: string;
+}
+
 /** Comment-thread rollup for one issue. Issues without counted comments have no row. */
 export interface IssueThreadSummary {
   issue_id: string;
@@ -182,6 +192,8 @@ export interface IssueThreadSummary {
   participants: IssueThreadParticipant[];
   /** The caller's own read cursor on the issue; null when never opened. */
   last_read_at: string | null;
+  /** Agent questions waiting on the caller, newest first (at most 3). */
+  awaiting_me: IssueAwaitingMe[];
 }
 
 export interface Issue {

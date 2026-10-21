@@ -686,6 +686,10 @@
     "open_thread": "打开讨论",
     "unread": "未读",
     "awaiting_reply": "等你回复",
+    "decision": {
+      "title": "等你决定",
+      "open_thread": "查看讨论串"
+    },
     "empty": "信息流中没有任务",
     "quick": {
       "continue": "继续最近的工作",

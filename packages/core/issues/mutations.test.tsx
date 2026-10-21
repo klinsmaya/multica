@@ -1363,6 +1363,7 @@ describe("useMarkIssueRead", () => {
       open_thread_count: 0,
       participants: [],
       last_read_at: null,
+      awaiting_me: [],
     };
   }
 

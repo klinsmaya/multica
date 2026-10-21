@@ -1805,6 +1805,13 @@ export const ThreadSummariesResponseSchema = z.object({
     }).loose()).default([]),
     // Older servers omit the caller's read cursor.
     last_read_at: z.string().nullable().optional().default(null),
+    // Older servers do not list the caller's open agent questions.
+    awaiting_me: z.array(z.object({
+      comment_id: z.string(),
+      actor_id: z.string(),
+      excerpt: z.string().default(""),
+      created_at: z.string().default(""),
+    }).loose()).default([]),
   }).loose()).default([]),
 }).loose();
 

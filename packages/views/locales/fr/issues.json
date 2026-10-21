@@ -715,6 +715,10 @@
     "open_thread": "Ouvrir le fil",
     "unread": "Non lu",
     "awaiting_reply": "En attente de votre réponse",
+    "decision": {
+      "title": "En attente de votre décision",
+      "open_thread": "Voir le fil"
+    },
     "empty": "Aucune tâche dans ce flux",
     "quick": {
       "continue": "Reprendre le dernier travail",

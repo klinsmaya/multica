@@ -977,3 +977,52 @@ WHERE workspace_id = sqlc.arg('workspace_id')
   AND author_type <> 'system'
 GROUP BY issue_id, author_type, author_id
 ORDER BY issue_id, last_at DESC;
+
+-- name: ListAgentQuestionsForIssues :many
+-- Threads whose latest word is an agent @-mentioning the caller: the reader's
+-- turn to answer. A thread is a top-level comment plus every descendant (same
+-- notion of root as ListCommentRepliesForRoots); only unresolved, non-deleted
+-- roots qualify. The latest comment is picked by (created_at, id) among
+-- non-deleted, non-system rows, so a deleted tail hands the decision back to the
+-- comment before it and platform notices never mask a pending question.
+--
+-- The mention test runs only on one row per thread, after the latest comment is
+-- chosen. Mentions serialize as [@Label](mention://member/<user-id>); ILIKE
+-- tolerates an upper-case UUID written by an agent.
+WITH RECURSIVE roots AS (
+    SELECT c.id AS root_id
+    FROM comment c
+    WHERE c.workspace_id = sqlc.arg('workspace_id')
+      AND c.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+      AND c.parent_id IS NULL
+      AND c.resolved_at IS NULL
+      AND c.deleted_at IS NULL
+),
+membership(id, root_id) AS (
+    SELECT r.root_id, r.root_id
+    FROM roots r
+    UNION ALL
+    SELECT c.id, m.root_id
+    FROM comment c
+    JOIN membership m ON c.parent_id = m.id
+    WHERE c.workspace_id = sqlc.arg('workspace_id')
+      AND c.issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+),
+latest AS (
+    SELECT DISTINCT ON (m.root_id)
+           c.id, c.issue_id, c.author_type, c.author_id, c.content, c.created_at
+    FROM membership m
+    JOIN comment c ON c.id = m.id
+    WHERE c.deleted_at IS NULL
+      AND c.author_type <> 'system'
+    ORDER BY m.root_id, c.created_at DESC, c.id DESC
+)
+SELECT l.issue_id,
+       l.id AS comment_id,
+       l.author_id,
+       l.content,
+       l.created_at
+FROM latest l
+WHERE l.author_type = 'agent'
+  AND l.content ILIKE '%](mention://member/' || sqlc.arg('caller_id')::uuid::text || ')%'
+ORDER BY l.issue_id, l.created_at DESC, l.id DESC;

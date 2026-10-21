@@ -715,6 +715,10 @@
     "open_thread": "Open thread",
     "unread": "Unread",
     "awaiting_reply": "Awaiting your reply",
+    "decision": {
+      "title": "Waiting on you",
+      "open_thread": "View thread"
+    },
     "empty": "No issues in this feed",
     "quick": {
       "continue": "Continue recent work",

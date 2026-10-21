@@ -143,6 +143,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     open_thread_count: 0,
     participants: [],
     last_read_at: null,
+    awaiting_me: [],
     ...overrides,
   };
 }
@@ -383,6 +384,38 @@ describe("FeedView", () => {
     const bar = (await screen.findByText("1 reply")).closest('[role="button"]')!;
     fireEvent.click(within(bar as HTMLElement).getByText("1 reply"));
     expect(peek.open).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("shows the decision card between the message card and the thread bar only when a question is waiting", async () => {
+    mockListThreadSummaries.mockResolvedValue({
+      summaries: [
+        summary({ issue_id: "issue-1", reply_count: 1 }),
+        summary({
+          issue_id: "issue-2",
+          reply_count: 2,
+          awaiting_me: [
+            {
+              comment_id: "c-9",
+              actor_id: "agent-7",
+              excerpt: "Ship @Me?",
+              created_at: "2026-10-02T00:00:00Z",
+            },
+          ],
+        }),
+      ],
+    });
+    renderFeed([
+      makeIssue({ id: "issue-1", title: "Quiet", created_at: "2026-10-01T00:00:00Z" }),
+      makeIssue({ id: "issue-2", title: "Blocked", created_at: "2026-10-02T00:00:00Z" }),
+    ]);
+
+    const decision = await screen.findByText("Waiting on you");
+    expect(screen.getAllByText("Waiting on you")).toHaveLength(1);
+    const before = screen.getByText("Blocked");
+    const after = screen.getByText("2 replies");
+    expect(before.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(decision.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Ship @Me?")).toBeInTheDocument();
   });
 
   it("shows the empty state when nothing top-level remains", () => {

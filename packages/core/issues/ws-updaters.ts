@@ -21,6 +21,7 @@ import {
   patchIssueInBuckets,
 } from "./cache-helpers";
 import { cleanupDeletedIssueCaches } from "./delete-cache";
+import { parseMentions } from "./comment-trigger-outcomes";
 import type {
   Comment,
   Issue,
@@ -816,6 +817,7 @@ const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
 function applyCommentToThreadSummary(
   existing: IssueThreadSummary | undefined,
   comment: Comment,
+  clearAwaitingMe: boolean,
 ): IssueThreadSummary {
   const openRoot = comment.parent_id == null && comment.resolved_at == null;
   const author = { type: comment.author_type, id: comment.author_id };
@@ -839,7 +841,29 @@ function applyCommentToThreadSummary(
     open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
     participants,
     last_read_at: existing?.last_read_at ?? null,
+    awaiting_me: clearAwaitingMe ? [] : (existing?.awaiting_me ?? []),
   };
+}
+
+// The caller's own member comment may have answered an agent question, but the
+// payload does not say which thread it replied into, so the issue's whole list
+// is dropped until the server weighs in.
+function isOwnMemberComment(comment: Comment, selfUserId: string | null | undefined): boolean {
+  return (
+    comment.author_type === "member" &&
+    selfUserId != null &&
+    comment.author_id === selfUserId
+  );
+}
+
+// An agent comment that may be a new question for the caller. With the caller
+// unknown, any agent comment might be.
+function mayAskCaller(comment: Comment, selfUserId: string | null | undefined): boolean {
+  if (comment.author_type !== "agent") return false;
+  if (selfUserId == null) return true;
+  return parseMentions(comment.content ?? "").some(
+    (m) => m.type === "member" && m.id.toLowerCase() === selfUserId.toLowerCase(),
+  );
 }
 
 /**
@@ -847,13 +871,22 @@ function applyCommentToThreadSummary(
  * were asked for the comment's issue (their ids key contains it) are touched;
  * an issue without a row yet gets one there. A cache that is mid-fetch may or
  * may not already include the comment, so it is refetched instead of patched.
+ *
+ * `awaiting_me` is owned by the server. The patch clears it when the caller's
+ * own member comment lands (the question was most likely just answered), and
+ * refetches the cache whenever the comment could change which questions are
+ * pending: the issue already lists some, or an agent may be asking the caller.
  */
 export function onCommentCreatedPatchThreadSummaries(
   qc: QueryClient,
   wsId: string,
   comment: Comment,
+  selfUserId?: string | null,
 ) {
   if (!comment.issue_id || !isCountedThreadComment(comment)) return;
+
+  const ownMemberComment = isOwnMemberComment(comment, selfUserId);
+  const askingCaller = mayAskCaller(comment, selfUserId);
 
   const caches = qc.getQueriesData<IssueThreadSummary[]>({
     queryKey: issueKeys.threadSummariesAll(wsId),
@@ -870,13 +903,17 @@ export function onCommentCreatedPatchThreadSummaries(
     }
 
     const index = data.findIndex((s) => s.issue_id === comment.issue_id);
-    const patched = applyCommentToThreadSummary(data[index], comment);
+    const hadQuestions = (data[index]?.awaiting_me.length ?? 0) > 0;
+    const patched = applyCommentToThreadSummary(data[index], comment, ownMemberComment);
     qc.setQueryData<IssueThreadSummary[]>(
       key,
       index === -1
         ? [...data, patched]
         : data.map((s, i) => (i === index ? patched : s)),
     );
+    if (hadQuestions || (!ownMemberComment && askingCaller)) {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+    }
   }
 }
 

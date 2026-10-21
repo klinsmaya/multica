@@ -13,6 +13,7 @@ function summary(overrides: Partial<IssueThreadSummary> = {}): IssueThreadSummar
     open_thread_count: 0,
     participants: [{ type: "agent", id: "agent-1" }],
     last_read_at: null,
+    awaiting_me: [],
     ...overrides,
   };
 }

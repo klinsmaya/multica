@@ -686,6 +686,10 @@
     "open_thread": "スレッドを開く",
     "unread": "未読",
     "awaiting_reply": "返信待ち",
+    "decision": {
+      "title": "あなたの判断待ち",
+      "open_thread": "スレッドを見る"
+    },
     "empty": "フィードに表示するタスクはありません",
     "quick": {
       "continue": "最近の作業を続ける",

@@ -1218,7 +1218,12 @@ export function useRealtimeSync(
       if (wsId) {
         invalidateUpdatedAtSortedIssueLists(qc, wsId);
         invalidateLastActivitySortedIssueLists(qc, wsId);
-        onCommentCreatedPatchThreadSummaries(qc, wsId, comment);
+        onCommentCreatedPatchThreadSummaries(
+          qc,
+          wsId,
+          comment,
+          authStore.getState().user?.id,
+        );
         // A comment carries only the aggregate owner revision, not a full
         // Issue snapshot. Mark stale projections for an authoritative fetch
         // without making a later full snapshot look older than the cache.
