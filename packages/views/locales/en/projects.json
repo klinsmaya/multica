@@ -190,5 +190,11 @@
     "tab_library": "Library",
     "tab_pull_requests": "PRs",
     "tabs_label": "Project panels"
+  },
+  "automations": {
+    "new": "New",
+    "empty": "No automations in this project yet",
+    "next_run": "Next {{time}}",
+    "last_run": "Last run {{time}}"
   }
 }

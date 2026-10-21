@@ -188,5 +188,11 @@
     "tab_library": "库",
     "tab_pull_requests": "PR",
     "tabs_label": "项目面板"
+  },
+  "automations": {
+    "new": "新建",
+    "empty": "此项目还没有自动化",
+    "next_run": "下次 {{time}}",
+    "last_run": "上次运行 {{time}}"
   }
 }

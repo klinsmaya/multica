@@ -190,5 +190,11 @@
     "tab_library": "Bibliothèque",
     "tab_pull_requests": "PR",
     "tabs_label": "Panneaux du projet"
+  },
+  "automations": {
+    "new": "Nouvelle",
+    "empty": "Aucune automatisation dans ce projet",
+    "next_run": "Prochaine : {{time}}",
+    "last_run": "Dernière exécution : {{time}}"
   }
 }

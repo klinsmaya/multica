@@ -188,5 +188,11 @@
     "tab_library": "라이브러리",
     "tab_pull_requests": "PR",
     "tabs_label": "프로젝트 패널"
+  },
+  "automations": {
+    "new": "새로 만들기",
+    "empty": "이 프로젝트에는 아직 자동화가 없습니다",
+    "next_run": "다음 {{time}}",
+    "last_run": "마지막 실행 {{time}}"
   }
 }

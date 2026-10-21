@@ -188,5 +188,11 @@
     "tab_library": "ライブラリ",
     "tab_pull_requests": "PR",
     "tabs_label": "プロジェクトパネル"
+  },
+  "automations": {
+    "new": "新規",
+    "empty": "このプロジェクトにはまだ自動化がありません",
+    "next_run": "次回 {{time}}",
+    "last_run": "前回の実行 {{time}}"
   }
 }
