@@ -73,8 +73,15 @@ const (
 )
 
 // Resource types. Resources involve no call in either direction.
+//
+// A skill is a SKILL.md written into the workspace's skill table. An agent is
+// a Markdown definition (frontmatter plus instructions) that becomes a
+// workspace agent, created without a runtime so the workspace binds one. A
+// squad is a JSON file naming the agent resources that form it.
 const (
 	ResourceSkill = "skill"
+	ResourceAgent = "agent"
+	ResourceSquad = "squad"
 )
 
 // Config field types. This is a deliberately small subset of JSON Schema: the
@@ -689,27 +696,46 @@ func (m Manifest) validateContributions() error {
 		}
 	}
 
+	// Keys are unique per resource type: a skill and the agent that uses it
+	// may share a name, as they do in a Claude Code plugin.
 	resourceKeys := map[string]bool{}
 	for index, resource := range m.Contributes.Resources {
 		field := fmt.Sprintf("contributes.resources[%d]", index)
-		if resource.Type != ResourceSkill {
+		want, ok := ResourceEntry(resource.Type, resource.Key)
+		if !ok {
 			return fmt.Errorf("%s.type is unsupported: %q", field, resource.Type)
 		}
 		if !contributionKeyPattern.MatchString(resource.Key) {
 			return fmt.Errorf("%s.key is invalid", field)
 		}
-		if resourceKeys[resource.Key] {
-			return fmt.Errorf("duplicate resource key %q", resource.Key)
+		if resourceKeys[resource.Type+":"+resource.Key] {
+			return fmt.Errorf("duplicate %s resource key %q", resource.Type, resource.Key)
 		}
-		resourceKeys[resource.Key] = true
+		resourceKeys[resource.Type+":"+resource.Key] = true
 		if err := validateRelativePath(field+".entry", resource.Entry); err != nil {
 			return err
 		}
-		if want := "skills/" + resource.Key + "/SKILL.md"; resource.Entry != want {
+		if resource.Entry != want {
 			return fmt.Errorf("%s.entry must be %q", field, want)
 		}
 	}
 	return nil
+}
+
+// ResourceEntry is the one path a resource of the given type and key may
+// declare. The layout is fixed so the consent screen, the install path and
+// the registry's neutral package layout all agree on where a file lives.
+func ResourceEntry(resourceType, key string) (string, bool) {
+	switch resourceType {
+	case ResourceSkill:
+		return "skills/" + key + "/SKILL.md", true
+	case ResourceAgent:
+		return "agents/" + key + ".md", true
+	case ResourceSquad:
+		return "squads/" + key + ".json", true
+	default:
+		return "", false
+	}
 }
 
 func validateHookSchedule(field string, schedule HookSchedule) error {

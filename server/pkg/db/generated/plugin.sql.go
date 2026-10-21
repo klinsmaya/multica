@@ -11,6 +11,230 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const archivePluginAgentsByInstallation = `-- name: ArchivePluginAgentsByInstallation :many
+UPDATE agent
+SET archived_at = now(), archived_by = $2, updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id
+`
+
+type ArchivePluginAgentsByInstallationParams struct {
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	ArchivedBy           pgtype.UUID `json:"archived_by"`
+}
+
+func (q *Queries) ArchivePluginAgentsByInstallation(ctx context.Context, arg ArchivePluginAgentsByInstallationParams) ([]Agent, error) {
+	rows, err := q.db.Query(ctx, archivePluginAgentsByInstallation, arg.PluginInstallationID, arg.ArchivedBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Agent{}
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.RuntimeMode,
+			&i.RuntimeConfig,
+			&i.Visibility,
+			&i.Status,
+			&i.MaxConcurrentTasks,
+			&i.OwnerID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.RuntimeID,
+			&i.Instructions,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.CustomEnv,
+			&i.CustomArgs,
+			&i.McpConfig,
+			&i.Model,
+			&i.ThinkingLevel,
+			&i.ComposioToolkitAllowlist,
+			&i.PermissionMode,
+			&i.Kind,
+			&i.SystemKey,
+			&i.DisabledRuntimeSkills,
+			&i.ServiceTier,
+			&i.ConversationStarters,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const archivePluginAgentsNotIn = `-- name: ArchivePluginAgentsNotIn :many
+UPDATE agent
+SET archived_at = now(), archived_by = $2, updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL AND name <> ALL($3::text[])
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id
+`
+
+type ArchivePluginAgentsNotInParams struct {
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	ArchivedBy           pgtype.UUID `json:"archived_by"`
+	KeepNames            []string    `json:"keep_names"`
+}
+
+// Upgrade pruning: an agent this installation used to contribute but no
+// longer declares is archived, not deleted — its tasks and comments stay
+// attributable. Ownership is kept so a later version that brings the name
+// back re-adopts the row.
+func (q *Queries) ArchivePluginAgentsNotIn(ctx context.Context, arg ArchivePluginAgentsNotInParams) ([]Agent, error) {
+	rows, err := q.db.Query(ctx, archivePluginAgentsNotIn, arg.PluginInstallationID, arg.ArchivedBy, arg.KeepNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Agent{}
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.RuntimeMode,
+			&i.RuntimeConfig,
+			&i.Visibility,
+			&i.Status,
+			&i.MaxConcurrentTasks,
+			&i.OwnerID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.RuntimeID,
+			&i.Instructions,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.CustomEnv,
+			&i.CustomArgs,
+			&i.McpConfig,
+			&i.Model,
+			&i.ThinkingLevel,
+			&i.ComposioToolkitAllowlist,
+			&i.PermissionMode,
+			&i.Kind,
+			&i.SystemKey,
+			&i.DisabledRuntimeSkills,
+			&i.ServiceTier,
+			&i.ConversationStarters,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const archivePluginSquadsByInstallation = `-- name: ArchivePluginSquadsByInstallation :many
+UPDATE squad
+SET archived_at = now(), archived_by = $2, updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL
+RETURNING id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id
+`
+
+type ArchivePluginSquadsByInstallationParams struct {
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	ArchivedBy           pgtype.UUID `json:"archived_by"`
+}
+
+func (q *Queries) ArchivePluginSquadsByInstallation(ctx context.Context, arg ArchivePluginSquadsByInstallationParams) ([]Squad, error) {
+	rows, err := q.db.Query(ctx, archivePluginSquadsByInstallation, arg.PluginInstallationID, arg.ArchivedBy)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Squad{}
+	for rows.Next() {
+		var i Squad
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.LeaderID,
+			&i.CreatorID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.AvatarUrl,
+			&i.Instructions,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const archivePluginSquadsNotIn = `-- name: ArchivePluginSquadsNotIn :many
+UPDATE squad
+SET archived_at = now(), archived_by = $2, updated_at = now()
+WHERE plugin_installation_id = $1 AND archived_at IS NULL AND name <> ALL($3::text[])
+RETURNING id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id
+`
+
+type ArchivePluginSquadsNotInParams struct {
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	ArchivedBy           pgtype.UUID `json:"archived_by"`
+	KeepNames            []string    `json:"keep_names"`
+}
+
+func (q *Queries) ArchivePluginSquadsNotIn(ctx context.Context, arg ArchivePluginSquadsNotInParams) ([]Squad, error) {
+	rows, err := q.db.Query(ctx, archivePluginSquadsNotIn, arg.PluginInstallationID, arg.ArchivedBy, arg.KeepNames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Squad{}
+	for rows.Next() {
+		var i Squad
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.LeaderID,
+			&i.CreatorID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.AvatarUrl,
+			&i.Instructions,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countInstallationsOfPackageVersions = `-- name: CountInstallationsOfPackageVersions :one
 SELECT count(*) FROM plugin_installation
 WHERE package_version_id IN (
@@ -65,6 +289,82 @@ func (q *Queries) CountRecentPluginInvocations(ctx context.Context, arg CountRec
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createPluginAgent = `-- name: CreatePluginAgent :one
+INSERT INTO agent (
+    workspace_id, name, description, runtime_mode, runtime_config, runtime_id,
+    visibility, permission_mode, max_concurrent_tasks, owner_id, instructions,
+    custom_env, custom_args, model, thinking_level, kind, plugin_installation_id
+) VALUES (
+    $1, $2, $3, 'local', '{}'::jsonb, NULL,
+    'workspace', 'public_to', 1, $4, $5,
+    '{}'::jsonb, '[]'::jsonb, $7, $8, 'user', $6
+)
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id
+`
+
+type CreatePluginAgentParams struct {
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	Name                 string      `json:"name"`
+	Description          string      `json:"description"`
+	OwnerID              pgtype.UUID `json:"owner_id"`
+	Instructions         string      `json:"instructions"`
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	Model                pgtype.Text `json:"model"`
+	ThinkingLevel        pgtype.Text `json:"thinking_level"`
+}
+
+// A plugin's agent resource, as an ordinary workspace agent. No runtime is
+// bound: the package cannot know the workspace's machines, so the agent is
+// created blocked until a member binds one in its settings. Workspace-invocable
+// from the start (permission_mode public_to plus the workspace target the
+// caller adds), because a template squad is only useful if members can use it.
+func (q *Queries) CreatePluginAgent(ctx context.Context, arg CreatePluginAgentParams) (Agent, error) {
+	row := q.db.QueryRow(ctx, createPluginAgent,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Description,
+		arg.OwnerID,
+		arg.Instructions,
+		arg.PluginInstallationID,
+		arg.Model,
+		arg.ThinkingLevel,
+	)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.RuntimeMode,
+		&i.RuntimeConfig,
+		&i.Visibility,
+		&i.Status,
+		&i.MaxConcurrentTasks,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.RuntimeID,
+		&i.Instructions,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.CustomEnv,
+		&i.CustomArgs,
+		&i.McpConfig,
+		&i.Model,
+		&i.ThinkingLevel,
+		&i.ComposioToolkitAllowlist,
+		&i.PermissionMode,
+		&i.Kind,
+		&i.SystemKey,
+		&i.DisabledRuntimeSkills,
+		&i.ServiceTier,
+		&i.ConversationStarters,
+		&i.PluginInstallationID,
+	)
+	return i, err
 }
 
 const createPluginHookSchedule = `-- name: CreatePluginHookSchedule :one
@@ -326,6 +626,49 @@ func (q *Queries) CreatePluginPackageVersion(ctx context.Context, arg CreatePlug
 	return i, err
 }
 
+const createPluginSquad = `-- name: CreatePluginSquad :one
+INSERT INTO squad (workspace_id, name, description, leader_id, creator_id, plugin_installation_id)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id
+`
+
+type CreatePluginSquadParams struct {
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	Name                 string      `json:"name"`
+	Description          string      `json:"description"`
+	LeaderID             pgtype.UUID `json:"leader_id"`
+	CreatorID            pgtype.UUID `json:"creator_id"`
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+}
+
+func (q *Queries) CreatePluginSquad(ctx context.Context, arg CreatePluginSquadParams) (Squad, error) {
+	row := q.db.QueryRow(ctx, createPluginSquad,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Description,
+		arg.LeaderID,
+		arg.CreatorID,
+		arg.PluginInstallationID,
+	)
+	var i Squad
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.LeaderID,
+		&i.CreatorID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.AvatarUrl,
+		&i.Instructions,
+		&i.PluginInstallationID,
+	)
+	return i, err
+}
+
 const deleteExpiredPluginInvocations = `-- name: DeleteExpiredPluginInvocations :execrows
 DELETE FROM plugin_invocation WHERE created_at < $1
 `
@@ -498,6 +841,42 @@ WHERE installation_id = $1
 func (q *Queries) DisablePluginHookSchedules(ctx context.Context, installationID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, disablePluginHookSchedules, installationID)
 	return err
+}
+
+const getArchivedPluginSquadByName = `-- name: GetArchivedPluginSquadByName :one
+SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id FROM squad
+WHERE workspace_id = $1 AND name = $2 AND plugin_installation_id IS NOT NULL AND archived_at IS NOT NULL
+ORDER BY archived_at DESC
+LIMIT 1
+`
+
+type GetArchivedPluginSquadByNameParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Name        string      `json:"name"`
+}
+
+// Reinstall after uninstall: squad names are not unique, so the row a
+// previous installation of the same template archived is found by name and
+// ownership and re-adopted rather than duplicated.
+func (q *Queries) GetArchivedPluginSquadByName(ctx context.Context, arg GetArchivedPluginSquadByNameParams) (Squad, error) {
+	row := q.db.QueryRow(ctx, getArchivedPluginSquadByName, arg.WorkspaceID, arg.Name)
+	var i Squad
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.LeaderID,
+		&i.CreatorID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.AvatarUrl,
+		&i.Instructions,
+		&i.PluginInstallationID,
+	)
+	return i, err
 }
 
 const getPluginHookSchedule = `-- name: GetPluginHookSchedule :one
@@ -696,6 +1075,55 @@ func (q *Queries) GetPluginStorageValue(ctx context.Context, arg GetPluginStorag
 	return i, err
 }
 
+const getWorkspaceAgentByName = `-- name: GetWorkspaceAgentByName :one
+SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id FROM agent WHERE workspace_id = $1 AND name = $2
+`
+
+type GetWorkspaceAgentByNameParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Name        string      `json:"name"`
+}
+
+// Name is the table's own uniqueness rule, archived rows included, so an
+// installer has to look before it writes.
+func (q *Queries) GetWorkspaceAgentByName(ctx context.Context, arg GetWorkspaceAgentByNameParams) (Agent, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceAgentByName, arg.WorkspaceID, arg.Name)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.RuntimeMode,
+		&i.RuntimeConfig,
+		&i.Visibility,
+		&i.Status,
+		&i.MaxConcurrentTasks,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.RuntimeID,
+		&i.Instructions,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.CustomEnv,
+		&i.CustomArgs,
+		&i.McpConfig,
+		&i.Model,
+		&i.ThinkingLevel,
+		&i.ComposioToolkitAllowlist,
+		&i.PermissionMode,
+		&i.Kind,
+		&i.SystemKey,
+		&i.DisabledRuntimeSkills,
+		&i.ServiceTier,
+		&i.ConversationStarters,
+		&i.PluginInstallationID,
+	)
+	return i, err
+}
+
 const getWorkspacePluginInstallation = `-- name: GetWorkspacePluginInstallation :one
 SELECT id, workspace_id, plugin_key, version, manifest, granted_scopes, config, enabled, installed_by, created_at, updated_at, token_hash, token_rotated_at, mcp_approvals, package_version_id FROM plugin_installation
 WHERE workspace_id = $1 AND id = $2
@@ -872,6 +1300,61 @@ func (q *Queries) ListEnabledPluginHookSchedules(ctx context.Context) ([]PluginH
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPluginAgents = `-- name: ListPluginAgents :many
+SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id FROM agent WHERE plugin_installation_id = $1 ORDER BY name ASC
+`
+
+func (q *Queries) ListPluginAgents(ctx context.Context, pluginInstallationID pgtype.UUID) ([]Agent, error) {
+	rows, err := q.db.Query(ctx, listPluginAgents, pluginInstallationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Agent{}
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.RuntimeMode,
+			&i.RuntimeConfig,
+			&i.Visibility,
+			&i.Status,
+			&i.MaxConcurrentTasks,
+			&i.OwnerID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.RuntimeID,
+			&i.Instructions,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.CustomEnv,
+			&i.CustomArgs,
+			&i.McpConfig,
+			&i.Model,
+			&i.ThinkingLevel,
+			&i.ComposioToolkitAllowlist,
+			&i.PermissionMode,
+			&i.Kind,
+			&i.SystemKey,
+			&i.DisabledRuntimeSkills,
+			&i.ServiceTier,
+			&i.ConversationStarters,
+			&i.PluginInstallationID,
 		); err != nil {
 			return nil, err
 		}
@@ -1106,6 +1589,44 @@ func (q *Queries) ListPluginSkills(ctx context.Context, pluginInstallationID pgt
 	return items, nil
 }
 
+const listPluginSquads = `-- name: ListPluginSquads :many
+SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id FROM squad WHERE plugin_installation_id = $1 ORDER BY name ASC
+`
+
+func (q *Queries) ListPluginSquads(ctx context.Context, pluginInstallationID pgtype.UUID) ([]Squad, error) {
+	rows, err := q.db.Query(ctx, listPluginSquads, pluginInstallationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Squad{}
+	for rows.Next() {
+		var i Squad
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.LeaderID,
+			&i.CreatorID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.ArchivedBy,
+			&i.AvatarUrl,
+			&i.Instructions,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPluginStorageKeys = `-- name: ListPluginStorageKeys :many
 SELECT key, octet_length(value)::bigint AS size_bytes, updated_at
 FROM plugin_storage
@@ -1283,6 +1804,17 @@ func (q *Queries) ReactivatePluginHookSchedule(ctx context.Context, arg Reactiva
 	return i, err
 }
 
+const removeAgentSkillsByInstallationSkills = `-- name: RemoveAgentSkillsByInstallationSkills :exec
+DELETE FROM agent_skill
+WHERE skill_id IN (SELECT id FROM skill WHERE plugin_installation_id = $1)
+`
+
+// Agent-skill links to skills this installation is about to delete.
+func (q *Queries) RemoveAgentSkillsByInstallationSkills(ctx context.Context, pluginInstallationID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeAgentSkillsByInstallationSkills, pluginInstallationID)
+	return err
+}
+
 const setPluginInstallationEnabled = `-- name: SetPluginInstallationEnabled :one
 UPDATE plugin_installation
 SET enabled = $2,
@@ -1366,6 +1898,79 @@ func (q *Queries) SetPluginMCPApprovals(ctx context.Context, arg SetPluginMCPApp
 		&i.TokenRotatedAt,
 		&i.McpApprovals,
 		&i.PackageVersionID,
+	)
+	return i, err
+}
+
+const updatePluginAgent = `-- name: UpdatePluginAgent :one
+UPDATE agent
+SET description = $2,
+    instructions = $3,
+    model = $5,
+    thinking_level = $6,
+    plugin_installation_id = $4,
+    archived_at = NULL,
+    archived_by = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, conversation_starters, plugin_installation_id
+`
+
+type UpdatePluginAgentParams struct {
+	ID                   pgtype.UUID `json:"id"`
+	Description          string      `json:"description"`
+	Instructions         string      `json:"instructions"`
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+	Model                pgtype.Text `json:"model"`
+	ThinkingLevel        pgtype.Text `json:"thinking_level"`
+}
+
+// Upgrade: the template owns description, instructions and model. Everything
+// else (runtime binding, avatar, concurrency, permissions) belongs to the
+// workspace and is left alone. Also re-adopts an archived agent this
+// installation (or a previous installation of the same key) left behind, so
+// uninstall then reinstall restores it under its original identity.
+func (q *Queries) UpdatePluginAgent(ctx context.Context, arg UpdatePluginAgentParams) (Agent, error) {
+	row := q.db.QueryRow(ctx, updatePluginAgent,
+		arg.ID,
+		arg.Description,
+		arg.Instructions,
+		arg.PluginInstallationID,
+		arg.Model,
+		arg.ThinkingLevel,
+	)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.RuntimeMode,
+		&i.RuntimeConfig,
+		&i.Visibility,
+		&i.Status,
+		&i.MaxConcurrentTasks,
+		&i.OwnerID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.RuntimeID,
+		&i.Instructions,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.CustomEnv,
+		&i.CustomArgs,
+		&i.McpConfig,
+		&i.Model,
+		&i.ThinkingLevel,
+		&i.ComposioToolkitAllowlist,
+		&i.PermissionMode,
+		&i.Kind,
+		&i.SystemKey,
+		&i.DisabledRuntimeSkills,
+		&i.ServiceTier,
+		&i.ConversationStarters,
+		&i.PluginInstallationID,
 	)
 	return i, err
 }
@@ -1557,6 +2162,54 @@ func (q *Queries) UpdatePluginPackageName(ctx context.Context, arg UpdatePluginP
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RegistryListingID,
+	)
+	return i, err
+}
+
+const updatePluginSquad = `-- name: UpdatePluginSquad :one
+UPDATE squad
+SET name = $2,
+    description = $3,
+    leader_id = $4,
+    plugin_installation_id = $5,
+    archived_at = NULL,
+    archived_by = NULL,
+    updated_at = now()
+WHERE id = $1
+RETURNING id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions, plugin_installation_id
+`
+
+type UpdatePluginSquadParams struct {
+	ID                   pgtype.UUID `json:"id"`
+	Name                 string      `json:"name"`
+	Description          string      `json:"description"`
+	LeaderID             pgtype.UUID `json:"leader_id"`
+	PluginInstallationID pgtype.UUID `json:"plugin_installation_id"`
+}
+
+func (q *Queries) UpdatePluginSquad(ctx context.Context, arg UpdatePluginSquadParams) (Squad, error) {
+	row := q.db.QueryRow(ctx, updatePluginSquad,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.LeaderID,
+		arg.PluginInstallationID,
+	)
+	var i Squad
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Description,
+		&i.LeaderID,
+		&i.CreatorID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+		&i.ArchivedBy,
+		&i.AvatarUrl,
+		&i.Instructions,
+		&i.PluginInstallationID,
 	)
 	return i, err
 }

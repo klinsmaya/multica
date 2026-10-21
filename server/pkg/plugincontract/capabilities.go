@@ -53,7 +53,10 @@ func HostCapabilities() Capabilities {
 		// A skill resource is not a call in either direction — it is a SKILL.md
 		// written into the existing skill table at install and removed at
 		// uninstall. service.InstallSkillResources does that.
-		ResourceTypes: map[string]bool{ResourceSkill: true},
+		// Agent and squad resources are rows in the agent and squad tables
+		// owned by the installation; service.InstallAgentResources and
+		// InstallSquadResources create them and uninstall archives them.
+		ResourceTypes: map[string]bool{ResourceSkill: true, ResourceAgent: true, ResourceSquad: true},
 	}
 }
 

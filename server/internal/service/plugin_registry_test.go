@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/registry"
+	"github.com/multica-ai/multica/server/internal/registry/seed"
 	"github.com/multica-ai/multica/server/pkg/plugincontract"
 )
 
@@ -77,14 +78,49 @@ func TestRegistryBundleAllowsSkillOnlyPackagesWithoutScopes(t *testing.T) {
 	}
 }
 
-func TestRegistryBundleRefusesWhatMulticaCannotRunYet(t *testing.T) {
+func TestRegistryBundleMapsAgentsAndSquad(t *testing.T) {
+	bundle, err := RegistryBundle("@multica", registryPackage(t, map[string]string{
+		".claude-plugin/plugin.json": `{"name":"support-squad","version":"2.0.0","displayName":"Support Squad","metadata":{"multica":{"scopes":["issues:read"],"squad":{"lead":"triager","members":["responder"],"description":"Handles tickets"},"requires":{"runtime":"claude-code","connectors":["zendesk"]}}}}`,
+		"skills/pr-review/SKILL.md":  registrySkill,
+		"agents/triager.md":          "---\ndescription: Sorts tickets\nskills: [pr-review]\n---\nTriage.\n",
+		"agents/responder.md":        "Reply.\n",
+	}))
+	if err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	var got []string
+	for _, resource := range bundle.Manifest.Contributes.Resources {
+		got = append(got, resource.Type+":"+resource.Key+"="+resource.Entry)
+	}
+	want := "skill:pr-review=skills/pr-review/SKILL.md,agent:responder=agents/responder.md,agent:triager=agents/triager.md,squad:support-squad=squads/support-squad.json"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("resources = %v", got)
+	}
+	squadFile, ok := bundle.File("squads/support-squad.json")
+	if !ok {
+		t.Fatal("squad file missing")
+	}
+	squad, err := plugincontract.ParseSquadDefinition(squadFile)
+	if err != nil || squad.Lead != "triager" || squad.Name != "Support Squad" || squad.Description != "Handles tickets" || strings.Join(squad.Members, ",") != "responder" {
+		t.Fatalf("squad = %+v, err = %v", squad, err)
+	}
+	if bundle.Requires == nil || bundle.Requires.Runtime != "claude-code" || strings.Join(bundle.Requires.Connectors, ",") != "zendesk" {
+		t.Fatalf("requires = %+v", bundle.Requires)
+	}
+	if err := bundle.Manifest.CheckCapabilities(plugincontract.HostCapabilities()); err != nil {
+		t.Fatalf("host must run agent and squad resources: %v", err)
+	}
+}
+
+func TestRegistryBundleRefusesWhatMulticaCannotRun(t *testing.T) {
 	cases := []struct {
 		name  string
 		files map[string]string
 		want  string
 	}{
-		{"agents", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0"}`, "agents/reviewer.md": "# r", "skills/pr-review/SKILL.md": registrySkill}, "agent templates"},
-		{"squad", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0","metadata":{"multica":{"squad":{"lead":"x"}}}}`, "skills/pr-review/SKILL.md": registrySkill}, "squad templates"},
+		{"squad names a missing agent", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0","metadata":{"multica":{"squad":{"lead":"x"}}}}`, "agents/reviewer.md": "# r"}, `agent "x"`},
+		{"squad without a lead", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0","metadata":{"multica":{"squad":{"members":["reviewer"]}}}}`, "agents/reviewer.md": "# r"}, "lead is required"},
+		{"agent with broken frontmatter", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0"}`, "agents/reviewer.md": "---\nskills: [\n---\n# r"}, "frontmatter"},
 		{"sse", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0"}`, ".mcp.json": `{"x":{"type":"sse","url":"https://a.example.com"}}`}, "streamable HTTP"},
 		{"nothing to install", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0"}`}, "contributes"},
 		{"unknown scope", map[string]string{".claude-plugin/plugin.json": `{"name":"a","version":"1.0.0","metadata":{"multica":{"scopes":["billing:write"]}}}`, "skills/pr-review/SKILL.md": registrySkill}, "unsupported scope"},
@@ -96,5 +132,28 @@ func TestRegistryBundleRefusesWhatMulticaCannotRunYet(t *testing.T) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestSeedTemplatesInstallInMultica(t *testing.T) {
+	list, err := seed.Templates()
+	if err != nil {
+		t.Fatalf("templates: %v", err)
+	}
+	for _, template := range list {
+		pkg, err := registry.ParseArchive(template.Archive)
+		if err != nil {
+			t.Fatalf("%s: parse: %v", template.Name, err)
+		}
+		bundle, err := RegistryBundle(seed.Namespace, pkg)
+		if err != nil {
+			t.Fatalf("%s: convert: %v", template.Name, err)
+		}
+		if err := bundle.Manifest.CheckCapabilities(plugincontract.HostCapabilities()); err != nil {
+			t.Fatalf("%s: %v", template.Name, err)
+		}
+		if len(bundle.Manifest.Contributes.Resources) == 0 {
+			t.Fatalf("%s contributes nothing", template.Name)
+		}
 	}
 }

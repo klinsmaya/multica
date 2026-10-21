@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/registry"
+	"github.com/multica-ai/multica/server/internal/registry/seed"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
@@ -24,12 +25,34 @@ const registryTestSkill = "---\nname: pr-review\ndescription: Review a pull requ
 
 func registryTestArchive(t *testing.T, version string) []byte {
 	t.Helper()
-	var buffer bytes.Buffer
-	writer := zip.NewWriter(&buffer)
-	for name, content := range map[string]string{
+	return registryArchiveFiles(t, map[string]string{
 		"pr-helper/.claude-plugin/plugin.json": `{"name":"pr-helper","version":"` + version + `","displayName":"PR Helper","description":"Reviews pull requests.","metadata":{"multica":{"scopes":["issues:read"]}}}`,
 		"pr-helper/skills/pr-review/SKILL.md":  registryTestSkill,
-	} {
+	})
+}
+
+// registrySquadArchive is a template with skills, agents and a squad. The
+// second version drops the responder agent.
+func registrySquadArchive(t *testing.T, version string) []byte {
+	t.Helper()
+	files := map[string]string{
+		".claude-plugin/plugin.json": `{"name":"support","version":"` + version + `","displayName":"Support","metadata":{"multica":{"scopes":["issues:read"],"squad":{"lead":"triager","members":["responder"]},"requires":{"runtime":"claude-code"}}}}`,
+		"skills/triage/SKILL.md":     "---\nname: triage\ndescription: Sort tickets.\n---\n\nSort by urgency.\n",
+		"agents/triager.md":          "---\ndescription: Sorts tickets\nmodel: claude-sonnet-5-5\nskills: [triage]\n---\nTriage every ticket (" + version + ").\n",
+		"agents/responder.md":        "Reply politely.\n",
+	}
+	if version != "1.0.0" {
+		delete(files, "agents/responder.md")
+		files[".claude-plugin/plugin.json"] = strings.Replace(files[".claude-plugin/plugin.json"], `,"members":["responder"]`, "", 1)
+	}
+	return registryArchiveFiles(t, files)
+}
+
+func registryArchiveFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	for name, content := range files {
 		entry, err := writer.Create(name)
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
@@ -170,7 +193,7 @@ func workspaceMarketplace(t *testing.T) []service.RegistryCatalogEntry {
 	return body.Listings
 }
 
-func installFromRegistry(t *testing.T, versionID string) {
+func installFromRegistry(t *testing.T, versionID string) service.PluginPreview {
 	t.Helper()
 	params := map[string]string{"id": testWorkspaceID}
 	previewBody, _ := json.Marshal(map[string]string{"registry_version_id": versionID})
@@ -183,7 +206,7 @@ func installFromRegistry(t *testing.T, versionID string) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &preview); err != nil {
 		t.Fatalf("decode preview: %v", err)
 	}
-	if preview.RegistryVersionID != versionID || preview.Manifest.Key != "self.pr-helper" {
+	if preview.RegistryVersionID != versionID || !strings.HasPrefix(preview.Manifest.Key, "self.") {
 		t.Fatalf("preview = %+v", preview)
 	}
 	installBody, _ := json.Marshal(map[string]any{"registry_version_id": versionID, "granted_scopes": preview.Scopes})
@@ -192,6 +215,7 @@ func installFromRegistry(t *testing.T, versionID string) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("install: %d %s", recorder.Code, recorder.Body.String())
 	}
+	return preview
 }
 
 func registryListingDetail(t *testing.T, listingID string) registry.ListingDetail {
@@ -433,4 +457,192 @@ func TestRegistryAdminWritesAreAudited(t *testing.T) {
 	}
 	registryAdminCall(t, PlatformRoleSuperAdmin, testHandler.RegistryAdmin().CreateSource, "POST", "/api/admin/registry/sources",
 		map[string]string{"namespace": "other", "kind": "self", "display_name": "No reason"}).Want(http.StatusBadRequest)
+}
+
+func TestRegistryInstallsAgentsAndSquad(t *testing.T) {
+	setupRegistryTest(t)
+	cleanupPluginAgents(t)
+	source := registryCreateSource(t)
+	first := registryUpload(t, source.ID, registrySquadArchive(t, "1.0.0"))
+	registryApprove(t, first.VersionID)
+	registryPublish(t, first.ListingID, false)
+	registryTarget(t, first.ListingID, []registry.Target{{Consumer: registry.ConsumerMultica, TenantID: testWorkspaceID}})
+
+	preview := installFromRegistry(t, first.VersionID)
+	if preview.Requires == nil || preview.Requires.Runtime != "claude-code" {
+		t.Fatalf("preview requires = %+v", preview.Requires)
+	}
+	var types []string
+	for _, resource := range preview.Manifest.Contributes.Resources {
+		types = append(types, resource.Type)
+	}
+	if strings.Join(types, ",") != "skill,agent,agent,squad" {
+		t.Fatalf("consent resources = %v", types)
+	}
+
+	var triagerID, responderID string
+	var triagerRuntime *string
+	var triagerModel, triagerPermission, triagerInstructions string
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT id::text, runtime_id::text, model, permission_mode, instructions FROM agent WHERE workspace_id = $1 AND name = 'triager' AND archived_at IS NULL`, testWorkspaceID).
+		Scan(&triagerID, &triagerRuntime, &triagerModel, &triagerPermission, &triagerInstructions); err != nil {
+		t.Fatalf("triager: %v", err)
+	}
+	if triagerRuntime != nil || triagerModel != "claude-sonnet-5-5" || triagerPermission != "public_to" || !strings.Contains(triagerInstructions, "1.0.0") {
+		t.Fatalf("triager = runtime %v model %q permission %q instructions %q", triagerRuntime, triagerModel, triagerPermission, triagerInstructions)
+	}
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT id::text FROM agent WHERE workspace_id = $1 AND name = 'responder' AND archived_at IS NULL`, testWorkspaceID).Scan(&responderID); err != nil {
+		t.Fatalf("responder: %v", err)
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent_invocation_target WHERE agent_id = $1 AND target_type = 'workspace'`, triagerID); count != 1 {
+		t.Fatalf("workspace invocation targets = %d, want 1", count)
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent_skill ask JOIN skill s ON s.id = ask.skill_id WHERE ask.agent_id = $1 AND s.name = 'triage'`, triagerID); count != 1 {
+		t.Fatalf("triager skill links = %d, want 1", count)
+	}
+	var squadID string
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT id::text FROM squad WHERE workspace_id = $1 AND name = 'Support' AND leader_id = $2 AND archived_at IS NULL`, testWorkspaceID, triagerID).Scan(&squadID); err != nil {
+		t.Fatalf("squad: %v", err)
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM squad_member WHERE squad_id = $1 AND member_type = 'agent'`, squadID); count != 2 {
+		t.Fatalf("squad members = %d, want leader and responder", count)
+	}
+
+	// Upgrading to a version without the responder archives it, drops it
+	// from the squad, and rewrites the triager in place.
+	second := registryUpload(t, source.ID, registrySquadArchive(t, "1.1.0"))
+	registryApprove(t, second.VersionID)
+	installFromRegistry(t, second.VersionID)
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent WHERE id = $1 AND archived_at IS NOT NULL AND plugin_installation_id IS NOT NULL`, responderID); count != 1 {
+		t.Fatal("dropped agent was not archived")
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM squad_member WHERE squad_id = $1`, squadID); count != 1 {
+		t.Fatalf("squad members after upgrade = %d, want 1", count)
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent WHERE id = $1 AND archived_at IS NULL AND instructions LIKE '%1.1.0%'`, triagerID); count != 1 {
+		t.Fatal("triager was not upgraded in place")
+	}
+
+	// Uninstall archives what is left; reinstalling restores the same rows.
+	listings := workspaceMarketplace(t)
+	recorder := httptest.NewRecorder()
+	testHandler.UninstallPlugin(recorder, pluginHandlerRequest(http.MethodDelete, "/plugins/x", nil, map[string]string{"id": testWorkspaceID, "installationId": listings[0].InstallationID}))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("uninstall: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent WHERE id = $1 AND archived_at IS NOT NULL`, triagerID); count != 1 {
+		t.Fatal("uninstall did not archive the agent")
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM squad WHERE id = $1 AND archived_at IS NOT NULL`, squadID); count != 1 {
+		t.Fatal("uninstall did not archive the squad")
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent_skill WHERE agent_id = $1`, triagerID); count != 0 {
+		t.Fatal("uninstall left agent-skill links to deleted skills")
+	}
+	installFromRegistry(t, second.VersionID)
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent WHERE id = $1 AND archived_at IS NULL`, triagerID); count != 1 {
+		t.Fatal("reinstall did not restore the archived agent")
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM squad WHERE id = $1 AND archived_at IS NULL`, squadID); count != 1 {
+		t.Fatal("reinstall did not restore the archived squad")
+	}
+}
+
+func TestRegistryRefusesAgentNameOwnedByPerson(t *testing.T) {
+	setupRegistryTest(t)
+	cleanupPluginAgents(t)
+	dbfx.Exec(t, `INSERT INTO agent (workspace_id, name, runtime_mode, owner_id) VALUES ($1, 'triager', 'local', $2)`, testWorkspaceID, testUserID)
+	source := registryCreateSource(t)
+	upload := registryUpload(t, source.ID, registrySquadArchive(t, "1.0.0"))
+	registryApprove(t, upload.VersionID)
+	registryPublish(t, upload.ListingID, false)
+	registryTarget(t, upload.ListingID, []registry.Target{{Consumer: registry.ConsumerMultica, TenantID: testWorkspaceID}})
+
+	params := map[string]string{"id": testWorkspaceID}
+	installBody, _ := json.Marshal(map[string]any{"registry_version_id": upload.VersionID, "granted_scopes": []string{"issues:read"}})
+	recorder := httptest.NewRecorder()
+	testHandler.InstallPlugin(recorder, pluginHandlerRequest(http.MethodPost, "/plugins", installBody, params))
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "triager") {
+		t.Fatalf("install: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM plugin_installation WHERE workspace_id = $1`, testWorkspaceID); count != 0 {
+		t.Fatal("a failed install left an installation behind")
+	}
+}
+
+// cleanupPluginAgents removes the agents and squads template installs create
+// in the shared test workspace, before and after the test.
+func cleanupPluginAgents(t *testing.T) {
+	t.Helper()
+	remove := func() {
+		ctx := context.Background()
+		testPool.Exec(ctx, `DELETE FROM squad_member WHERE squad_id IN (SELECT id FROM squad WHERE workspace_id = $1 AND (plugin_installation_id IS NOT NULL OR name = 'Support'))`, testWorkspaceID)
+		testPool.Exec(ctx, `DELETE FROM squad WHERE workspace_id = $1 AND (plugin_installation_id IS NOT NULL OR name = 'Support')`, testWorkspaceID)
+		testPool.Exec(ctx, `DELETE FROM agent_skill WHERE agent_id IN (SELECT id FROM agent WHERE workspace_id = $1 AND name IN ('triager', 'responder'))`, testWorkspaceID)
+		testPool.Exec(ctx, `DELETE FROM agent_invocation_target WHERE agent_id IN (SELECT id FROM agent WHERE workspace_id = $1 AND name IN ('triager', 'responder'))`, testWorkspaceID)
+		testPool.Exec(ctx, `DELETE FROM agent WHERE workspace_id = $1 AND name IN ('triager', 'responder')`, testWorkspaceID)
+		testPool.Exec(ctx, `DELETE FROM skill WHERE workspace_id = $1 AND plugin_installation_id IS NOT NULL AND name IN ('triage', 'ticket-triage', 'reply-draft')`, testWorkspaceID)
+	}
+	remove()
+	t.Cleanup(remove)
+}
+
+func TestRegistrySeedIsIdempotentAndInstallable(t *testing.T) {
+	setupRegistryTest(t)
+	cleanupPluginAgents(t)
+	ctx := context.Background()
+	first, err := seed.Apply(ctx, testPool, testHandler.Queries, testHandler.RegistryService, parseUUID(testUserID))
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if len(first.Created) != 3 || len(first.Skipped) != 0 {
+		t.Fatalf("first run = %+v", first)
+	}
+	second, err := seed.Apply(ctx, testPool, testHandler.Queries, testHandler.RegistryService, parseUUID(testUserID))
+	if err != nil || len(second.Created) != 0 || len(second.Skipped) != 3 {
+		t.Fatalf("second run = %+v, err = %v", second, err)
+	}
+
+	// Public, so the anonymous marketplace lists them, and targeted at every
+	// Multica workspace.
+	var marketplace registry.Marketplace
+	recorder := registryPublicGet(t, "/registry/v1/@multica/marketplace.json", nil)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &marketplace); err != nil || len(marketplace.Plugins) != 3 {
+		t.Fatalf("public marketplace: %d %s", recorder.Code, recorder.Body.String())
+	}
+	listings := workspaceMarketplace(t)
+	if len(listings) != 3 {
+		t.Fatalf("workspace listings = %+v", listings)
+	}
+	var squad service.RegistryCatalogEntry
+	for _, listing := range listings {
+		if listing.Name == "customer-support-squad" {
+			squad = listing
+		}
+	}
+	if squad.PluginKey != "multica.customer-support-squad" || squad.Category != "support" {
+		t.Fatalf("squad listing = %+v", squad)
+	}
+	params := map[string]string{"id": testWorkspaceID}
+	previewBody, _ := json.Marshal(map[string]string{"registry_version_id": squad.VersionID})
+	recorder = httptest.NewRecorder()
+	testHandler.PreviewPlugin(recorder, pluginHandlerRequest(http.MethodPost, "/plugins/preview", previewBody, params))
+	var preview service.PluginPreview
+	if err := json.Unmarshal(recorder.Body.Bytes(), &preview); err != nil || recorder.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", recorder.Code, recorder.Body.String())
+	}
+	installBody, _ := json.Marshal(map[string]any{"registry_version_id": squad.VersionID, "granted_scopes": preview.Scopes})
+	recorder = httptest.NewRecorder()
+	testHandler.InstallPlugin(recorder, pluginHandlerRequest(http.MethodPost, "/plugins", installBody, params))
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("install: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM squad WHERE workspace_id = $1 AND name = 'Customer Support' AND archived_at IS NULL AND plugin_installation_id IS NOT NULL`, testWorkspaceID); count != 1 {
+		t.Fatalf("installed squads = %d, want 1", count)
+	}
+	if count := dbfx.Count(t, `SELECT count(*) FROM agent WHERE workspace_id = $1 AND name IN ('triager', 'responder') AND archived_at IS NULL`, testWorkspaceID); count != 2 {
+		t.Fatalf("installed agents = %d, want 2", count)
+	}
 }

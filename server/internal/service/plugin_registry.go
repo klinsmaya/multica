@@ -38,8 +38,23 @@ func NewPluginRegistry(registrySvc *registry.Service, plugins *PluginService) *P
 // MulticaMetadata is the consumer-specific block a package may carry in
 // plugin.json under metadata.multica. Other consumers ignore it.
 type MulticaMetadata struct {
-	Scopes []string        `json:"scopes,omitempty"`
-	Squad  json.RawMessage `json:"squad,omitempty"`
+	Scopes   []string                        `json:"scopes,omitempty"`
+	Squad    *plugincontract.SquadDefinition `json:"squad,omitempty"`
+	Requires *TemplateRequires               `json:"requires,omitempty"`
+}
+
+// TemplateRequires is what a template needs from the workspace before its
+// agents can run. It is shown on the consent screen and never written into
+// the manifest: the registry does not know Multica's runtimes or connectors,
+// and the workspace, not the installer, satisfies these after install.
+type TemplateRequires struct {
+	// Runtime names the agent runtime the agents were written for, such as
+	// "claude-code"; the workspace binds a runtime of that kind.
+	Runtime string `json:"runtime,omitempty"`
+	// MinBackend is the lowest Multica server version the template expects.
+	MinBackend string `json:"min_backend,omitempty"`
+	// Connectors lists the integrations (by app id) the agents will use.
+	Connectors []string `json:"connectors,omitempty"`
 }
 
 // Catalog states for one listing in one workspace.
@@ -162,7 +177,8 @@ func (a *PluginRegistry) Preview(ctx context.Context, workspaceID pgtype.UUID, r
 	}
 	preview.RegistryVersionID = registryVersionID
 	preview.Version = bundle.Manifest.Version
-	preview.Digest = BundleDigest(bundle)
+	preview.Digest = BundleDigest(bundle.Bundle)
+	preview.Requires = bundle.Requires
 	return preview, nil
 }
 
@@ -173,7 +189,7 @@ func (a *PluginRegistry) Install(ctx context.Context, workspaceID, userID pgtype
 	if err != nil {
 		return db.PluginInstallation{}, err
 	}
-	copied, err := a.materialize(ctx, workspaceID, userID, version, bundle)
+	copied, err := a.materialize(ctx, workspaceID, userID, version, bundle.Bundle)
 	if err != nil {
 		return db.PluginInstallation{}, err
 	}
@@ -209,18 +225,25 @@ func (a *PluginRegistry) report(ctx context.Context, workspaceID pgtype.UUID, re
 	}
 }
 
-func (a *PluginRegistry) load(ctx context.Context, workspaceID pgtype.UUID, registryVersionID string) (db.GetVisibleRegistryVersionRow, plugincontract.Bundle, error) {
+// TemplateBundle is a registry package converted for Multica: the plugin
+// bundle to install plus the requirements shown alongside it.
+type TemplateBundle struct {
+	plugincontract.Bundle
+	Requires *TemplateRequires
+}
+
+func (a *PluginRegistry) load(ctx context.Context, workspaceID pgtype.UUID, registryVersionID string) (db.GetVisibleRegistryVersionRow, TemplateBundle, error) {
 	caller, err := a.caller(ctx, workspaceID)
 	if err != nil {
-		return db.GetVisibleRegistryVersionRow{}, plugincontract.Bundle{}, err
+		return db.GetVisibleRegistryVersionRow{}, TemplateBundle{}, err
 	}
 	version, pkg, err := a.Registry.LoadPackage(ctx, caller, registryVersionID)
 	if err != nil {
-		return db.GetVisibleRegistryVersionRow{}, plugincontract.Bundle{}, registryError(err)
+		return db.GetVisibleRegistryVersionRow{}, TemplateBundle{}, registryError(err)
 	}
 	bundle, err := RegistryBundle(version.Namespace, pkg)
 	if err != nil {
-		return db.GetVisibleRegistryVersionRow{}, plugincontract.Bundle{}, pluginErrf(PluginErrorIncompatible, "this template cannot be installed in Multica: %v", err)
+		return db.GetVisibleRegistryVersionRow{}, TemplateBundle{}, pluginErrf(PluginErrorIncompatible, "this template cannot be installed in Multica: %v", err)
 	}
 	return version, bundle, nil
 }
@@ -314,21 +337,23 @@ func RegistryPluginKey(namespace, name string) string {
 }
 
 // RegistryBundle converts a neutral package into a Multica plugin bundle:
-// skills become skill resources, .mcp.json servers become agent-invoked mcp
-// hooks with the net: scopes their hosts need, and metadata.multica.scopes is
-// added to the consent list. Agents and squads are not supported yet.
-func RegistryBundle(namespace string, pkg registry.Package) (plugincontract.Bundle, error) {
+// skills become skill resources, agents/<name>.md become agent resources,
+// metadata.multica.squad becomes one squad resource, .mcp.json servers become
+// agent-invoked mcp hooks with the net: scopes their hosts need, and
+// metadata.multica.scopes is added to the consent list.
+func RegistryBundle(namespace string, pkg registry.Package) (TemplateBundle, error) {
 	var meta MulticaMetadata
 	if raw, ok := pkg.Manifest.Metadata["multica"]; ok {
 		if err := json.Unmarshal(raw, &meta); err != nil {
-			return plugincontract.Bundle{}, fmt.Errorf("metadata.multica is invalid: %w", err)
+			return TemplateBundle{}, fmt.Errorf("metadata.multica is invalid: %w", err)
 		}
 	}
-	if len(meta.Squad) > 0 && string(meta.Squad) != "null" {
-		return plugincontract.Bundle{}, errors.New("squad templates are not supported yet")
-	}
-	if len(pkg.Agents) > 0 {
-		return plugincontract.Bundle{}, errors.New("agent templates are not supported yet")
+	if meta.Requires != nil {
+		meta.Requires.Runtime = strings.TrimSpace(meta.Requires.Runtime)
+		meta.Requires.MinBackend = strings.TrimSpace(meta.Requires.MinBackend)
+		if meta.Requires.Runtime == "" && meta.Requires.MinBackend == "" && len(meta.Requires.Connectors) == 0 {
+			meta.Requires = nil
+		}
 	}
 
 	name := pkg.Manifest.DisplayName
@@ -363,21 +388,47 @@ func RegistryBundle(namespace string, pkg registry.Package) (plugincontract.Bund
 		addScope(scope)
 	}
 
-	files := make([]plugincontract.BundleFile, 0, len(pkg.Skills))
+	files := make([]plugincontract.BundleFile, 0, len(pkg.Skills)+len(pkg.Agents)+1)
 	for _, skill := range pkg.Skills {
 		entry := "skills/" + skill.Name + "/SKILL.md"
 		content, ok := pkg.File(entry)
 		if !ok {
-			return plugincontract.Bundle{}, fmt.Errorf("skill %q has no SKILL.md", skill.Name)
+			return TemplateBundle{}, fmt.Errorf("skill %q has no SKILL.md", skill.Name)
 		}
 		manifest.Contributes.Resources = append(manifest.Contributes.Resources, plugincontract.Resource{
 			Type: plugincontract.ResourceSkill, Key: skill.Name, Entry: entry,
 		})
 		files = append(files, plugincontract.BundleFile{Path: entry, Content: content})
 	}
+	for _, agent := range pkg.Agents {
+		entry := "agents/" + agent + ".md"
+		content, ok := pkg.File(entry)
+		if !ok {
+			return TemplateBundle{}, fmt.Errorf("agent %q has no definition file", agent)
+		}
+		manifest.Contributes.Resources = append(manifest.Contributes.Resources, plugincontract.Resource{
+			Type: plugincontract.ResourceAgent, Key: agent, Entry: entry,
+		})
+		files = append(files, plugincontract.BundleFile{Path: entry, Content: content})
+	}
+	if meta.Squad != nil {
+		if meta.Squad.Name == "" {
+			meta.Squad.Name = name
+		}
+		key := strings.Trim(registryKeySegment.ReplaceAllString(strings.ToLower(pkg.Manifest.Name), "-"), "-")
+		entry := "squads/" + key + ".json"
+		content, err := json.Marshal(meta.Squad)
+		if err != nil {
+			return TemplateBundle{}, err
+		}
+		manifest.Contributes.Resources = append(manifest.Contributes.Resources, plugincontract.Resource{
+			Type: plugincontract.ResourceSquad, Key: key, Entry: entry,
+		})
+		files = append(files, plugincontract.BundleFile{Path: entry, Content: content})
+	}
 	for _, server := range pkg.MCPServers {
 		if server.Type != "http" {
-			return plugincontract.Bundle{}, fmt.Errorf("MCP server %q uses the %s transport; Multica connects to streamable HTTP servers only", server.Name, server.Type)
+			return TemplateBundle{}, fmt.Errorf("MCP server %q uses the %s transport; Multica connects to streamable HTTP servers only", server.Name, server.Type)
 		}
 		description := server.Description
 		if description == "" {
@@ -398,13 +449,23 @@ func RegistryBundle(namespace string, pkg registry.Package) (plugincontract.Bund
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	raw, err := json.Marshal(manifest)
 	if err != nil {
-		return plugincontract.Bundle{}, err
+		return TemplateBundle{}, err
 	}
 	parsed, canonical, err := plugincontract.ParseManifest(raw)
 	if err != nil {
-		return plugincontract.Bundle{}, err
+		return TemplateBundle{}, err
 	}
-	return plugincontract.Bundle{Manifest: parsed, Canonical: canonical, Files: files}, nil
+	bundle := plugincontract.Bundle{Manifest: parsed, Canonical: canonical, Files: files}
+	// The same checks the publish path runs on an uploaded zip: a squad that
+	// names an agent the package does not ship, or an agent file that will not
+	// parse, is refused here rather than halfway through an install.
+	for _, resource := range parsed.Contributes.Resources {
+		content, _ := bundle.File(resource.Entry)
+		if err := plugincontract.ValidateResourceFile(parsed, resource, content); err != nil {
+			return TemplateBundle{}, err
+		}
+	}
+	return TemplateBundle{Bundle: bundle, Requires: meta.Requires}, nil
 }
 
 func mcpHost(rawURL string) string {

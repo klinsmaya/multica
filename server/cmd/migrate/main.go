@@ -174,6 +174,8 @@ var concurrentIndexCleanups = map[string]string{
 	"630_registry_listing_package_index":                        "idx_registry_listing_package",
 	"631_registry_targeting_scope_index":                        "idx_registry_targeting_scope",
 	"632_registry_install_report_tenant_index":                  "idx_registry_install_report_tenant",
+	"634_agent_plugin_installation_index":                       "idx_agent_plugin_installation",
+	"636_squad_plugin_installation_index":                       "idx_squad_plugin_installation",
 	"554_wakeup_expiry_index":                                   "issue_wakeup_expiry_idx",
 	"556_wakeup_system_rule_index":                              "issue_wakeup_system_rule_idx",
 	"559_issue_child_event_id":                                  "issue_child_event_id_idx",

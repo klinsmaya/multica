@@ -174,6 +174,9 @@ type PluginPreview struct {
 	// marketplace version; installing then names it instead of VersionID,
 	// because the workspace copy is only made on confirm.
 	RegistryVersionID string `json:"registry_version_id,omitempty"`
+	// Requires is what a template asks the workspace to provide after install
+	// (a runtime kind, connectors). Informational: nothing here is granted.
+	Requires *TemplateRequires `json:"requires,omitempty"`
 }
 
 // PluginConfigField is one host-rendered configuration input.
@@ -416,6 +419,12 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 		if skillErr := s.InstallSkillResources(ctx, queries, installation, manifest, userID); skillErr != nil {
 			return db.PluginInstallation{}, skillErr
 		}
+		if agentErr := s.InstallAgentResources(ctx, queries, installation, manifest, userID); agentErr != nil {
+			return db.PluginInstallation{}, agentErr
+		}
+		if squadErr := s.InstallSquadResources(ctx, queries, installation, manifest, userID); squadErr != nil {
+			return db.PluginInstallation{}, squadErr
+		}
 		if scheduleErr := s.reconcilePluginHookSchedules(ctx, queries, installation, manifest); scheduleErr != nil {
 			return db.PluginInstallation{}, scheduleErr
 		}
@@ -473,6 +482,12 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 	// pruned. Same transaction as the manifest snapshot: the two must never
 	// disagree about what this version contributes.
 	if err := s.InstallSkillResources(ctx, queries, updated, manifest, userID); err != nil {
+		return db.PluginInstallation{}, err
+	}
+	if err := s.InstallAgentResources(ctx, queries, updated, manifest, userID); err != nil {
+		return db.PluginInstallation{}, err
+	}
+	if err := s.InstallSquadResources(ctx, queries, updated, manifest, userID); err != nil {
 		return db.PluginInstallation{}, err
 	}
 	if err := s.reconcilePluginHookSchedules(ctx, queries, updated, manifest); err != nil {
@@ -763,6 +778,11 @@ func (s *PluginService) Uninstall(ctx context.Context, installation db.PluginIns
 	// same reason storage and secrets are cleared here rather than swept later.
 	if err := queries.DeletePluginInvocationsByInstallation(ctx, installation.ID); err != nil {
 		return &PluginError{Kind: PluginErrorUnavailable, Message: "delete plugin invocations", Err: err}
+	}
+	// Agents and squads are archived rather than deleted: they carry history.
+	// Their links to the skills below go first.
+	if err := s.ArchiveAgentResources(ctx, queries, installation); err != nil {
+		return err
 	}
 	// The skills this installation contributed go with it. Scoped by
 	// plugin_installation_id, so a skill a person wrote is untouched even if it
