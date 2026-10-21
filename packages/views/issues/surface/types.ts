@@ -28,4 +28,6 @@ export interface IssueSurfaceProps {
   createDefaults?: IssueCreateDefaults;
   /** Server-owned membership search shared by non-Table issue surfaces. */
   search?: string;
+  /** Reports the active view mode, so a host can adapt what sits beside the surface. */
+  onViewModeChange?: (mode: IssueSurfaceMode) => void;
 }

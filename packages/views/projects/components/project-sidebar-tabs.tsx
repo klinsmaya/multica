@@ -13,20 +13,28 @@ export type ProjectSidebarTab = "properties" | "overview" | "autopilots" | "libr
 /**
  * The project detail's right-hand sidebar: the editable properties column,
  * then one panel per project-wide view (overview, automations, library, PRs).
- * The selected tab is per-mount UI state; the sidebar is mounted once at a
- * time (desktop panel or mobile sheet).
+ * The panels exist only with `panels` (the feed view); otherwise the sidebar
+ * is the properties column alone, as in every other view. The selected tab is
+ * per-mount UI state; the sidebar is mounted once at a time (desktop panel or
+ * mobile sheet).
  */
 export function ProjectSidebarTabs({
   projectId,
   properties,
+  panels,
 }: {
   projectId: string;
   /** The properties column rendered by the detail page. */
   properties: ReactNode;
+  /** Whether the project-wide panels are offered beside the properties. */
+  panels: boolean;
 }) {
   const { t } = useT("projects");
   const [tab, setTab] = useState<ProjectSidebarTab>("properties");
   const panelClass = "flex min-h-0 flex-1 flex-col data-hidden:hidden";
+  if (!panels) {
+    return <div className="h-full overflow-y-auto p-4">{properties}</div>;
+  }
   return (
     <Tabs
       value={tab}

@@ -90,6 +90,7 @@ export function IssueSurface({
   showClientEmpty,
   batchToolbar = "always",
   contentClassName,
+  onViewModeChange,
 }: IssueSurfaceComponentProps) {
   const wsId = useWorkspaceId();
   // Saved views exist on workspace / my / project surfaces only.
@@ -173,6 +174,7 @@ export function IssueSurface({
         createDefaults={createDefaults}
         search={search}
         renderHeader={renderHeader}
+        onViewModeChange={onViewModeChange}
         renderEmpty={renderEmpty}
         renderLoading={renderLoading}
         clientFilter={clientFilter}
@@ -197,6 +199,7 @@ function IssueSurfaceContent({
   showClientEmpty,
   batchToolbar,
   contentClassName,
+  onViewModeChange,
 }: Omit<IssueSurfaceComponentProps, "surfaceKey">) {
   const workspaceId = useWorkspaceId();
   // One polling owner for the whole surface; individual cards only select cache data.
@@ -220,6 +223,9 @@ function IssueSurfaceContent({
   useEffect(() => {
     if (controller.viewMode !== "table") setTableLoadedIssues([]);
   }, [controller.viewMode]);
+  useEffect(() => {
+    onViewModeChange?.(controller.viewMode);
+  }, [controller.viewMode, onViewModeChange]);
   const issues = useMemo(
     () =>
       clientFilter
