@@ -1492,7 +1492,11 @@
     "overview_summary_with_size_other": "산출물 {{count}}개 · 총 {{size}}",
     "overview_close": "닫기",
     "overview_empty": "이 유형의 산출물이 없습니다.",
-    "group_comment_by": "{{name}}의 댓글"
+    "group_comment_by": "{{name}}의 댓글",
+    "open_focus": "전체 화면으로 열기",
+    "open_focus_named": "{{name}} 전체 화면으로 열기",
+    "focus_comments": "댓글",
+    "focus_unavailable": "이 산출물은 더 이상 사용할 수 없습니다."
   },
   "workflows": {
     "default_name": "Default",

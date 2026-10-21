@@ -1548,7 +1548,11 @@
     "overview_summary_with_size_other": "{{count}} livrables · {{size}} au total",
     "overview_close": "Fermer",
     "overview_empty": "Aucun livrable de ce type.",
-    "group_comment_by": "Commentaire de {{name}}"
+    "group_comment_by": "Commentaire de {{name}}",
+    "open_focus": "Ouvrir en plein écran",
+    "open_focus_named": "Ouvrir {{name}} en plein écran",
+    "focus_comments": "Commentaires",
+    "focus_unavailable": "Ce livrable n'est plus disponible."
   },
   "workflows": {
     "default_name": "Default",

@@ -1492,7 +1492,11 @@
     "overview_summary_with_size_other": "成果物 {{count}} 件 · 合計 {{size}}",
     "overview_close": "閉じる",
     "overview_empty": "この種類の成果物はありません。",
-    "group_comment_by": "{{name}} のコメント"
+    "group_comment_by": "{{name}} のコメント",
+    "open_focus": "全画面で開く",
+    "open_focus_named": "{{name}} を全画面で開く",
+    "focus_comments": "コメント",
+    "focus_unavailable": "この成果物は利用できなくなりました。"
   },
   "workflows": {
     "default_name": "Default",

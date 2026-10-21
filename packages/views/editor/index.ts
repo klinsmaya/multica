@@ -25,6 +25,10 @@ export { useDownloadAttachment } from "./use-download-attachment";
 export { AttachmentDownloadProvider } from "./attachment-download-context";
 export {
   AttachmentPreviewModal,
+  AttachmentPreviewPanel,
+  ChromeButton,
+  ChromeDivider,
+  ownsArrowKeys,
   useAttachmentPreview,
   isPreviewable,
 } from "./attachment-preview-modal";

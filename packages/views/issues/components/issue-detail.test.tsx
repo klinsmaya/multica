@@ -1249,6 +1249,37 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByRole("link", { name: mockIssue.identifier })).toBeInTheDocument();
   });
 
+  it("renders the thread variant as the title row, the timeline and the reply box only", async () => {
+    mockApiObj.listChildIssues.mockResolvedValue({
+      issues: [{ ...mockIssue, id: "child-1", identifier: "TES-2", title: "Child task", parent_issue_id: mockIssue.id }],
+    });
+    const queryClient = createTestQueryClient();
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail issueId="issue-1" variant="thread" />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    // The title row names the issue in full, as plain text.
+    await screen.findByText(`${mockIssue.identifier} ${mockIssue.title}`);
+    expect(screen.queryByRole("link", { name: mockIssue.identifier })).not.toBeInTheDocument();
+    // The timeline is the point of the variant.
+    expect(await screen.findByText("Started working on this")).toBeInTheDocument();
+    expect(screen.getByText("I can help with this")).toBeInTheDocument();
+    // The reply box stays.
+    expect(screen.getByLabelText("Leave a comment...")).toBeInTheDocument();
+    // Everything the focused file's host already shows is gone.
+    expect(screen.queryByDisplayValue("Add JWT auth to the backend")).not.toBeInTheDocument();
+    expect(contentEditorMounts.count).toBe(0);
+    expect(screen.queryByText("Properties")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-picker")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("panel-group")).not.toBeInTheDocument();
+    expect(screen.queryByText("Child task")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Deliverables/ })).not.toBeInTheDocument();
+  });
+
   it("pins the comment composer to the scroll viewport on a wide screen", async () => {
     const { container } = renderIssueDetail();
 

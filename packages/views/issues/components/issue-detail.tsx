@@ -1169,9 +1169,13 @@ interface IssueDetailProps {
    * `"peek"` renders the detail inside the board's side peek (`IssuePeekHost`):
    * a single column with the core properties as pills under the title, no
    * properties sidebar, and `trailingActions` where the sidebar toggle sits.
+   *
+   * `"thread"` is the peek reduced to the discussion, for hosts that show the
+   * issue's content elsewhere (the deliverable focus): the title row, the
+   * comment timeline and the reply box.
    */
-  variant?: "page" | "peek";
-  /** Peek only: host controls at the end of the header (open full page, close). */
+  variant?: "page" | "peek" | "thread";
+  /** Peek and thread: host controls at the end of the header (open full page, close). */
   trailingActions?: ReactNode;
   /** Peek only: a full-width strip between the header and the content. */
   belowHeader?: ReactNode;
@@ -1307,7 +1311,10 @@ export function IssueDetailSkeleton({
 const MARK_READ_DELAY_MS = 1500;
 
 export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "multica_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, variant = "page", trailingActions, belowHeader }: IssueDetailProps) {
-  const isPeek = variant === "peek";
+  const isThread = variant === "thread";
+  // The thread is a peek with the content sections removed, so every
+  // single-column switch below applies to it as well.
+  const isPeek = variant === "peek" || isThread;
   const { t } = useT("issues");
   const locale = useLocale();
   const timeAgo = useTimeAgo();
@@ -1423,7 +1430,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // detail.
   // The peek gets its own key: it is an overlay on the board's route, and
   // must neither restore the full page's offset nor leave one behind for it.
-  const scrollContainerKey = `${isPeek ? "peek" : "main"}:${id}`;
+  const scrollContainerKey = `${isThread ? "thread" : isPeek ? "peek" : "main"}:${id}`;
   const restoredScrollTop = useRestoredScrollOffset(scrollContainerKey);
   const restoreScrollRef = useRestoredScrollRef(scrollContainerKey);
   // Whether this issue's comment-highlight deep link already landed here
@@ -2455,10 +2462,15 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     jumpToThread(locateRootRequest);
   }, [locateRootRequest, jumpToThread]);
 
+  const openDeliverableFocus = useCallback(
+    (attachmentId: string) => openModal("deliverable-focus", { issueId: id, attachmentId }),
+    [openModal, id],
+  );
   const describeDeliverable = useDeliverableDetails({
     files: deliverableFiles,
     commentById,
     onLocate: locateOrigin,
+    onOpenFocus: isThread ? undefined : openDeliverableFocus,
   });
   // The overview remembers the file the viewer was showing, so `G` can go
   // back to it.
@@ -3002,7 +3014,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
       {/* Deliverables — the files this issue's comments delivered. Hidden
           while there are none. */}
-      <DeliverablesSection files={deliverableFiles} onOpenOverview={openOverview} />
+      <DeliverablesSection files={deliverableFiles} onOpenOverview={openOverview} onOpenFocus={openDeliverableFocus} />
 
       {/* Execution log — active runs + collapsed past runs, each carrying its
           own token spend, with the issue total on the section header.
@@ -3214,8 +3226,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         )}
         <BreadcrumbHeader
           leading={leadingAction}
-          segments={breadcrumbSegments}
+          segments={isThread ? [] : breadcrumbSegments}
           leaf={
+            isThread ? (
+              <span className="truncate font-medium text-foreground">
+                {`${issue.identifier} ${issue.title}`}
+              </span>
+            ) : (
             <AppLink
               href={paths.issueDetail(issue.id)}
               className="flex min-w-0 transition-opacity hover:opacity-80"
@@ -3224,8 +3241,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 {isPeek ? issue.identifier : `${issue.identifier} ${issue.title}`}
               </span>
             </AppLink>
+            )
           }
-          actions={
+          actions={isThread ? trailingActions : (
             <>
             {/* Live "agent is working" chip, leftmost in the right cluster so
                 it never overlaps the title (which truncates to make room).
@@ -3314,7 +3332,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </Tooltip>
             )}
             </>
-          }
+          )}
         />
         {isPeek ? belowHeader : null}
 
@@ -3343,6 +3361,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             isPeek ? "px-6 py-5" : "max-w-4xl px-3 py-6 max-md:pb-chat-launcher md:px-8 md:py-8",
           )}
         >
+          {!isThread && (<>
           <IssueDuplicateBanner
             issue={issue}
             onUnmark={() =>
@@ -3729,6 +3748,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           })()}
 
           <div className="my-8 border-t" />
+          </>)}
 
           {/* Activity / Comments */}
           <div>

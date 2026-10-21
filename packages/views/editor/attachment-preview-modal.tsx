@@ -387,7 +387,7 @@ const DRAG = { WebkitAppRegion: "drag" } as CSSProperties;
 
 // A focused player or field owns its arrow keys (seek, caret) — the sequence
 // only takes them when nothing else would.
-function ownsArrowKeys(target: EventTarget | null): boolean {
+export function ownsArrowKeys(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return target.closest("input, textarea, select, video, audio") !== null;
@@ -672,6 +672,7 @@ function PreviewPanel({
   info,
   locate,
   onOpenOverview,
+  extraActions,
   renderHtmlFrame = renderViewerHtmlFrame,
   initialHtmlAddress = "",
   onHtmlAddressChange,
@@ -690,6 +691,8 @@ function PreviewPanel({
   info?: PreviewInfoPanel;
   locate?: PreviewLocateAction;
   onOpenOverview?: () => void;
+  /** Host controls at the end of the top bar, before the close button. */
+  extraActions?: ReactNode;
   renderHtmlFrame?: HtmlFrameRenderer;
   /** Query and fragment an HTML file opens at. */
   initialHtmlAddress?: string;
@@ -999,6 +1002,7 @@ function PreviewPanel({
               <PanelRight className="size-4" />
             </ChromeButton>
           )}
+          {extraActions}
           {onClose && (
             <>
               <ChromeDivider />
@@ -1081,7 +1085,7 @@ function PreviewPanel({
 
 // Top-bar icon button. Sits inside the `dark` header, so the semantic tokens
 // resolve to the dark set whatever the app theme is.
-function ChromeButton({
+export function ChromeButton({
   label,
   shortcut,
   pressed,
@@ -1163,7 +1167,7 @@ function ChromeSegmented<T extends string>({
   );
 }
 
-function ChromeDivider() {
+export function ChromeDivider() {
   return <span className="mx-1.5 h-4 w-px bg-input" aria-hidden />;
 }
 
@@ -1634,6 +1638,50 @@ export function AttachmentPreviewStandalone({
         onHtmlAddressChange={handleHtmlAddressChange}
       />
     </div>
+  );
+}
+
+// Panel — the viewer's top bar and stage inside a host's own layout
+
+/**
+ * One attachment's top bar and stage, to be placed in a layout the host owns
+ * (the deliverable focus puts the issue's discussion beside it). Same panel
+ * as the viewer overlay: kind dispatch, zoom, view toggles and the sequence
+ * controls; the host supplies the frame, the dark ground and the keyboard.
+ */
+export function AttachmentPreviewPanel({
+  attachment,
+  sequence,
+  titleAccessory,
+  extraActions,
+  onClose,
+}: {
+  attachment: Attachment;
+  sequence?: PreviewSequence;
+  titleAccessory?: ReactNode;
+  extraActions?: ReactNode;
+  onClose: () => void;
+}) {
+  const download = useDownloadAttachment();
+  const shouldReduceMotion = useReducedMotion() ?? false;
+  const source = useMemo<PreviewSource>(
+    () => ({ kind: "full", attachment }),
+    [attachment],
+  );
+  const state = normalize(source);
+  return (
+    <PreviewPanel
+      surface="viewer"
+      kind={state.kind}
+      source={source}
+      state={state}
+      onClose={onClose}
+      onDownload={() => download(attachment.id)}
+      sequence={sequence}
+      reduceMotion={shouldReduceMotion}
+      titleAccessory={titleAccessory}
+      extraActions={extraActions}
+    />
   );
 }
 
