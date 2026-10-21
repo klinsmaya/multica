@@ -2361,7 +2361,7 @@ describe("IssueDetail (shared)", () => {
       const root = { ...mockTimeline[0]!, resolved_at: "2026-01-17T00:00:00Z" };
       const target = { ...mockTimeline[1]!, id: "assigned-reply", parent_id: root.id, source_task_id: run.id,
         content: "Assignment reply in the resolved discussion" };
-      mockApiObj.listTimeline.mockResolvedValue([root, target]);
+      mockTimelineEntries([root, target]);
       mockApiObj.listTasksByIssue.mockResolvedValue([run]);
       const client = createTestQueryClient();
       const { container, rerender } = render(<I18nProvider locale="en" resources={TEST_RESOURCES}>
