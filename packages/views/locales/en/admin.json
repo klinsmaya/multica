@@ -92,7 +92,12 @@
     "col_role": "Role",
     "col_joined": "Joined",
     "member_disabled": "Disabled",
-    "open_in_app": "Open in app"
+    "open_in_app": "Open in app",
+    "create": "Create workspace",
+    "create_title": "Create workspace",
+    "create_description": "Create a workspace owned by your platform admin account. The action is recorded in the audit log.",
+    "name_label": "Name",
+    "slug_label": "Slug"
   },
   "audit": {
     "title": "Audit log",

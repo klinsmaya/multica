@@ -1964,6 +1964,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(h.RequirePlatformAdmin(handler.PlatformRoleOperator))
+				r.Post("/workspaces", h.AdminCreateWorkspace)
 				r.Post("/users/{id}/disable", h.AdminDisableUser)
 				r.Post("/users/{id}/enable", h.AdminEnableUser)
 				r.Post("/users/{id}/tokens/{tokenId}/revoke", h.AdminRevokeUserToken)

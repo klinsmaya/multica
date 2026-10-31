@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { adminKeys } from "./queries";
-import type { AdminActionRequest, SetPlatformAdminRequest } from "./schemas";
+import type { AdminActionRequest, AdminCreateWorkspaceRequest, SetPlatformAdminRequest } from "./schemas";
 
 // Admin writes are rare, consequential and audited, so none of them patch the
 // cache optimistically: every one awaits the server, then invalidates the
@@ -55,6 +55,14 @@ export function useAdminRemovePlatformAdmin() {
   return useMutation({
     mutationFn: ({ userId, ...body }: AdminActionRequest & { userId: string }) =>
       api.adminRemovePlatformAdmin(userId, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAdminCreateWorkspace() {
+  const invalidate = useInvalidateAdmin();
+  return useMutation({
+    mutationFn: (body: AdminCreateWorkspaceRequest) => api.adminCreateWorkspace(body),
     onSuccess: invalidate,
   });
 }

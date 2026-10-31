@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
@@ -601,6 +602,82 @@ func (h *Handler) AdminGetWorkspace(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// AdminCreateWorkspace creates a fully initialized workspace for the platform
+// admin's account. It deliberately uses the same status seeding and owner
+// membership rules as the normal workspace creation flow, while keeping the
+// action in the platform audit log.
+func (h *Handler) AdminCreateWorkspace(w http.ResponseWriter, r *http.Request) {
+	actor, ok := PlatformAdminFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusForbidden, "platform admin access required")
+		return
+	}
+	var req CreateWorkspaceRequest
+	var reason string
+	var body struct {
+		Name        string  `json:"name"`
+		Slug        string  `json:"slug"`
+		Description *string `json:"description"`
+		Context     *string `json:"context"`
+		IssuePrefix *string `json:"issue_prefix"`
+		Reason      string  `json:"reason"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	reason = strings.TrimSpace(body.Reason)
+	if reason == "" || len(reason) > adminReasonMaxLen {
+		writeError(w, http.StatusBadRequest, "reason is required and must be at most 500 characters")
+		return
+	}
+	req = CreateWorkspaceRequest{Name: body.Name, Slug: body.Slug, Description: body.Description, Context: body.Context, IssuePrefix: body.IssuePrefix}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
+	if req.Name == "" || req.Slug == "" {
+		writeError(w, http.StatusBadRequest, "name and slug are required")
+		return
+	}
+	if !workspaceSlugPattern.MatchString(req.Slug) || isReservedSlug(req.Slug) {
+		writeError(w, http.StatusBadRequest, "slug is invalid or reserved")
+		return
+	}
+	issuePrefix := ""
+	if req.IssuePrefix != nil {
+		prefix, valid := normalizeIssuePrefix(*req.IssuePrefix)
+		if !valid {
+			writeError(w, http.StatusBadRequest, issuePrefixFormatError)
+			return
+		}
+		issuePrefix = prefix
+	}
+	if issuePrefix == "" {
+		issuePrefix = defaultIssuePrefixFromSlug(req.Slug)
+	}
+
+	h.runAdminAction(w, r, adminAction{
+		Action: "workspace.create", TargetType: "workspace", TargetID: req.Slug, Reason: reason,
+		Payload: map[string]any{"name": req.Name, "slug": req.Slug, "owner_user_id": uuidToString(actor.UserID)},
+	}, func(q *db.Queries) (int, any, error) {
+		ws, err := q.CreateWorkspace(r.Context(), db.CreateWorkspaceParams{
+			Name: req.Name, Slug: req.Slug, Description: ptrToText(req.Description), Context: ptrToText(req.Context), IssuePrefix: issuePrefix,
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return http.StatusConflict, map[string]string{"error": "workspace slug already exists"}, nil
+			}
+			return 0, nil, err
+		}
+		if _, err := q.CreateMember(r.Context(), db.CreateMemberParams{WorkspaceID: ws.ID, UserID: actor.UserID, Role: "owner"}); err != nil {
+			return 0, nil, err
+		}
+		if err := issuestatus.Ensure(r.Context(), q, ws.ID); err != nil {
+			return 0, nil, err
+		}
+		return http.StatusCreated, h.workspaceToResponse(ws), nil
+	})
 }
 
 // --- audit ---

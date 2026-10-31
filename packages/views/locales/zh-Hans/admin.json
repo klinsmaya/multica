@@ -92,7 +92,12 @@
     "col_role": "角色",
     "col_joined": "加入时间",
     "member_disabled": "已禁用",
-    "open_in_app": "在应用中打开"
+    "open_in_app": "在应用中打开",
+    "create": "Create workspace",
+    "create_title": "Create workspace",
+    "create_description": "Create a workspace owned by your platform admin account. The action is recorded in the audit log.",
+    "name_label": "Name",
+    "slug_label": "Slug"
   },
   "audit": {
     "title": "审计日志",

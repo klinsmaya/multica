@@ -15,6 +15,7 @@ import {
   PlatformAdminSchema,
   emptyAdminPage,
   type AdminActionRequest,
+	 type AdminCreateWorkspaceRequest,
   type AdminAuditEntry,
   type AdminAuditListParams,
   type AdminMe,
@@ -5557,6 +5558,13 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/admin/workspaces/${id}`);
     return parseWithFallback(raw, AdminWorkspaceDetailSchema, EMPTY_ADMIN_WORKSPACE_DETAIL, {
       endpoint: "GET /api/admin/workspaces/:id",
+    });
+  }
+
+  async adminCreateWorkspace(body: AdminCreateWorkspaceRequest): Promise<Workspace> {
+    return this.fetch("/api/admin/workspaces", {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   }
 

@@ -229,6 +229,15 @@ export interface AdminActionRequest {
   reason: string;
 }
 
+export interface AdminCreateWorkspaceRequest {
+  name: string;
+  slug: string;
+  description?: string;
+  context?: string;
+  issue_prefix?: string;
+  reason: string;
+}
+
 export interface SetPlatformAdminRequest {
   email: string;
   role: PlatformRole;
