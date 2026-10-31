@@ -31,6 +31,7 @@ type marketReader interface {
 	ListWorkspaceMcpServers(ctx context.Context, workspaceID pgtype.UUID) ([]db.WorkspaceMcpServer, error)
 	GetSkillByWorkspaceAndName(ctx context.Context, arg db.GetSkillByWorkspaceAndNameParams) (db.Skill, error)
 	ListActiveUserComposioConnections(ctx context.Context, userID pgtype.UUID) ([]db.UserComposioConnection, error)
+	ListIssueStatusEntries(ctx context.Context, arg db.ListIssueStatusEntriesParams) ([]db.IssueStatus, error)
 }
 
 func (h *Handler) runMarketRead(ctx context.Context, fn func(q marketReader) error) error {
@@ -57,6 +58,7 @@ type preflightFacts struct {
 	mcpServers []db.WorkspaceMcpServer
 	skills     map[string]db.Skill
 	composio   *composioFacts
+	statusKeys map[string]bool
 }
 
 type composioFacts struct {
@@ -64,12 +66,21 @@ type composioFacts struct {
 }
 
 func (h *Handler) loadPreflightFacts(ctx context.Context, q marketReader, member db.Member, m marketcatalog.Manifest) (preflightFacts, error) {
-	f := preflightFacts{member: member, catalogs: map[string]*ModelCatalogSnapshot{}, skills: map[string]db.Skill{}}
+	f := preflightFacts{member: member, catalogs: map[string]*ModelCatalogSnapshot{}, skills: map[string]db.Skill{}, statusKeys: map[string]bool{}}
 	runtimes, err := runtimesVisibleTo(ctx, q, member)
 	if err != nil {
 		return preflightFacts{}, fmt.Errorf("list runtimes: %w", err)
 	}
 	f.runtimes = runtimes
+	if m.Workflow != nil {
+		statuses, err := q.ListIssueStatusEntries(ctx, db.ListIssueStatusEntriesParams{WorkspaceID: member.WorkspaceID, IncludeArchived: false})
+		if err != nil {
+			return preflightFacts{}, fmt.Errorf("list issue statuses: %w", err)
+		}
+		for _, status := range statuses {
+			f.statusKeys[status.Key] = true
+		}
+	}
 	for _, rt := range runtimes {
 		id := uuidToString(rt.ID)
 		if snap := h.cachedModelCatalog(ctx, id); snap != nil {
@@ -147,6 +158,7 @@ const (
 	reasonSkillMissing               blockReason = "skill_missing"
 
 	reasonRequirementUnsupported blockReason = "requirement_unsupported"
+	reasonWorkflowStatusMissing  blockReason = "workflow_status_missing"
 )
 
 // allBlockReasons is the checklist for the install stale-code map. A new
@@ -173,6 +185,7 @@ func allBlockReasons() []blockReason {
 		reasonSkillBindForbidden,
 		reasonSkillMissing,
 		reasonRequirementUnsupported,
+		reasonWorkflowStatusMissing,
 	}
 }
 
@@ -228,6 +241,7 @@ type preflightReport struct {
 	Tools        []check
 	Connections  []check
 	Knowledge    []check
+	Workflow     []check
 	Unsupported  []check
 }
 
@@ -243,7 +257,7 @@ func (r preflightReport) Status() reportStatus {
 	if r.Model.Status == checkBlocked || r.Source != marketcatalog.SourceNocoBase {
 		return reportBlocked
 	}
-	for _, list := range [][]check{r.Tools, r.Connections, r.Knowledge, r.Unsupported} {
+	for _, list := range [][]check{r.Tools, r.Connections, r.Knowledge, r.Workflow, r.Unsupported} {
 		for _, c := range list {
 			if c.Status != checkSatisfied {
 				return reportBlocked
@@ -272,6 +286,7 @@ func evaluatePreflight(l marketcatalog.Listing, choice modelChoice, f preflightF
 		Tools:        make([]check, 0, len(m.Tools)),
 		Connections:  make([]check, 0, len(m.Connections)),
 		Knowledge:    make([]check, 0, len(m.Knowledge)),
+		Workflow:     make([]check, 0, 1),
 		Unsupported:  make([]check, 0, len(m.Unsupported)),
 	}
 	for _, need := range m.Tools {
@@ -283,10 +298,22 @@ func evaluatePreflight(l marketcatalog.Listing, choice modelChoice, f preflightF
 	for _, need := range m.Knowledge {
 		r.Knowledge = append(r.Knowledge, checkKnowledge(need, target, f))
 	}
+	if m.Workflow != nil {
+		r.Workflow = append(r.Workflow, checkWorkflow(*m.Workflow, f))
+	}
 	for _, need := range m.Unsupported {
 		r.Unsupported = append(r.Unsupported, blocked(need.Kind, reasonRequirementUnsupported))
 	}
 	return r
+}
+
+func checkWorkflow(need marketcatalog.WorkflowNeed, f preflightFacts) check {
+	for _, step := range need.Steps {
+		if !f.statusKeys[step.StatusKey] {
+			return blocked(need.Name, reasonWorkflowStatusMissing)
+		}
+	}
+	return satisfied(need.Name, binding{Action: bindProvision})
 }
 
 func checkModel(need marketcatalog.ModelNeed, choice modelChoice, f preflightFacts) modelCheck {

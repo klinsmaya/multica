@@ -26,6 +26,13 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 		RuntimeID:         admission.RuntimeID,
 		Model:             admission.ModelID,
 	}
+	if listing.Manifest.Workflow != nil {
+		workflow := listing.Manifest.Workflow
+		if plan.Workflow == nil || plan.Workflow.Name != workflow.Name || plan.Workflow.Digest != WorkflowDigest(*workflow) {
+			return nil, installPayload{}, false, Stale{Code: CodeStaleRelease}
+		}
+		payload.Workflow = &workflowBody{Name: workflow.Name, Description: workflow.Description, Steps: workflow.Steps, Digest: plan.Workflow.Digest}
+	}
 	for _, need := range listing.Manifest.Connections {
 		payload.Toolkits = append(payload.Toolkits, need.Toolkit)
 	}
@@ -37,6 +44,9 @@ func compile(plan Plan, admission Admission, listing marketcatalog.Listing) ([]S
 		Name:   agent.Name,
 		digest: ContentDigest(agent.Instructions),
 	}}
+	if payload.Workflow != nil {
+		steps = append(steps, Step{Key: StepKey("workflow:" + payload.Workflow.Name), Kind: KindWorkflow, Phase: PhasePending, mode: ModeWrite, Name: payload.Workflow.Name, digest: payload.Workflow.Digest})
+	}
 
 	skills, err := compileSkills(plan, admission, listing)
 	if err != nil {

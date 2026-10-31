@@ -120,7 +120,7 @@ func firstBlockReason(report preflightReport) blockReason {
 	if report.Model.Status == checkBlocked {
 		return report.Model.Reason
 	}
-	for _, list := range [][]check{report.Tools, report.Connections, report.Knowledge, report.Unsupported} {
+	for _, list := range [][]check{report.Tools, report.Connections, report.Knowledge, report.Workflow, report.Unsupported} {
 		for _, item := range list {
 			if item.Status == checkBlocked {
 				return item.Reason
@@ -141,7 +141,8 @@ func staleCodeFor(reason blockReason) (marketinstall.StaleCode, bool) {
 		return marketinstall.CodeStalePermission, true
 	case reasonModelCatalogUnknown, reasonModelSelectionUnsupported,
 		reasonConnectionProviderUnsupported, reasonConnectionsUnavailable,
-		reasonKnowledgeSourceUnsupported, reasonRequirementUnsupported:
+		reasonKnowledgeSourceUnsupported, reasonRequirementUnsupported,
+		reasonWorkflowStatusMissing:
 		return marketinstall.CodeStaleCapabilities, true
 	default:
 		return "", false

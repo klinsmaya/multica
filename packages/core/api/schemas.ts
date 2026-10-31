@@ -3857,6 +3857,14 @@ export const MarketListingSchema = z.object({
   agent: z.object({ name: z.string(), description: z.string().default("") }).loose(),
   requirements: z.object({
     model: z.object({ provider: z.string(), models: z.array(z.string()).default([]) }).loose(),
+    workflow: z.object({
+      name: z.string(),
+      description: z.string().default(""),
+      steps: z.array(z.object({
+        status_key: z.string(), handler_type: z.string(), instructions: z.string().default(""),
+        next_status_key: z.string().optional(), back_status_key: z.string().optional(),
+      }).loose()).default([]),
+    }).loose().optional(),
     tools: z.array(z.object({ name: z.string(), provisionable: z.boolean().catch(false) }).loose()).default([]),
     connections: z.array(z.object({ provider: z.string(), toolkit: z.string() }).loose()).default([]),
     knowledge: z.array(
@@ -3927,6 +3935,7 @@ const ReadyPreflightSchema = PreflightMetaSchema.extend({
   tools: z.array(SatisfiedCheckSchema),
   connections: z.array(SatisfiedCheckSchema),
   knowledge: z.array(SatisfiedCheckSchema),
+  workflow: z.array(SatisfiedCheckSchema),
   unsupported: z.tuple([]),
 });
 
@@ -3936,6 +3945,7 @@ const BlockedPreflightSchema = PreflightMetaSchema.extend({
   tools: z.array(PreflightCheckSchema).default([]),
   connections: z.array(PreflightCheckSchema).default([]),
   knowledge: z.array(PreflightCheckSchema).default([]),
+  workflow: z.array(PreflightCheckSchema).default([]),
   unsupported: z.array(BlockedCheckSchema).default([]),
 });
 

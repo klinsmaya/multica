@@ -74,6 +74,15 @@ var sampleListings = []Listing{
 				Instructions: "List decisions, then action items with an owner and a date.",
 			},
 			Model: ModelNeed{Provider: "claude"},
+			Workflow: &WorkflowNeed{
+				Name:        "Meeting follow-up",
+				Description: "Move meeting work from triage to review.",
+				Steps: []WorkflowStep{
+					{StatusKey: "todo", HandlerType: "none"},
+					{StatusKey: "in_review", HandlerType: "project_lead", Instructions: "Check the decisions and owners."},
+					{StatusKey: "done", HandlerType: "none"},
+				},
+			},
 		},
 	},
 	{

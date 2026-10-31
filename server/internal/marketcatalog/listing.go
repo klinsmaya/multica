@@ -76,10 +76,28 @@ type ReleaseFacts struct {
 type Manifest struct {
 	Agent       AgentTemplate
 	Model       ModelNeed
+	Workflow    *WorkflowNeed
 	Tools       []ToolNeed
 	Connections []ConnectionNeed
 	Knowledge   []KnowledgeNeed
 	Unsupported []UnsupportedNeed
+}
+
+// WorkflowNeed is a portable project-workflow template. Handler references
+// are deliberately limited to identity-free handlers; workspace-specific
+// agent, member, and squad IDs cannot safely travel through a catalog.
+type WorkflowNeed struct {
+	Name        string
+	Description string
+	Steps       []WorkflowStep
+}
+
+type WorkflowStep struct {
+	StatusKey     string
+	HandlerType   string
+	Instructions  string
+	NextStatusKey string
+	BackStatusKey string
 }
 
 type AgentTemplate struct {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/multica-ai/multica/server/internal/marketcatalog"
 )
 
 // Beginner is the process pool. Each store call commits its own transaction,
@@ -446,6 +447,33 @@ func (n pgNatives) observeMCP(ctx context.Context, workspace WorkspaceID, id Cor
 	return presenceFrom(err, MCPDigest(transport, rawURL))
 }
 
+func (n pgNatives) observeWorkflow(ctx context.Context, workspace WorkspaceID, id CorrelationID) (Presence, error) {
+	var name, description string
+	var raw []byte
+	err := n.queryRow(ctx, `SELECT name, description, steps FROM issue_workflow WHERE id = $1 AND workspace_id = $2`, id, workspace).Scan(&name, &description, &raw)
+	if err != nil {
+		return presenceFrom(err, "")
+	}
+	var stored []struct {
+		StatusKey string `json:"status_key"`
+		Handler   struct {
+			Type string `json:"type"`
+		} `json:"handler"`
+		Instructions  string `json:"instructions"`
+		NextStatusKey string `json:"next_status_key"`
+		BackStatusKey string `json:"back_status_key"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return Presence{Found: true, Definitive: true}, nil
+	}
+	steps := make([]marketcatalog.WorkflowStep, 0, len(stored))
+	for _, step := range stored {
+		steps = append(steps, marketcatalog.WorkflowStep{StatusKey: step.StatusKey, HandlerType: step.Handler.Type, Instructions: step.Instructions, NextStatusKey: step.NextStatusKey, BackStatusKey: step.BackStatusKey})
+	}
+	digest := WorkflowDigest(marketcatalog.WorkflowNeed{Name: name, Description: description, Steps: steps})
+	return Presence{Found: true, Definitive: true, Digest: digest}, nil
+}
+
 func (n pgNatives) observeSkillBind(ctx context.Context, agentID, skillID CorrelationID) (Presence, error) {
 	return n.observeOne(ctx, `SELECT 1 FROM agent_skill WHERE agent_id = $1 AND skill_id = $2`, agentID, skillID)
 }
@@ -490,6 +518,26 @@ func (n pgNatives) insertMCP(ctx context.Context, draft mcpDraft) error {
 	return n.exec(ctx, `
 INSERT INTO workspace_mcp_server (id, workspace_id, name, config, created_by)
 VALUES ($1,$2,$3,$4,$5)`, draft.ID, draft.Workspace, draft.Name, config, draft.CreatedBy)
+}
+
+func (n pgNatives) insertWorkflow(ctx context.Context, draft workflowDraft) error {
+	steps := make([]map[string]any, 0, len(draft.Steps))
+	for _, step := range draft.Steps {
+		steps = append(steps, map[string]any{
+			"status_key":      step.StatusKey,
+			"handler":         map[string]string{"type": step.HandlerType},
+			"instructions":    step.Instructions,
+			"next_status_key": step.NextStatusKey,
+			"back_status_key": step.BackStatusKey,
+		})
+	}
+	raw, err := json.Marshal(steps)
+	if err != nil {
+		return err
+	}
+	return n.exec(ctx, `
+INSERT INTO issue_workflow (id, workspace_id, name, description, initial_status_key, steps)
+VALUES ($1,$2,$3,$4,$5,$6::jsonb)`, draft.ID, draft.Workspace, draft.Name, draft.Description, draft.Steps[0].StatusKey, raw)
 }
 
 func (n pgNatives) bindSkill(ctx context.Context, agentID, skillID CorrelationID) error {

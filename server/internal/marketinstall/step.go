@@ -57,6 +57,7 @@ const (
 	KindBindMCP   Kind = "bind_mcp"
 	KindTask      Kind = "task"
 	KindSquad     Kind = "squad"
+	KindWorkflow  Kind = "workflow"
 )
 
 type Phase string
@@ -168,7 +169,7 @@ type Presence struct {
 
 func installKind(kind Kind) bool {
 	switch kind {
-	case KindAgent, KindSkill, KindMCP, KindBindSkill, KindBindMCP:
+	case KindAgent, KindSkill, KindMCP, KindBindSkill, KindBindMCP, KindWorkflow:
 		return true
 	default:
 		return false

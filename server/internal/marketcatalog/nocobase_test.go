@@ -146,6 +146,27 @@ func TestParseManifestKeepsUnknownNeedsAsBlockers(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsPortableWorkflow(t *testing.T) {
+	body := `{"data":{"version":"1.0.0","manifest":{"agent":{"name":"A"},"requirements":[{"kind":"model","provider":"claude"},{"kind":"workflow","name":"Review","description":"Review pipeline","steps":[{"status_key":"todo"},{"status_key":"in_review","handler_type":"project_lead","instructions":"Check the diff"}]}]}}}`
+	_, _, m, err := decodeVersion([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Workflow == nil || m.Workflow.Name != "Review" || len(m.Workflow.Steps) != 2 {
+		t.Fatalf("workflow = %+v", m.Workflow)
+	}
+	if m.Workflow.Steps[0].HandlerType != "none" {
+		t.Fatalf("default handler = %q, want none", m.Workflow.Steps[0].HandlerType)
+	}
+}
+
+func TestParseManifestRejectsNonPortableWorkflowHandler(t *testing.T) {
+	body := `{"data":{"version":"1.0.0","manifest":{"agent":{"name":"A"},"requirements":[{"kind":"model","provider":"claude"},{"kind":"workflow","name":"Review","steps":[{"status_key":"todo","handler_type":"agent"}]}]}}}`
+	if _, _, _, err := decodeVersion([]byte(body)); !errors.Is(err, ErrInvalidListing) {
+		t.Fatalf("err = %v, want ErrInvalidListing", err)
+	}
+}
+
 func TestDecodePageDropsInvalidItems(t *testing.T) {
 	body := `{"data":[
 		{"id":"good.one","name":"Good","latestVersion":"1.0.0","iconUrl":"https://cdn.example/i.png"},

@@ -90,6 +90,11 @@ function ListingDetail({ listing }: { listing: MarketListing }) {
               ? req.model.models.join(", ")
               : t(($) => $.detail.any_model, { provider: req.model.provider })}
           </Requirement>
+          {req.workflow ? (
+            <Requirement label={t(($) => $.detail.workflow)}>
+              {req.workflow.name} ({req.workflow.steps.length} steps)
+            </Requirement>
+          ) : null}
           {req.tools.length > 0 ? (
             <Requirement label={t(($) => $.detail.tools)}>{req.tools.map((x) => x.name).join(", ")}</Requirement>
           ) : null}

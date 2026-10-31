@@ -20,6 +20,7 @@
     "knowledge_source_unsupported",
     "skill_bind_forbidden",
     "skill_missing",
-    "requirement_unsupported"
+    "requirement_unsupported",
+    "workflow_status_missing"
   ]
 }

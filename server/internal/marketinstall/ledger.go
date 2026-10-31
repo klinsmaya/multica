@@ -95,14 +95,15 @@ type Binding struct {
 }
 
 type installPayload struct {
-	AgentName         string      `json:"agent_name"`
-	AgentDescription  string      `json:"agent_description"`
-	AgentInstructions string      `json:"agent_instructions"`
-	Skills            []skillBody `json:"skills"`
-	MCPs              []mcpBody   `json:"mcps"`
-	Toolkits          []string    `json:"toolkits"`
-	RuntimeID         string      `json:"runtime_id"`
-	Model             string      `json:"model"`
+	AgentName         string        `json:"agent_name"`
+	AgentDescription  string        `json:"agent_description"`
+	AgentInstructions string        `json:"agent_instructions"`
+	Skills            []skillBody   `json:"skills"`
+	MCPs              []mcpBody     `json:"mcps"`
+	Workflow          *workflowBody `json:"workflow,omitempty"`
+	Toolkits          []string      `json:"toolkits"`
+	RuntimeID         string        `json:"runtime_id"`
+	Model             string        `json:"model"`
 }
 
 type skillBody struct {
@@ -119,6 +120,13 @@ type mcpBody struct {
 	Digest    string `json:"digest"`
 }
 
+type workflowBody struct {
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Steps       []marketcatalog.WorkflowStep `json:"steps"`
+	Digest      string                       `json:"digest"`
+}
+
 type nativePort interface {
 	observeAgent(ctx context.Context, workspace WorkspaceID, id CorrelationID) (Presence, error)
 	observeSkill(ctx context.Context, workspace WorkspaceID, id CorrelationID) (Presence, error)
@@ -130,6 +138,8 @@ type nativePort interface {
 	insertMCP(ctx context.Context, draft mcpDraft) error
 	bindSkill(ctx context.Context, agentID, skillID CorrelationID) error
 	bindMCP(ctx context.Context, agentID, serverID CorrelationID) error
+	observeWorkflow(ctx context.Context, workspace WorkspaceID, id CorrelationID) (Presence, error)
+	insertWorkflow(ctx context.Context, draft workflowDraft) error
 }
 
 type agentDraft struct {
@@ -160,6 +170,14 @@ type mcpDraft struct {
 	Name      string
 	Transport string
 	URL       string
+}
+
+type workflowDraft struct {
+	ID          CorrelationID
+	Workspace   WorkspaceID
+	Name        string
+	Description string
+	Steps       []marketcatalog.WorkflowStep
 }
 
 type installStore interface {
@@ -601,6 +619,8 @@ func (l *Ledger) observe(ctx context.Context, row Operation, step Step) (Presenc
 		return l.natives.observeSkillBind(ctx, step.parent, step.child)
 	case KindBindMCP:
 		return l.natives.observeMCPBind(ctx, step.parent, step.child)
+	case KindWorkflow:
+		return l.natives.observeWorkflow(ctx, row.Actor.WorkspaceID, step.OutputID)
 	default:
 		return Presence{}, errPhase
 	}
@@ -650,6 +670,12 @@ func (l *Ledger) insert(ctx context.Context, row Operation, step Step) error {
 		return l.natives.bindSkill(ctx, step.parent, step.child)
 	case KindBindMCP:
 		return l.natives.bindMCP(ctx, step.parent, step.child)
+	case KindWorkflow:
+		workflow := row.payload.Workflow
+		if workflow == nil || workflow.Digest != step.digest {
+			return errDefinite
+		}
+		return l.natives.insertWorkflow(ctx, workflowDraft{ID: step.OutputID, Workspace: row.Actor.WorkspaceID, Name: workflow.Name, Description: workflow.Description, Steps: workflow.Steps})
 	default:
 		return errPhase
 	}

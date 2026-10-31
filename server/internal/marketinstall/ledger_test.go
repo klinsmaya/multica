@@ -12,6 +12,35 @@ import (
 	"github.com/multica-ai/multica/server/internal/marketcatalog"
 )
 
+func TestWorkflowInstallWritesPortableWorkflow(t *testing.T) {
+	listing := testListing()
+	listing.Manifest.Workflow = &marketcatalog.WorkflowNeed{
+		Name: "Review pipeline",
+		Steps: []marketcatalog.WorkflowStep{
+			{StatusKey: "todo", HandlerType: "none"},
+			{StatusKey: "in_review", HandlerType: "project_lead", Instructions: "Check the diff."},
+		},
+	}
+	doc := testDocument(t, listing, func(plan map[string]any) {
+		plan["workflow"] = map[string]any{
+			"name":   listing.Manifest.Workflow.Name,
+			"digest": WorkflowDigest(*listing.Manifest.Workflow),
+		}
+	})
+	native := newScriptedNative()
+	ledger := openMemory(newMemStore(), native, staticGate{admission: Admission{Ready: true, RuntimeID: "runtime-1", ModelID: "model-1"}}, staticCatalog{listing: listing})
+	op, err := ledger.Commit(context.Background(), testActor(), doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Status() != StatusSucceeded || phaseOf(op, KindWorkflow) != PhaseApplied {
+		t.Fatalf("status = %s, workflow phase = %s", op.Status(), phaseOf(op, KindWorkflow))
+	}
+	if len(native.workflows) != 1 {
+		t.Fatalf("workflow writes = %d, want 1", len(native.workflows))
+	}
+}
+
 func TestCommitIsIdempotent(t *testing.T) {
 	ledger, native := testLedger(t, Admission{Ready: true, RuntimeID: "runtime-1"})
 	doc := testDocument(t, testListing(), nil)

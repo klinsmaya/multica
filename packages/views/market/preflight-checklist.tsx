@@ -64,6 +64,7 @@ export function PreflightChecklist({
       <CheckSection title={t(($) => $.detail.tools)} checks={report.tools} />
       <CheckSection title={t(($) => $.detail.connections)} checks={report.connections} />
       <CheckSection title={t(($) => $.detail.knowledge)} checks={report.knowledge} />
+      <CheckSection title={t(($) => $.detail.workflow)} checks={report.workflow} />
       <CheckSection title={t(($) => $.detail.unsupported)} checks={report.unsupported} />
     </div>
   );

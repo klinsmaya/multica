@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/marketcatalog"
 )
 
 type memStore struct {
@@ -158,6 +160,11 @@ func (o Operation) clone() Operation {
 	o.payload.Skills = append([]skillBody(nil), o.payload.Skills...)
 	o.payload.MCPs = append([]mcpBody(nil), o.payload.MCPs...)
 	o.payload.Toolkits = append([]string(nil), o.payload.Toolkits...)
+	if o.payload.Workflow != nil {
+		workflow := *o.payload.Workflow
+		workflow.Steps = append([]marketcatalog.WorkflowStep(nil), workflow.Steps...)
+		o.payload.Workflow = &workflow
+	}
 	return o
 }
 
@@ -171,6 +178,7 @@ type scriptedNative struct {
 	agents      map[string]agentDraft
 	skills      map[string]skillDraft
 	mcps        map[string]mcpDraft
+	workflows   map[string]workflowDraft
 	skillBinds  map[string]struct{}
 	mcpBinds    map[string]struct{}
 	agentWrites int
@@ -186,6 +194,7 @@ func newScriptedNative() *scriptedNative {
 		agents:     map[string]agentDraft{},
 		skills:     map[string]skillDraft{},
 		mcps:       map[string]mcpDraft{},
+		workflows:  map[string]workflowDraft{},
 		skillBinds: map[string]struct{}{},
 		mcpBinds:   map[string]struct{}{},
 	}
@@ -237,6 +246,17 @@ func (n *scriptedNative) observeMCP(_ context.Context, workspace WorkspaceID, id
 	return Presence{Found: true, Definitive: true, Digest: MCPDigest(draft.Transport, draft.URL)}, nil
 }
 
+func (n *scriptedNative) observeWorkflow(_ context.Context, workspace WorkspaceID, id CorrelationID) (Presence, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	draft, ok := n.workflows[nativeKey(workspace, id)]
+	if !ok {
+		return Presence{Definitive: true}, nil
+	}
+	digest := WorkflowDigest(marketcatalog.WorkflowNeed{Name: draft.Name, Description: draft.Description, Steps: draft.Steps})
+	return Presence{Found: true, Definitive: true, Digest: digest}, nil
+}
+
 func (n *scriptedNative) observeSkillBind(_ context.Context, agentID, skillID CorrelationID) (Presence, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -269,6 +289,12 @@ func (n *scriptedNative) insertMCP(_ context.Context, draft mcpDraft) error {
 	return n.write(KindMCP, func() {
 		n.mcps[nativeKey(draft.Workspace, draft.ID)] = draft
 		n.mcpWrites++
+	})
+}
+
+func (n *scriptedNative) insertWorkflow(_ context.Context, draft workflowDraft) error {
+	return n.write(KindWorkflow, func() {
+		n.workflows[nativeKey(draft.Workspace, draft.ID)] = draft
 	})
 }
 

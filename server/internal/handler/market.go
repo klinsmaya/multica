@@ -174,7 +174,6 @@ func publicSource(s marketcatalog.Source) string {
 	}
 }
 
-
 type listingSummaryResponse struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
@@ -208,10 +207,25 @@ type agentTemplateResponse struct {
 
 type requirementsResponse struct {
 	Model       modelNeedResponse        `json:"model"`
+	Workflow    *workflowNeedResponse    `json:"workflow,omitempty"`
 	Tools       []toolNeedResponse       `json:"tools"`
 	Connections []connectionNeedResponse `json:"connections"`
 	Knowledge   []knowledgeNeedResponse  `json:"knowledge"`
 	Unsupported []unsupportedResponse    `json:"unsupported"`
+}
+
+type workflowNeedResponse struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Steps       []workflowStepResponse `json:"steps"`
+}
+
+type workflowStepResponse struct {
+	StatusKey     string `json:"status_key"`
+	HandlerType   string `json:"handler_type"`
+	Instructions  string `json:"instructions"`
+	NextStatusKey string `json:"next_status_key,omitempty"`
+	BackStatusKey string `json:"back_status_key,omitempty"`
 }
 
 type modelNeedResponse struct {
@@ -251,6 +265,7 @@ type preflightResponse struct {
 	Tools        []checkResponse      `json:"tools"`
 	Connections  []checkResponse      `json:"connections"`
 	Knowledge    []checkResponse      `json:"knowledge"`
+	Workflow     []checkResponse      `json:"workflow"`
 	Unsupported  []checkResponse      `json:"unsupported"`
 }
 
@@ -319,6 +334,13 @@ func listingResponseFrom(l marketcatalog.Listing) listingResponse {
 		Knowledge:   make([]knowledgeNeedResponse, 0, len(m.Knowledge)),
 		Unsupported: make([]unsupportedResponse, 0, len(m.Unsupported)),
 	}
+	if m.Workflow != nil {
+		workflow := &workflowNeedResponse{Name: m.Workflow.Name, Description: m.Workflow.Description, Steps: make([]workflowStepResponse, 0, len(m.Workflow.Steps))}
+		for _, step := range m.Workflow.Steps {
+			workflow.Steps = append(workflow.Steps, workflowStepResponse{StatusKey: step.StatusKey, HandlerType: step.HandlerType, Instructions: step.Instructions, NextStatusKey: step.NextStatusKey, BackStatusKey: step.BackStatusKey})
+		}
+		req.Workflow = workflow
+	}
 	for _, t := range m.Tools {
 		req.Tools = append(req.Tools, toolNeedResponse{Name: t.ServerName, Provisionable: t.Template != nil})
 	}
@@ -357,6 +379,7 @@ func preflightResponseFrom(r preflightReport) preflightResponse {
 		Tools:        checkResponsesFrom(r.Tools),
 		Connections:  checkResponsesFrom(r.Connections),
 		Knowledge:    checkResponsesFrom(r.Knowledge),
+		Workflow:     checkResponsesFrom(r.Workflow),
 		Unsupported:  checkResponsesFrom(r.Unsupported),
 	}
 }

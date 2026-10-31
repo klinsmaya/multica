@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/multica-ai/multica/server/internal/marketcatalog"
 )
 
 var (
@@ -64,6 +66,7 @@ type Plan struct {
 	Connections    []ConnectionPin
 	Task           *TaskPin
 	Squad          *SquadPin
+	Workflow       *WorkflowPin
 	Hash           PlanHash
 }
 
@@ -92,6 +95,11 @@ type ConnectionPin struct {
 type TaskPin struct{ Name string }
 
 type SquadPin struct{ Name string }
+
+type WorkflowPin struct {
+	Name   string
+	Digest string
+}
 
 type Approval struct {
 	Ref           string
@@ -310,7 +318,29 @@ func planFrom(obj map[string]any) (Plan, error) {
 	} else if _, present := obj["squad"]; present && obj["squad"] != nil {
 		return Plan{}, ErrInvalidDocument
 	}
+	if workflow, ok := obj["workflow"].(map[string]any); ok {
+		name, digest := str(workflow, "name"), str(workflow, "digest")
+		if name == "" || digest == "" {
+			return Plan{}, ErrInvalidDocument
+		}
+		plan.Workflow = &WorkflowPin{Name: name, Digest: digest}
+	} else if _, present := obj["workflow"]; present && obj["workflow"] != nil {
+		return Plan{}, ErrInvalidDocument
+	}
 	return plan, nil
+}
+
+// WorkflowDigest proves that an installed workflow still matches the catalog
+// template. Struct JSON gives a stable representation for this fixed schema.
+func WorkflowDigest(workflow marketcatalog.WorkflowNeed) string {
+	value := struct {
+		Name        string                       `json:"name"`
+		Description string                       `json:"description"`
+		Steps       []marketcatalog.WorkflowStep `json:"steps"`
+	}{workflow.Name, workflow.Description, workflow.Steps}
+	raw, _ := json.Marshal(value)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func approvalFrom(value any) (Approval, error) {

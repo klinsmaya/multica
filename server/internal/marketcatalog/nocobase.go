@@ -94,14 +94,24 @@ type wireAgent struct {
 }
 
 type wireRequirement struct {
-	Kind     string           `json:"kind"`
-	Name     string           `json:"name,omitempty"`
-	Provider string           `json:"provider,omitempty"`
-	Models   []string         `json:"models,omitempty"`
-	Toolkit  string           `json:"toolkit,omitempty"`
-	Source   string           `json:"source,omitempty"`
-	Template *wireMcpTemplate `json:"template,omitempty"`
-	Bundle   *wireSkillBundle `json:"bundle,omitempty"`
+	Kind        string             `json:"kind"`
+	Name        string             `json:"name,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Steps       []wireWorkflowStep `json:"steps,omitempty"`
+	Provider    string             `json:"provider,omitempty"`
+	Models      []string           `json:"models,omitempty"`
+	Toolkit     string             `json:"toolkit,omitempty"`
+	Source      string             `json:"source,omitempty"`
+	Template    *wireMcpTemplate   `json:"template,omitempty"`
+	Bundle      *wireSkillBundle   `json:"bundle,omitempty"`
+}
+
+type wireWorkflowStep struct {
+	StatusKey     string `json:"status_key"`
+	HandlerType   string `json:"handler_type,omitempty"`
+	Instructions  string `json:"instructions,omitempty"`
+	NextStatusKey string `json:"next_status_key,omitempty"`
+	BackStatusKey string `json:"back_status_key,omitempty"`
 }
 
 type wireMcpTemplate struct {
@@ -119,6 +129,7 @@ const (
 	kindTool       = "tool"
 	kindConnection = "connection"
 	kindKnowledge  = "knowledge"
+	kindWorkflow   = "workflow"
 )
 
 func invalid(format string, args ...any) error {
@@ -262,6 +273,7 @@ func parseManifest(w wireManifest) (Manifest, error) {
 	seenTool := map[string]bool{}
 	seenConnection := map[ConnectionNeed]bool{}
 	seenKnowledge := map[knowledgeKey]bool{}
+	haveWorkflow := false
 	seenKind := map[string]bool{}
 	for i, r := range w.Requirements {
 		switch r.Kind {
@@ -322,6 +334,31 @@ func parseManifest(w wireManifest) (Manifest, error) {
 				seenKnowledge[key] = true
 				m.Knowledge = append(m.Knowledge, need)
 			}
+		case kindWorkflow:
+			if haveWorkflow {
+				return Manifest{}, invalid("requirement %d: more than one workflow", i)
+			}
+			if blank(r.Name) || len(r.Steps) == 0 {
+				return Manifest{}, invalid("requirement %d: workflow needs name and steps", i)
+			}
+			steps := make([]WorkflowStep, 0, len(r.Steps))
+			seenSteps := map[string]bool{}
+			for j, step := range r.Steps {
+				if blank(step.StatusKey) || seenSteps[step.StatusKey] {
+					return Manifest{}, invalid("requirement %d: workflow step %d has an invalid or duplicate status", i, j)
+				}
+				handler := step.HandlerType
+				if handler == "" {
+					handler = "none"
+				}
+				if handler != "none" && handler != "project_lead" && handler != "creator" {
+					return Manifest{}, invalid("requirement %d: workflow handler %q is not portable", i, handler)
+				}
+				seenSteps[step.StatusKey] = true
+				steps = append(steps, WorkflowStep{StatusKey: step.StatusKey, HandlerType: handler, Instructions: step.Instructions, NextStatusKey: step.NextStatusKey, BackStatusKey: step.BackStatusKey})
+			}
+			m.Workflow = &WorkflowNeed{Name: r.Name, Description: r.Description, Steps: steps}
+			haveWorkflow = true
 		case "":
 			return Manifest{}, invalid("requirement %d has no kind", i)
 		default:
@@ -374,6 +411,13 @@ func encodeManifest(m Manifest) wireManifest {
 			r.Bundle = &wireSkillBundle{Description: k.Bundle.Description, Content: k.Bundle.Content}
 		}
 		reqs = append(reqs, r)
+	}
+	if m.Workflow != nil {
+		steps := make([]wireWorkflowStep, 0, len(m.Workflow.Steps))
+		for _, step := range m.Workflow.Steps {
+			steps = append(steps, wireWorkflowStep{StatusKey: step.StatusKey, HandlerType: step.HandlerType, Instructions: step.Instructions, NextStatusKey: step.NextStatusKey, BackStatusKey: step.BackStatusKey})
+		}
+		reqs = append(reqs, wireRequirement{Kind: kindWorkflow, Name: m.Workflow.Name, Description: m.Workflow.Description, Steps: steps})
 	}
 	for _, u := range m.Unsupported {
 		reqs = append(reqs, wireRequirement{Kind: u.Kind, Name: u.Name})

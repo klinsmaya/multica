@@ -23,6 +23,7 @@ export interface MarketListingPage {
 
 export interface MarketRequirements {
   model: { provider: string; models: string[] };
+	workflow?: { name: string; description: string; steps: { status_key: string; handler_type: string; instructions: string; next_status_key?: string; back_status_key?: string }[] };
   tools: { name: string; provisionable: boolean }[];
   connections: { provider: string; toolkit: string }[];
   knowledge: { source: string; name: string; provisionable: boolean }[];
@@ -116,6 +117,7 @@ export interface ReadyPreflight extends PreflightMeta {
   tools: SatisfiedCheck[];
   connections: SatisfiedCheck[];
   knowledge: SatisfiedCheck[];
+	workflow: SatisfiedCheck[];
   unsupported: [];
 }
 
@@ -125,6 +127,7 @@ export interface OpenPreflight extends PreflightMeta {
   tools: PreflightCheck[];
   connections: PreflightCheck[];
   knowledge: PreflightCheck[];
+	workflow: PreflightCheck[];
   unsupported: BlockedCheck[];
 }
 
