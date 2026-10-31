@@ -8,6 +8,7 @@ import {
   ScrollText,
   ShieldCheck,
   Users,
+  Store,
 } from "lucide-react";
 import { adminMeOptions, type PlatformRole } from "@multica/core/admin";
 import { ApiError } from "@multica/core/api";
@@ -49,6 +50,7 @@ const NAV = [
   { key: "workspaces", icon: Building2, href: paths.admin.workspaces() },
   { key: "audit", icon: ScrollText, href: paths.admin.audit() },
   { key: "admins", icon: ShieldCheck, href: paths.admin.admins() },
+  { key: "market", icon: Store, href: paths.admin.market() },
 ] as const;
 
 function AdminNoAccess() {

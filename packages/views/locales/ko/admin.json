@@ -6,7 +6,8 @@
     "workspaces": "워크스페이스",
     "audit": "감사 로그",
     "admins": "플랫폼 관리자",
-    "back_to_app": "앱으로 돌아가기"
+    "back_to_app": "앱으로 돌아가기",
+    "market": "Market"
   },
   "role": {
     "super_admin": "최고 관리자",
@@ -136,5 +137,9 @@
     "required": "사유는 필수입니다."
   },
   "action_failed": "작업에 실패했습니다",
-  "working": "처리 중…"
+  "working": "처리 중…",
+  "market": {
+    "title": "Market",
+    "search_placeholder": "Search catalog listings"
+  }
 }

@@ -6,6 +6,7 @@ import {
   AdminUserPageSchema,
   AdminWorkspaceDetailSchema,
   AdminWorkspacePageSchema,
+  AdminMarketPageSchema,
   EMPTY_ADMIN_ME,
   EMPTY_ADMIN_OVERVIEW,
   EMPTY_ADMIN_USER_DETAIL,
@@ -27,6 +28,8 @@ import {
   type AdminWorkspace,
   type AdminWorkspaceDetail,
   type AdminWorkspaceListParams,
+  type AdminMarketListParams,
+  type AdminMarketListing,
   type PlatformAdmin,
   type SetPlatformAdminRequest,
 } from "../admin/schemas";
@@ -5566,6 +5569,11 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify(body),
     });
+  }
+
+  async adminMarketListings(params: AdminMarketListParams = {}): Promise<AdminPage<AdminMarketListing>> {
+    const raw = await this.fetch<unknown>(`/api/admin/market/listings${this.adminQuery({ q: params.q, page: params.page, page_size: params.page_size })}`);
+    return parseWithFallback(raw, AdminMarketPageSchema, emptyAdminPage<AdminMarketListing>(), { endpoint: "GET /api/admin/market/listings" });
   }
 
   async adminListAudit(params: AdminAuditListParams = {}): Promise<AdminPage<AdminAuditEntry>> {

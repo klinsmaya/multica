@@ -100,6 +100,7 @@ export const paths = {
     user: (id: string) => `/admin/users/${encode(id)}`,
     workspaces: () => "/admin/workspaces",
     workspace: (id: string) => `/admin/workspaces/${encode(id)}`,
+    market: () => "/admin/market",
     audit: () => "/admin/audit",
     admins: () => "/admin/admins",
   },

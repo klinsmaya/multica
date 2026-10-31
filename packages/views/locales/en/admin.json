@@ -6,7 +6,8 @@
     "workspaces": "Workspaces",
     "audit": "Audit log",
     "admins": "Platform admins",
-    "back_to_app": "Back to app"
+    "back_to_app": "Back to app",
+    "market": "Market"
   },
   "role": {
     "super_admin": "Super admin",
@@ -136,5 +137,9 @@
     "required": "A reason is required."
   },
   "action_failed": "Action failed",
-  "working": "Working…"
+  "working": "Working…",
+  "market": {
+    "title": "Market",
+    "search_placeholder": "Search catalog listings"
+  }
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/multica-ai/multica/server/internal/marketcatalog"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -602,6 +603,35 @@ func (h *Handler) AdminGetWorkspace(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// AdminMarketListings exposes the catalog to platform operators without
+// requiring a workspace membership. It is read-only: catalog publication and
+// release policy remain owned by the catalog service.
+func (h *Handler) AdminMarketListings(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	result, err := h.MarketCatalog.Browse(r.Context(), marketcatalog.BrowseQuery{Text: q.Get("q"), Page: page, PageSize: pageSize})
+	if err != nil {
+		writeCatalogError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, listingPageResponseFrom(result))
+}
+
+func (h *Handler) AdminMarketListing(w http.ResponseWriter, r *http.Request) {
+	id, err := marketcatalog.ParseListingID(chi.URLParam(r, "listingId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid listing id")
+		return
+	}
+	listing, err := h.MarketCatalog.Listing(r.Context(), id, "")
+	if err != nil {
+		writeCatalogError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, listingResponseFrom(listing))
 }
 
 // AdminCreateWorkspace creates a fully initialized workspace for the platform

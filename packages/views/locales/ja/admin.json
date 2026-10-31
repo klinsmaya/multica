@@ -6,7 +6,8 @@
     "workspaces": "ワークスペース",
     "audit": "監査ログ",
     "admins": "プラットフォーム管理者",
-    "back_to_app": "アプリに戻る"
+    "back_to_app": "アプリに戻る",
+    "market": "Market"
   },
   "role": {
     "super_admin": "スーパー管理者",
@@ -136,5 +137,9 @@
     "required": "理由は必須です。"
   },
   "action_failed": "操作に失敗しました",
-  "working": "処理中…"
+  "working": "処理中…",
+  "market": {
+    "title": "Market",
+    "search_placeholder": "Search catalog listings"
+  }
 }

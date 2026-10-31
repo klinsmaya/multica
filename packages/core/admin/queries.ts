@@ -4,6 +4,7 @@ import type {
   AdminAuditListParams,
   AdminUserListParams,
   AdminWorkspaceListParams,
+  AdminMarketListParams,
 } from "./schemas";
 
 // Platform-admin data is account-level, not workspace-scoped, so these keys
@@ -82,3 +83,8 @@ export function adminPlatformAdminsOptions() {
     queryFn: () => api.adminListPlatformAdmins(),
   });
 }
+
+export const adminMarketOptions = (params: AdminMarketListParams = {}) => queryOptions({
+  queryKey: [...adminKeys.all, "market", params] as const,
+  queryFn: () => api.adminMarketListings(params),
+});

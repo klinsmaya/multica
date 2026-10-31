@@ -6,7 +6,8 @@
     "workspaces": "工作区",
     "audit": "审计日志",
     "admins": "平台管理员",
-    "back_to_app": "返回应用"
+    "back_to_app": "返回应用",
+    "market": "Market"
   },
   "role": {
     "super_admin": "超级管理员",
@@ -136,5 +137,9 @@
     "required": "必须填写原因。"
   },
   "action_failed": "操作失败",
-  "working": "处理中…"
+  "working": "处理中…",
+  "market": {
+    "title": "Market",
+    "search_placeholder": "Search catalog listings"
+  }
 }

@@ -219,6 +219,14 @@ export interface AdminWorkspaceListParams extends AdminPaging {
   q?: string;
 }
 
+export const AdminMarketListingSchema = z.object({
+  id: z.string(), name: z.string().default(""), summary: z.string().default(""), publisher: z.string().default(""),
+  icon_url: z.string().nullable().default(null), latest_version: z.string().default(""),
+}).loose();
+export type AdminMarketListing = z.infer<typeof AdminMarketListingSchema>;
+export const AdminMarketPageSchema = adminPageSchema(AdminMarketListingSchema);
+export interface AdminMarketListParams extends AdminPaging { q?: string }
+
 export interface AdminAuditListParams extends AdminPaging {
   actor_user_id?: string;
   action?: string;

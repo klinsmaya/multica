@@ -6,7 +6,8 @@
     "workspaces": "Espaces de travail",
     "audit": "Journal d'audit",
     "admins": "Admins de la plateforme",
-    "back_to_app": "Retour à l'application"
+    "back_to_app": "Retour à l'application",
+    "market": "Market"
   },
   "role": {
     "super_admin": "Super admin",
@@ -136,5 +137,9 @@
     "required": "Un motif est obligatoire."
   },
   "action_failed": "Échec de l'action",
-  "working": "En cours…"
+  "working": "En cours…",
+  "market": {
+    "title": "Market",
+    "search_placeholder": "Search catalog listings"
+  }
 }

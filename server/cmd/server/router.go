@@ -1959,6 +1959,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Get("/users/{id}", h.AdminGetUser)
 				r.Get("/workspaces", h.AdminListWorkspaces)
 				r.Get("/workspaces/{id}", h.AdminGetWorkspace)
+				r.Get("/market/listings", h.AdminMarketListings)
+				r.Get("/market/listings/{listingId}", h.AdminMarketListing)
 				r.Get("/audit", h.AdminListAudit)
 				r.Get("/admins", h.AdminListPlatformAdmins)
 			})
