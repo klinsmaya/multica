@@ -187,3 +187,29 @@ func TestAdminListsAndOverview(t *testing.T) {
 		t.Fatalf("overview = %+v", overview)
 	}
 }
+
+func TestAdminCreateWorkspaceSeedsOwnerStatusesAndAudit(t *testing.T) {
+	grantPlatformAdmin(t, testUserID, PlatformRoleOperator)
+	slug := "admin-create-" + testUserID[:8]
+	dbfx.Cleanup(t, `DELETE FROM workspace WHERE slug = $1`, slug)
+	var ws WorkspaceResponse
+	req := newRequest("POST", "/api/admin/workspaces", map[string]any{
+		"name":   "Admin Created",
+		"slug":   slug,
+		"reason": "provision a tenant",
+	})
+	testutil.Call(t, adminRoute(PlatformRoleOperator, testHandler.AdminCreateWorkspace), req).
+		Want(http.StatusCreated).JSON(&ws)
+	if ws.Slug != slug {
+		t.Fatalf("workspace = %+v", ws)
+	}
+	if n := dbfx.Count(t, `SELECT count(*) FROM member WHERE workspace_id = $1 AND user_id = $2 AND role = 'owner'`, ws.ID, testUserID); n != 1 {
+		t.Fatalf("owner membership count = %d, want 1", n)
+	}
+	if n := dbfx.Count(t, `SELECT count(*) FROM issue_status WHERE workspace_id = $1`, ws.ID); n < 7 {
+		t.Fatalf("status count = %d, want seeded catalog", n)
+	}
+	if n := dbfx.Count(t, `SELECT count(*) FROM admin_audit_log WHERE actor_user_id = $1 AND action = 'workspace.create' AND target_id = $2`, testUserID, slug); n != 1 {
+		t.Fatalf("audit count = %d, want 1", n)
+	}
+}
