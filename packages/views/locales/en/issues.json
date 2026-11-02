@@ -729,6 +729,11 @@
       "item_done": "Done:",
       "item_open": "To do:"
     },
+    "run": {
+      "running": "Running · {{minutes}} min",
+      "starting": "Running",
+      "queued": "Queued"
+    },
     "empty": "No issues in this feed",
     "quick": {
       "continue": "Continue recent work",

@@ -700,6 +700,11 @@
       "item_done": "완료:",
       "item_open": "할 일:"
     },
+    "run": {
+      "running": "실행 중 · {{minutes}}분 경과",
+      "starting": "실행 중",
+      "queued": "대기 중"
+    },
     "empty": "피드에 표시할 태스크가 없습니다",
     "quick": {
       "continue": "최근 작업 이어가기",

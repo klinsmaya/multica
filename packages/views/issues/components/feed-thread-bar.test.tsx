@@ -30,6 +30,10 @@ vi.mock("../../common/actor-avatar", () => ({
   ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid="avatar">{actorId}</span>,
 }));
 
+vi.mock("./feed-run-status", () => ({
+  FeedRunStatus: () => null,
+}));
+
 vi.mock("./issue-agent-activity-indicator", () => ({
   IssueAgentActivityIndicator: () => null,
 }));

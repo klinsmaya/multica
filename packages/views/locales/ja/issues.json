@@ -700,6 +700,11 @@
       "item_done": "完了：",
       "item_open": "未完了："
     },
+    "run": {
+      "running": "実行中 · {{minutes}} 分経過",
+      "starting": "実行中",
+      "queued": "待機中"
+    },
     "empty": "フィードに表示するタスクはありません",
     "quick": {
       "continue": "最近の作業を続ける",

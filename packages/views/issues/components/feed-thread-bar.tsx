@@ -12,6 +12,7 @@ import { useStatusLabel } from "../utils/status-label";
 import { useIsIssuePeeked } from "../surface/peek-context";
 import { useOpenFeedIssue } from "./feed-message-card";
 import { FeedProgressCard } from "./feed-progress-card";
+import { FeedRunStatus } from "./feed-run-status";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { IssueOutputStrip } from "./issue-output-strip";
 import { StatusIcon } from "./status-icon";
@@ -114,6 +115,7 @@ export const FeedThreadBar = memo(function FeedThreadBar({
         <FeedStatusChip status={issue.status} />
       </span>
       <IssueOutputStrip summary={summary} onOpenDeliverables={open} className="basis-full" />
+      <FeedRunStatus issueId={issue.id} />
     </div>
     <FeedProgressCard progress={summary?.latest_progress} status={issue.status} />
     </>

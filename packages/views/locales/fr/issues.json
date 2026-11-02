@@ -729,6 +729,11 @@
       "item_done": "Terminé :",
       "item_open": "À faire :"
     },
+    "run": {
+      "running": "En cours · {{minutes}} min",
+      "starting": "En cours",
+      "queued": "En file"
+    },
     "empty": "Aucune tâche dans ce flux",
     "quick": {
       "continue": "Reprendre le dernier travail",

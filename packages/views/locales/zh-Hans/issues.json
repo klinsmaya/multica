@@ -700,6 +700,11 @@
       "item_done": "已完成：",
       "item_open": "待办："
     },
+    "run": {
+      "running": "运行中 · 已 {{minutes}} 分钟",
+      "starting": "运行中",
+      "queued": "排队中"
+    },
     "empty": "信息流中没有任务",
     "quick": {
       "continue": "继续最近的工作",
