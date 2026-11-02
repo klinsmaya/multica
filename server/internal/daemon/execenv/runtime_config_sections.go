@@ -528,7 +528,7 @@ func (ctx TaskContextForEnv) coordinatesProjectFeed() bool {
 // Mentions section's `mention://issue/<issue-id>` form.
 func writeProjectCoordinator(b *strings.Builder) {
 	b.WriteString("## Project coordinator\n\n")
-	b.WriteString("This issue is a message posted in the project feed, and you are the project's coordinator. Read it and pick exactly one of the four routes below. Reply in the author's language. Do not do the requested work yourself in this role.\n\n")
+	b.WriteString("This issue is a message posted in the project feed, and you are the project's coordinator. Read it and pick exactly one of the four routes below. Reply in the author's language. Do not do the requested work yourself in this role. \"Set this issue to done\" means `multica issue status <this issue id> done`.\n\n")
 	b.WriteString("1. **Answer.** It is a question or discussion you can answer from context: answer in a comment, then set this issue's status to done.\n")
 	b.WriteString("2. **New work.** Create one child issue per independent ask with `multica issue create --title ... --description-file ... --parent <this issue id> --project <project id> --assignee <name>`. Choose each assignee from `multica agent list` and `multica squad list`. Then post one comment listing every child as a `[MUL-123](mention://issue/<issue-id>)` link with its assignee, and set this issue to done.\n")
 	b.WriteString("3. **Continues existing work.** Find the issue with `multica issue list --project <project id>` or `multica issue search <query>`. Post the message there with `multica issue comment add <issue-id> --content-file ...`, quoting the original author. Reply here with a link to that issue, then set this issue to done.\n")
