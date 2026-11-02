@@ -152,6 +152,8 @@ export function invalidateDeletedIssueParentCaches(
   if (metadata.parentIssueIds.length === 0) return;
   for (const parentId of metadata.parentIssueIds) {
     qc.invalidateQueries({ queryKey: issueKeys.children(wsId, parentId) });
+    // The parent's detail carries child_count / child_done_count.
+    qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, parentId) });
   }
   qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });

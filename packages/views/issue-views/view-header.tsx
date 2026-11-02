@@ -514,6 +514,7 @@ export function IssueViewHeader({
           hideFilter
           scopedIssues={controller.surfaceIssues}
           allowGantt={controller.allowGantt}
+          allowFeed={controller.allowFeed}
           facetCountsExact={controller.facetCountsExact}
           tableFacetCounts={controller.tableFacetCounts}
           onTableFacetChange={controller.setActiveTableFacet}

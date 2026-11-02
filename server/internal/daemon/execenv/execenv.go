@@ -35,6 +35,19 @@ type ProjectResourceForEnv struct {
 	Label        string          `json:"label,omitempty"` // optional user-supplied label
 }
 
+// ProjectFileForEnv is one project library file listed in the brief and in
+// .multica/project/resources.json. AttachmentID is what
+// `multica attachment download` takes.
+type ProjectFileForEnv struct {
+	AttachmentID string `json:"attachment_id"`
+	Filename     string `json:"filename"`
+	SizeBytes    int64  `json:"size_bytes"`
+	ContentType  string `json:"content_type"`
+	UploadedAt   string `json:"uploaded_at"`
+	UploaderType string `json:"uploader_type"`
+	UploaderID   string `json:"uploader_id"`
+}
+
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
 	WorkspacesRoot  string // base path for all envs (e.g., ~/multica_workspaces)
@@ -160,7 +173,11 @@ type TaskContextForEnv struct {
 	ProjectID                     string                  // active project for this task, when present
 	ProjectTitle                  string                  // human-readable project title
 	ProjectDescription            string                  // durable project-level context, rendered into the brief's Project Context section
+	ProjectLeadCoordinates        bool                    // the project opted its lead agent in as the feed coordinator
+	AssigneeIsProjectLead         bool                    // this run is the project's lead agent on an issue assigned to it
+	IssueHasParent                bool                    // the issue is a sub-issue, not a top-level project feed message
 	ProjectResources              []ProjectResourceForEnv // resources attached to the project
+	ProjectFiles                  []ProjectFileForEnv     // project library files, newest version of each
 	ChatSessionID                 string                  // non-empty for chat tasks
 	// ChatChannelType is the IM platform behind a chat session ("slack",
 	// "feishu", "wecom"); empty for a web/mobile chat. It names the surface in

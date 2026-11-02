@@ -1,5 +1,6 @@
 import type { Label } from "./label";
 import type { IssuePropertyValues } from "./property";
+import type { GitHubPullRequestState } from "./github";
 
 /** Four lifecycle classifications. User-facing columns group by status key. */
 export type IssueStatusCategory =
@@ -167,6 +168,105 @@ export interface IssueDuplicateOf {
   status: IssueStatus;
 }
 
+/** One person or agent that wrote a counted comment on an issue. */
+export interface IssueThreadParticipant {
+  type: "member" | "agent" | (string & {});
+  id: string;
+}
+
+/** An unresolved thread whose latest comment is an agent @-mentioning the caller. */
+export interface IssueAwaitingMe {
+  comment_id: string;
+  /** The agent that wrote the comment. */
+  actor_id: string;
+  /** Plain-text preview, mentions reduced to `@Label`. */
+  excerpt: string;
+  created_at: string;
+}
+
+/** An agent's newest progress report: a `progress_update` comment whose body is a Markdown task list. */
+export interface IssueLatestProgress {
+  comment_id: string;
+  /** Full comment body; read it with `parseProgressChecklist`. */
+  content: string;
+  created_at: string;
+}
+
+/** The newest counted comment of an issue, for the feed's reply bubble. */
+export interface IssueLastReply {
+  comment_id: string;
+  author_type: string;
+  author_id: string;
+  /** Stored Markdown, cut at 2000 characters; not flattened. */
+  content: string;
+  created_at: string;
+}
+
+/**
+ * CI verdict for a linked PR on the feed strip. `none` covers both "no checks"
+ * and "no current CI snapshot".
+ */
+export type IssueThreadPullRequestChecksState = "passed" | "failed" | "pending" | "none";
+
+/** A linked PR on the feed's output strip. */
+export interface IssueThreadPullRequest {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  /** Unknown states from newer servers pass through; render them generically. */
+  state: GitHubPullRequestState | (string & {});
+  additions: number;
+  deletions: number;
+  checks_state: IssueThreadPullRequestChecksState;
+}
+
+/** A direct child issue shown as a thread card under its parent's feed message. */
+export interface IssueThreadChild {
+  id: string;
+  identifier: string;
+  title: string;
+  /** Unknown statuses from newer servers pass through; resolve them with `useIssueStatuses`. */
+  status: IssueStatus;
+  assignee_type: IssueAssigneeType | null;
+  assignee_id: string | null;
+  /** Counted comments on the child, by the same rule as the parent's own `reply_count`. */
+  reply_count: number;
+  last_reply_at: string | null;
+}
+
+/**
+ * Rollup for one issue: its comment thread and what it has produced. Issues
+ * with no counted comment, linked PR, deliverable or child issue have no row.
+ */
+export interface IssueThreadSummary {
+  issue_id: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  /** The newest counted comment flattened to one line; null when there is none. */
+  last_reply_excerpt: string | null;
+  /** The same comment with its author and Markdown body; null when there is none. */
+  last_reply: IssueLastReply | null;
+  open_thread_count: number;
+  participants: IssueThreadParticipant[];
+  /** The caller's own read cursor on the issue; null when never opened. */
+  last_read_at: string | null;
+  /** Agent questions waiting on the caller, newest first (at most 3). */
+  awaiting_me: IssueAwaitingMe[];
+  /** The newest agent progress report on the issue; null when there is none. */
+  latest_progress: IssueLatestProgress | null;
+  /** Newest linked PRs, newest first (at most 3). */
+  pull_requests: IssueThreadPullRequest[];
+  /** Distinct files uploaded in comments; versions of one file count once. */
+  deliverable_count: number;
+  /** Newest upload among those files; null when there are none. */
+  last_deliverable_at: string | null;
+  /** Newest direct child issues, newest first (at most 5). */
+  children: IssueThreadChild[];
+  /** All direct children, listed or not. */
+  child_total: number;
+}
+
 export interface Issue {
   id: string;
   workspace_id: string;
@@ -231,4 +331,10 @@ export interface Issue {
   last_activity_at?: string | null;
   /** Present only on issue detail responses for issues created from a comment. */
   source_context?: IssueSourceContext;
+  /**
+   * Sub-issue progress, present only on issue detail responses from a backend
+   * that computes it. Absent on older backends and on list/board rows.
+   */
+  child_count?: number;
+  child_done_count?: number;
 }

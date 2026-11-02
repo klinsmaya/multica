@@ -242,6 +242,7 @@ type projectResourceFile struct {
 	ProjectID          string                  `json:"project_id,omitempty"`
 	ProjectTitle       string                  `json:"project_title,omitempty"`
 	ProjectDescription string                  `json:"project_description,omitempty"`
+	ProjectFiles       []ProjectFileForEnv     `json:"project_files,omitempty"`
 	Resources          []ProjectResourceForEnv `json:"resources"`
 }
 
@@ -290,6 +291,7 @@ func writeProjectResources(workDir string, ctx TaskContextForEnv, manifest *side
 		ProjectID:          ctx.ProjectID,
 		ProjectTitle:       ctx.ProjectTitle,
 		ProjectDescription: ctx.ProjectDescription,
+		ProjectFiles:       ctx.ProjectFiles,
 		Resources:          resources,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")

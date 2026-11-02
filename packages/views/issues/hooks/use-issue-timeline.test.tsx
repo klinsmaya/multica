@@ -8,6 +8,7 @@ import { renderHook, act } from "@testing-library/react";
 // in useIssueTimeline — guarding against a regression here means future code
 // can't accidentally pull the whole mutation result into a useCallback dep.
 const stableHandles = vi.hoisted(() => ({
+  markReadMutate: vi.fn(),
   createMutateAsync: vi.fn(async () => ({})),
   updateMutateAsync: vi.fn(async () => ({})),
   deleteMutateAsync: vi.fn(async () => ({})),
@@ -45,31 +46,59 @@ vi.mock("@multica/core/issues/mutations", () => ({
     mutate: stableHandles.toggleMutate,
     isPending: false,
   }),
+  useMarkIssueRead: () => ({
+    mutateAsync: vi.fn(),
+    mutate: stableHandles.markReadMutate,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@multica/core/issues/queries", () => ({
-  issueTimelineOptions: (id: string) => ({
-    queryKey: ["issues", "timeline", id],
-    queryFn: () => Promise.resolve([]),
+  issueTimelineInfiniteOptions: (id: string) => ({
+    queryKey: ["issues", "timeline", id, "pages"],
+    queryFn: () => Promise.resolve({ entries: [] }),
   }),
   issueKeys: {
     timeline: (id: string) => ["issues", "timeline", id],
+    timelinePages: (id: string) => ["issues", "timeline", id, "pages"],
   },
 }));
 
-// Hoisted state controllable from tests — represents what useQuery would
-// return for the current render.
+// Hoisted state controllable from tests — represents what the infinite query
+// would return for the current render. `data` is the flat entry list of a
+// single page; `pages` (when set) is a multi-page cache, newest page first.
 const queryState = vi.hoisted(() => ({
   data: undefined as unknown,
+  pages: null as null | Array<Record<string, unknown>>,
   isLoading: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  isFetchNextPageError: false,
+  fetchNextPage: vi.fn(),
 }));
 
 // Track the latest cache-update fn the hook hands to setQueryData so tests
-// can assert what would have been written.
+// can assert what would have been written. `last` is the flat entry list of
+// the written cache, `lastCache` the pages structure itself.
 const cacheUpdates = vi.hoisted(() => ({
   last: null as unknown,
+  lastCache: null as null | { pages: Array<{ entries: Array<{ id: string }> }> },
   invalidations: 0,
 }));
+
+function currentCache() {
+  if (queryState.pages) return { pages: queryState.pages, pageParams: queryState.pages.map(() => null) };
+  return {
+    pages: [{
+      entries: queryState.data ?? [],
+      has_more_before: false,
+      has_more_after: false,
+      next_before: null,
+      next_before_id: null,
+    }],
+    pageParams: [null],
+  };
+}
 
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
@@ -77,18 +106,24 @@ vi.mock("@tanstack/react-query", async () => {
   );
   return {
     ...actual,
-    useQuery: () => ({
-      data: queryState.data,
+    useInfiniteQuery: () => ({
+      data: queryState.data === undefined && !queryState.pages ? undefined : currentCache(),
       isLoading: queryState.isLoading,
+      hasNextPage: queryState.hasNextPage,
+      isFetchingNextPage: queryState.isFetchingNextPage,
+      isFetchNextPageError: queryState.isFetchNextPageError,
+      fetchNextPage: queryState.fetchNextPage,
     }),
     useQueryClient: () => ({
       invalidateQueries: vi.fn(() => {
         cacheUpdates.invalidations += 1;
       }),
       setQueryData: vi.fn((_key: unknown, updater: unknown) => {
-        cacheUpdates.last = typeof updater === "function"
-          ? (updater as (old: unknown) => unknown)(queryState.data)
+        const next = typeof updater === "function"
+          ? (updater as (old: unknown) => unknown)(currentCache())
           : updater;
+        cacheUpdates.lastCache = next as typeof cacheUpdates.lastCache;
+        cacheUpdates.last = flattenTimelinePages(next as { pages: never[] } | undefined);
       }),
       getQueryData: vi.fn(),
       cancelQueries: vi.fn(),
@@ -108,6 +143,7 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
+import { flattenTimelinePages } from "@multica/core/issues/timeline-pages";
 import { useIssueTimeline } from "./use-issue-timeline";
 
 describe("useIssueTimeline", () => {
@@ -119,8 +155,14 @@ describe("useIssueTimeline", () => {
     stableHandles.resolveMutateAsync.mockClear();
     stableHandles.toggleMutate.mockClear();
     queryState.data = [];
+    queryState.pages = null;
     queryState.isLoading = false;
+    queryState.hasNextPage = false;
+    queryState.isFetchingNextPage = false;
+    queryState.isFetchNextPageError = false;
+    queryState.fetchNextPage.mockClear();
     cacheUpdates.last = null;
+    cacheUpdates.lastCache = null;
     cacheUpdates.invalidations = 0;
   });
 
@@ -592,5 +634,171 @@ describe("useIssueTimeline", () => {
       });
     });
     expect(cacheUpdates.last).toBeNull();
+  });
+  describe("paged cache", () => {
+    function entry(id: string, at: string, parentId: string | null = null) {
+      return {
+        type: "comment",
+        id,
+        actor_type: "member",
+        actor_id: "u",
+        content: id,
+        parent_id: parentId,
+        created_at: at,
+        updated_at: at,
+        reactions: [],
+        attachments: [],
+      };
+    }
+
+    function page(entries: unknown[], older = false) {
+      return {
+        entries,
+        has_more_before: older,
+        has_more_after: false,
+        next_before: older ? "2026-05-03T00:00:00Z" : null,
+        next_before_id: older ? "newest-root" : null,
+      };
+    }
+
+    // pages[0] is the newest page.
+    function seedTwoPages() {
+      queryState.pages = [
+        page([entry("newest-root", "2026-05-03T00:00:00Z"), entry("newest-reply", "2026-05-03T00:01:00Z", "newest-root")], true),
+        page([entry("old-root", "2026-05-01T00:00:00Z"), entry("old-reply", "2026-05-02T00:00:00Z", "old-root")]),
+      ];
+    }
+
+    function createdPayload(overrides: Record<string, unknown>) {
+      return {
+        comment: {
+          issue_id: "issue-1",
+          author_type: "member",
+          author_id: "u",
+          content: "",
+          parent_id: null,
+          created_at: "2026-05-06T05:00:00Z",
+          updated_at: "2026-05-06T05:00:00Z",
+          type: "comment",
+          reactions: [],
+          attachments: [],
+          ...overrides,
+        },
+      };
+    }
+
+    it("returns one flat, oldest-first list across pages", () => {
+      seedTwoPages();
+      const { result } = renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      expect(result.current.timeline.map((e) => e.id)).toEqual([
+        "old-root",
+        "old-reply",
+        "newest-root",
+        "newest-reply",
+      ]);
+    });
+
+    it("comment:created lands on the newest page", () => {
+      seedTwoPages();
+      renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      act(() => wsHandlers.get("comment:created")!(createdPayload({ id: "fresh" })));
+
+      const pages = cacheUpdates.lastCache!.pages;
+      expect(pages[0]!.entries.map((e) => e.id)).toContain("fresh");
+      expect(pages[1]!.entries.map((e) => e.id)).not.toContain("fresh");
+      // The older page is untouched, so its paging state and entries survive.
+      expect(pages[1]).toBe(queryState.pages![1]);
+    });
+
+    it("comment:created puts a reply on the page of its parent", () => {
+      seedTwoPages();
+      renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      act(() => wsHandlers.get("comment:created")!(createdPayload({ id: "late-reply", parent_id: "old-root" })));
+
+      const pages = cacheUpdates.lastCache!.pages;
+      expect(pages[1]!.entries.map((e) => e.id)).toContain("late-reply");
+      expect(pages[0]!.entries.map((e) => e.id)).not.toContain("late-reply");
+    });
+
+    it("comment:created is idempotent for an entry already on an older page", () => {
+      seedTwoPages();
+      renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      act(() => wsHandlers.get("comment:created")!(createdPayload({ id: "old-reply", parent_id: "old-root" })));
+
+      expect(flattenTimelinePages(cacheUpdates.lastCache as never).filter((e) => e.id === "old-reply")).toHaveLength(1);
+    });
+
+    it("comment:deleted removes the comment and its replies from every page", () => {
+      seedTwoPages();
+      // A reply a realtime event put on the newest page while its root is older.
+      queryState.pages![0]!.entries = [
+        ...(queryState.pages![0]!.entries as unknown[]),
+        entry("split-reply", "2026-05-04T00:00:00Z", "old-root"),
+      ];
+      renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      act(() => wsHandlers.get("comment:deleted")!({ comment_id: "old-root", issue_id: "issue-1" }));
+
+      const ids = flattenTimelinePages(cacheUpdates.lastCache as never).map((e) => e.id);
+      expect(ids).toEqual(["newest-root", "newest-reply"]);
+    });
+
+    it("comment:updated applies to an entry on an older page", () => {
+      seedTwoPages();
+      renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      act(() => wsHandlers.get("comment:updated")!(createdPayload({ id: "old-root", content: "edited" })));
+
+      const edited = cacheUpdates.lastCache!.pages[1]!.entries.find((e) => e.id === "old-root") as { content?: string };
+      expect(edited.content).toBe("edited");
+    });
+
+    it("loadOlder fetches the next page only while one exists and none is loading", () => {
+      seedTwoPages();
+      queryState.hasNextPage = true;
+      const { result, rerender } = renderHook(() => useIssueTimeline("issue-1", "user-1"));
+      expect(result.current.hasOlder).toBe(true);
+
+      act(() => result.current.loadOlder());
+      expect(queryState.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      queryState.isFetchingNextPage = true;
+      rerender();
+      expect(result.current.loadingOlder).toBe(true);
+      act(() => result.current.loadOlder());
+      expect(queryState.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      queryState.isFetchingNextPage = false;
+      queryState.hasNextPage = false;
+      rerender();
+      expect(result.current.hasOlder).toBe(false);
+      act(() => result.current.loadOlder());
+      expect(queryState.fetchNextPage).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps loading older pages until the deep-link anchor is present", () => {
+      seedTwoPages();
+      queryState.hasNextPage = true;
+      renderHook(() => useIssueTimeline("issue-1", "user-1", { ensureCommentId: "ancient" }));
+      expect(queryState.fetchNextPage).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops loading once the anchor is on a loaded page, or on error, or with no older page", () => {
+      seedTwoPages();
+      queryState.hasNextPage = true;
+      renderHook(() => useIssueTimeline("issue-1", "user-1", { ensureCommentId: "old-reply" }));
+      expect(queryState.fetchNextPage).not.toHaveBeenCalled();
+
+      renderHook(() => useIssueTimeline("issue-1", "user-1", { ensureCommentId: "ancient" }));
+      expect(queryState.fetchNextPage).toHaveBeenCalledTimes(1);
+      queryState.fetchNextPage.mockClear();
+
+      queryState.isFetchNextPageError = true;
+      renderHook(() => useIssueTimeline("issue-1", "user-1", { ensureCommentId: "ancient" }));
+      expect(queryState.fetchNextPage).not.toHaveBeenCalled();
+
+      queryState.isFetchNextPageError = false;
+      queryState.hasNextPage = false;
+      renderHook(() => useIssueTimeline("issue-1", "user-1", { ensureCommentId: "ancient" }));
+      expect(queryState.fetchNextPage).not.toHaveBeenCalled();
+    });
   });
 });

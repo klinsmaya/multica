@@ -1,6 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
 import {
+  createShortcutChord,
   getShortcut,
   isPlainShortcut,
   shortcutMatchesEvent,
@@ -46,12 +47,15 @@ export function shouldReplayNativeEnter(
   );
 }
 
+const PLAIN_ENTER = createShortcutChord("Enter");
+
 /**
  * Tiered-priority dynamic key handler. Suggestion and slash-command plugins
  * get first refusal, while submit still runs before the base editor keymap.
  */
 export function createSubmitShortcutExtension(
   onSubmit: () => boolean,
+  options: { plainEnter?: () => boolean } = {},
 ) {
   return Extension.create({
     name: "submitShortcut",
@@ -67,7 +71,10 @@ export function createSubmitShortcutExtension(
           props: {
             handleKeyDown(view, event) {
               if (replayingEnter) return false;
-              const shortcut = getShortcut("send");
+              // A composer that sends on plain Enter overrides the configured shortcut.
+              const shortcut = options.plainEnter?.()
+                ? PLAIN_ENTER
+                : getShortcut("send");
 
               if (
                 shouldReplayNativeEnter(event, shortcut, view.composing)

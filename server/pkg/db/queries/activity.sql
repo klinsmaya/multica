@@ -22,6 +22,27 @@ SELECT * FROM (
 ) AS recent
 ORDER BY created_at ASC, id ASC;
 
+-- name: ListActivitiesForIssueBetween :many
+-- The NEWEST @row_limit activities of an issue inside a time window, returned in
+-- chronological order. The window is [@from_at, @to_at): the lower bound is
+-- inclusive and applies when @has_from is TRUE, the upper bound is exclusive and
+-- applies when @has_to is TRUE.
+--
+-- Powers the root-paged timeline, where activities are partitioned by TIME
+-- rather than by thread: each page owns the interval from its oldest root up to
+-- the previous page's oldest root, so adjacent pages tile the timeline with no
+-- gap and no overlap. The cap bites at the OLD end for the same reason as
+-- ListActivitiesForIssue.
+SELECT * FROM (
+    SELECT * FROM activity_log
+    WHERE issue_id = @issue_id
+      AND (@has_from::boolean = FALSE OR created_at >= @from_at::timestamptz)
+      AND (@has_to::boolean = FALSE OR created_at < @to_at::timestamptz)
+    ORDER BY created_at DESC, id DESC
+    LIMIT @row_limit
+) AS recent
+ORDER BY created_at ASC, id ASC;
+
 -- name: GetActivity :one
 SELECT * FROM activity_log
 WHERE id = $1;

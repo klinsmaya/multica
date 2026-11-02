@@ -3,6 +3,7 @@ package execenv
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
@@ -470,6 +471,9 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 		b.WriteString(desc)
 		b.WriteString("\n\n")
 	}
+	if len(ctx.ProjectFiles) > 0 {
+		writeProjectFiles(b, ctx.ProjectFiles)
+	}
 	if len(ctx.ProjectResources) > 0 {
 		b.WriteString("Project resources (also written to `.multica/project/resources.json`):\n\n")
 		for _, r := range ctx.ProjectResources {
@@ -481,6 +485,68 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 	} else {
 		b.WriteString("This project has no resources attached yet.\n\n")
 	}
+}
+
+// writeProjectFiles lists the project's shared library files inside the
+// Project Context section. They are reference material the project's members
+// uploaded for every thread; the list carries ids, not contents, so the agent
+// fetches a file only when the task refers to it.
+func writeProjectFiles(b *strings.Builder, files []ProjectFileForEnv) {
+	b.WriteString("Project files — the project's shared reference files (newest version of each):\n\n")
+	for _, f := range files {
+		fmt.Fprintf(b, "- %s (%s, uploaded %s) — attachment %s\n", f.Filename, formatFileSize(f.SizeBytes), formatUploadDate(f.UploadedAt), f.AttachmentID)
+	}
+	b.WriteString("\nRead these when the task refers to them. Download one with `multica attachment download <attachment-id>` (add `-o <dir>` to choose where it lands). ")
+	b.WriteString("The same list is in `.multica/project/resources.json` under `project_files`.\n\n")
+}
+
+// formatFileSize renders a byte count in the largest unit that keeps the
+// number under 1024, e.g. "512 B", "1.5 KB", "3.0 MB".
+func formatFileSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	size := float64(n)
+	for _, suffix := range []string{"KB", "MB", "GB"} {
+		size /= unit
+		if size < unit || suffix == "GB" {
+			return fmt.Sprintf("%.1f %s", size, suffix)
+		}
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
+// formatUploadDate reduces an RFC 3339 timestamp to its UTC calendar date. An
+// unparseable value is shown as given rather than dropped.
+func formatUploadDate(ts string) string {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return ts
+	}
+	return t.UTC().Format("2006-01-02")
+}
+
+// coordinatesProjectFeed reports whether this run is the project coordinator:
+// the project opted its lead agent in, the dispatched agent is that lead working
+// the issue assigned to it, and the issue is a top-level message rather than a
+// sub-issue the coordinator itself created.
+func (ctx TaskContextForEnv) coordinatesProjectFeed() bool {
+	return ctx.ProjectLeadCoordinates && ctx.AssigneeIsProjectLead && !ctx.IssueHasParent
+}
+
+// writeProjectCoordinator emits the Project coordinator section. The issue is a
+// message posted in the project feed; the agent routes it instead of doing the
+// work. Every command named here exists in the CLI: `multica agent list` and
+// `multica squad list` enumerate who can be assigned, and issue links use the
+// Mentions section's `mention://issue/<issue-id>` form.
+func writeProjectCoordinator(b *strings.Builder) {
+	b.WriteString("## Project coordinator\n\n")
+	b.WriteString("This issue is a message posted in the project feed, and you are the project's coordinator. Read it and pick exactly one of the four routes below. Reply in the author's language. Do not do the requested work yourself in this role. \"Set this issue to done\" means `multica issue status <this issue id> done`.\n\n")
+	b.WriteString("1. **Answer.** It is a question or discussion you can answer from context: answer in a comment, then set this issue's status to done.\n")
+	b.WriteString("2. **New work.** Create one child issue per independent ask with `multica issue create --title ... --description-file ... --parent <this issue id> --project <project id> --assignee <name>`. Choose each assignee from `multica agent list` and `multica squad list`. Then post one comment listing every child as a `[MUL-123](mention://issue/<issue-id>)` link with its assignee, and set this issue to done.\n")
+	b.WriteString("3. **Continues existing work.** Find the issue with `multica issue list --project <project id>` or `multica issue search <query>`. Post the message there with `multica issue comment add <issue-id> --content-file ...`, quoting the original author. Reply here with a link to that issue, then set this issue to done.\n")
+	b.WriteString("4. **Ambiguous.** Ask the author a clarifying question in a comment that @mentions them, and leave this issue open.\n\n")
 }
 
 // writeInstructionPrecedence emits the "Agent Identity wins over the issue
@@ -879,8 +945,11 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 			b.WriteString("⚠️ **Final results MUST be delivered via `multica issue comment add`.** The user does NOT see your terminal output or run logs — only comments on the issue.\n\n")
 		}
 		b.WriteString("**Post exactly ONE comment per run — your final result, before this turn exits.** Do NOT post progress updates or plans along the way. Only a scheduled wakeup check whose `[WAKEUP]` block offers `multica issue wakeup checkin` may check in instead of commenting, when it found nothing that needs a reply.\n\n")
+		b.WriteString("**One exception — a progress checklist for multi-step work (optional):** post it with `multica issue comment add --type progress_update`, body a Markdown task list (`- [ ]` / `- [x]`, one step per line). The feed shows the newest such comment as the issue's checklist. It is not your final result.\n\n")
 		b.WriteString("Keep comments concise and natural — state the outcome, not the process.\n\n")
 		b.WriteString("**Delivering files here:** pass `--attachment <path>` to `multica issue comment add` (repeatable) — the only way a screenshot or artifact reaches the reader.\n")
+		b.WriteString("\n**Long documents, section by section (optional):** upload an outline first, with each unwritten section as a single line `<!-- pending: Section title -->`, then re-upload the same file name after each section is written, replacing that line with the text. Each upload becomes a new version, so the reader watches the document fill in. Each upload rides on a one-line comment, the one exception to the single-comment rule above; your final result is still the last comment.\n")
+		b.WriteString("\n**Prototype canvas (optional):** to lay several HTML pages out side by side, upload each page as its own `.html` file, then upload `canvas.json`: `{\"pages\":[{\"id\":\"p1\",\"name\":\"Flow\",\"frames\":[{\"id\":\"f1\",\"name\":\"Home\",\"file\":\"home.html\",\"x\":0,\"y\":0,\"w\":1280,\"h\":800,\"device\":\"desktop\"}]}]}`. `file` is the file name of an HTML upload on this same issue; `device` (`desktop`, `tablet`, `phone`) is optional. Re-upload `canvas.json` or any page under the same name to update the canvas.\n")
 		writeInlineBlocksPolicy(b)
 	}
 	b.WriteString("\n")
@@ -943,6 +1012,10 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	}
 
 	writeProjectContext(&b, ctx)
+
+	if kind == kindIssue && ctx.coordinatesProjectFeed() {
+		writeProjectCoordinator(&b)
+	}
 
 	if kind == kindIssue {
 		writeInstructionPrecedence(&b)

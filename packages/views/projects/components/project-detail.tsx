@@ -27,13 +27,16 @@ import { currentPath, useNavigation } from "../../navigation";
 import { TitleEditor, ContentEditor, type ContentEditorRef } from "../../editor";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { ProjectResourcesSection } from "./project-resources-section";
+import { ProjectSidebarTabs } from "./project-sidebar-tabs";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { ProjectWorkflowControl } from "../../workflows/project-workflow-row";
 import { ProjectWorkflowMenuHost } from "../../workflows/project-workflow-menu";
 import { IssueSurface } from "../../issues/surface/issue-surface";
+import type { IssueSurfaceMode } from "../../issues/surface/types";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
+import { Switch } from "@multica/ui/components/ui/switch";
 import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
@@ -82,13 +85,15 @@ import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
 function PropRow({
   label,
+  title,
   children,
 }: {
   label: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-8 items-center gap-2 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors">
+    <div title={title} className="flex min-h-8 items-center gap-2 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors">
       <span className="w-16 shrink-0 text-caption text-muted-foreground">{label}</span>
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-caption truncate">
         {children}
@@ -186,6 +191,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     handleResize: handleDesktopSidebarResize,
   } = useAnimatedRightSidebarState(desktopSidebarInitialOpen);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // The project-wide panels (overview, automations, library, PRs) belong to
+  // the feed view; every other view keeps the plain properties column.
+  const [surfaceViewMode, setSurfaceViewMode] = useState<IssueSurfaceMode | null>(null);
+  const showSidebarPanels = surfaceViewMode === "feed";
   const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
 
   useEffect(() => {
@@ -421,6 +430,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </PopoverContent>
             </Popover>
           </PropRow>
+          {project.lead_type === "agent" && (
+            <PropRow
+              label={t(($) => $.table.lead_coordinates)}
+              title={t(($) => $.table.lead_coordinates_help)}
+            >
+              <Switch
+                size="sm"
+                checked={project.lead_coordinates === true}
+                onCheckedChange={(checked: boolean) => handleUpdateField({ lead_coordinates: checked })}
+                aria-label={t(($) => $.table.lead_coordinates)}
+              />
+            </PropRow>
+          )}
           <PropRow label={t(($) => $.detail.prop_start_date)}>
             <ProjectStartDatePicker startDate={project.start_date} onUpdate={handleUpdateField} />
           </PropRow>
@@ -496,7 +518,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         <div ref={rightSidebarShortcutTargetRef} className="flex h-full flex-col">
           <IssueSurface
             scope={issueScope}
-            modes={["board", "list", "table", "swimlane", "gantt"]}
+            modes={["board", "list", "table", "swimlane", "gantt", "feed"]}
+            onViewModeChange={setSurfaceViewMode}
             renderHeader={({ controller }) => (
               <ProjectWorkflowMenuHost project={project}>
                 {(workflowSubmenu) => (
@@ -582,15 +605,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           panelRef={sidebarRef}
           onResize={handleDesktopSidebarResize}
         >
-          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled}>
-            {sidebarContent}
+          <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled} contentClassName="h-full">
+            <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} panels={showSidebarPanels} />
           </AnimatedRightSidebar>
         </ResizablePanel>
         )}
         {isMobile && (
           <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-            <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-              {sidebarContent}
+            <SheetContent side="right" showCloseButton={false} className="flex w-[320px] flex-col overflow-hidden p-0">
+              <ProjectSidebarTabs projectId={projectId} properties={sidebarContent} panels={showSidebarPanels} />
             </SheetContent>
           </Sheet>
         )}

@@ -52,6 +52,78 @@ func (q *Queries) ChildIssueProgress(ctx context.Context, arg ChildIssueProgress
 	return items, nil
 }
 
+const childIssueProgressForParent = `-- name: ChildIssueProgressForParent :one
+SELECT COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY($3::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = $2
+`
+
+type ChildIssueProgressForParentParams struct {
+	WorkspaceID        pgtype.UUID `json:"workspace_id"`
+	ParentIssueID      pgtype.UUID `json:"parent_issue_id"`
+	TerminalStatusKeys []string    `json:"terminal_status_keys"`
+}
+
+type ChildIssueProgressForParentRow struct {
+	Total int64 `json:"total"`
+	Done  int64 `json:"done"`
+}
+
+// Single-parent variant of ChildIssueProgress for the issue detail response.
+// Always returns one row; a parent without children yields 0/0.
+func (q *Queries) ChildIssueProgressForParent(ctx context.Context, arg ChildIssueProgressForParentParams) (ChildIssueProgressForParentRow, error) {
+	row := q.db.QueryRow(ctx, childIssueProgressForParent, arg.WorkspaceID, arg.ParentIssueID, arg.TerminalStatusKeys)
+	var i ChildIssueProgressForParentRow
+	err := row.Scan(&i.Total, &i.Done)
+	return i, err
+}
+
+const childIssueProgressForParents = `-- name: ChildIssueProgressForParents :many
+SELECT parent_issue_id,
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY($2::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = ANY($3::uuid[])
+GROUP BY parent_issue_id
+`
+
+type ChildIssueProgressForParentsParams struct {
+	WorkspaceID        pgtype.UUID   `json:"workspace_id"`
+	TerminalStatusKeys []string      `json:"terminal_status_keys"`
+	ParentIds          []pgtype.UUID `json:"parent_ids"`
+}
+
+type ChildIssueProgressForParentsRow struct {
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
+	Total         int64       `json:"total"`
+	Done          int64       `json:"done"`
+}
+
+// ChildIssueProgress narrowed to the given parents. A parent without children
+// (or outside the workspace) yields no row.
+func (q *Queries) ChildIssueProgressForParents(ctx context.Context, arg ChildIssueProgressForParentsParams) ([]ChildIssueProgressForParentsRow, error) {
+	rows, err := q.db.Query(ctx, childIssueProgressForParents, arg.WorkspaceID, arg.TerminalStatusKeys, arg.ParentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChildIssueProgressForParentsRow{}
+	for rows.Next() {
+		var i ChildIssueProgressForParentsRow
+		if err := rows.Scan(&i.ParentIssueID, &i.Total, &i.Done); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const clearIssueDuplicatesOf = `-- name: ClearIssueDuplicatesOf :many
 UPDATE issue
 SET duplicate_of_issue_id = NULL,
@@ -122,6 +194,18 @@ func (q *Queries) ClearIssueDuplicatesOf(ctx context.Context, arg ClearIssueDupl
 		return nil, err
 	}
 	return items, nil
+}
+
+const countChildIssues = `-- name: CountChildIssues :one
+SELECT COUNT(*)::bigint AS total FROM issue
+WHERE parent_issue_id = $1
+`
+
+func (q *Queries) CountChildIssues(ctx context.Context, parentIssueID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countChildIssues, parentIssueID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const countCreatedIssueAssignees = `-- name: CountCreatedIssueAssignees :many
@@ -1161,6 +1245,71 @@ func (q *Queries) ListChildIssues(ctx context.Context, parentIssueID pgtype.UUID
 	return items, nil
 }
 
+const listChildIssuesPage = `-- name: ListChildIssuesPage :many
+SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id FROM issue
+WHERE parent_issue_id = $1
+ORDER BY number ASC
+LIMIT $2 OFFSET $3
+`
+
+type ListChildIssuesPageParams struct {
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
+	Limit         int32       `json:"limit"`
+	Offset        int32       `json:"offset"`
+}
+
+// Paged variant of ListChildIssues with the same sibling-stable ordering.
+func (q *Queries) ListChildIssuesPage(ctx context.Context, arg ListChildIssuesPageParams) ([]Issue, error) {
+	rows, err := q.db.Query(ctx, listChildIssuesPage, arg.ParentIssueID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Issue{}
+	for rows.Next() {
+		var i Issue
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Title,
+			&i.Description,
+			&i.Status,
+			&i.Priority,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.CreatorType,
+			&i.CreatorID,
+			&i.ParentIssueID,
+			&i.AcceptanceCriteria,
+			&i.ContextRefs,
+			&i.Position,
+			&i.DueDate,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Number,
+			&i.ProjectID,
+			&i.OriginType,
+			&i.OriginID,
+			&i.FirstExecutedAt,
+			&i.StartDate,
+			&i.Metadata,
+			&i.Stage,
+			&i.Properties,
+			&i.Revision,
+			&i.LastActivityAt,
+			&i.TriageState,
+			&i.DuplicateOfIssueID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listChildrenByParents = `-- name: ListChildrenByParents :many
 SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, triage_state, duplicate_of_issue_id FROM issue
 WHERE workspace_id = $1
@@ -1367,6 +1516,103 @@ func (q *Queries) ListIssueRefsInWorkspace(ctx context.Context, arg ListIssueRef
 			&i.Number,
 			&i.Title,
 			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueThreadChildren = `-- name: ListIssueThreadChildren :many
+SELECT r.parent_issue_id,
+       r.id,
+       r.number,
+       r.title,
+       r.status,
+       r.assignee_type,
+       r.assignee_id,
+       r.child_total,
+       COALESCE(cc.reply_count, 0)::bigint AS reply_count,
+       cc.last_reply_at::timestamptz AS last_reply_at
+FROM (
+    SELECT i.parent_issue_id,
+           i.id,
+           i.number,
+           i.title,
+           i.status,
+           i.assignee_type,
+           i.assignee_id,
+           i.created_at,
+           COUNT(*) OVER (PARTITION BY i.parent_issue_id)::bigint AS child_total,
+           ROW_NUMBER() OVER (
+               PARTITION BY i.parent_issue_id
+               ORDER BY i.created_at DESC, i.id DESC
+           ) AS rn
+    FROM issue i
+    WHERE i.workspace_id = $1
+      AND i.parent_issue_id = ANY($2::uuid[])
+) r
+LEFT JOIN LATERAL (
+    SELECT COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at) AS last_reply_at
+    FROM comment cm
+    WHERE cm.workspace_id = $1
+      AND cm.issue_id = r.id
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+) cc ON true
+WHERE r.rn <= $3::int
+ORDER BY r.parent_issue_id, r.rn
+`
+
+type ListIssueThreadChildrenParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	ChildLimit  int32         `json:"child_limit"`
+}
+
+type ListIssueThreadChildrenRow struct {
+	ParentIssueID pgtype.UUID        `json:"parent_issue_id"`
+	ID            pgtype.UUID        `json:"id"`
+	Number        int32              `json:"number"`
+	Title         string             `json:"title"`
+	Status        string             `json:"status"`
+	AssigneeType  pgtype.Text        `json:"assignee_type"`
+	AssigneeID    pgtype.UUID        `json:"assignee_id"`
+	ChildTotal    int64              `json:"child_total"`
+	ReplyCount    int64              `json:"reply_count"`
+	LastReplyAt   pgtype.Timestamptz `json:"last_reply_at"`
+}
+
+// Direct children of a batch of issues for the project feed's thread cards:
+// the newest child_limit per parent, newest first, in one statement.
+// child_total is the parent's full child count, repeated on each row. Each
+// child carries its own counted-comment rollup, using the same rule as
+// ListIssueThreadSummaries (not deleted, not platform-authored).
+func (q *Queries) ListIssueThreadChildren(ctx context.Context, arg ListIssueThreadChildrenParams) ([]ListIssueThreadChildrenRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadChildren, arg.WorkspaceID, arg.IssueIds, arg.ChildLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadChildrenRow{}
+	for rows.Next() {
+		var i ListIssueThreadChildrenRow
+		if err := rows.Scan(
+			&i.ParentIssueID,
+			&i.ID,
+			&i.Number,
+			&i.Title,
+			&i.Status,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.ChildTotal,
+			&i.ReplyCount,
+			&i.LastReplyAt,
 		); err != nil {
 			return nil, err
 		}

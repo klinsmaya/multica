@@ -18,7 +18,7 @@ export function indexCommentText(root: HTMLElement, editable = false) {
     } else if (node instanceof HTMLElement) {
       if (node.matches(EXCLUDED) || (!editable && node.matches('[contenteditable="true"]'))) return;
       if (node.tagName === "BR") { text += "\n"; return; }
-      const block = BLOCKS.has(node.tagName);
+      const block = BLOCKS.has(node.tagName) || node.classList.contains("code-line");
       if (block) newline();
       node.childNodes.forEach(visit);
       if (block) newline();

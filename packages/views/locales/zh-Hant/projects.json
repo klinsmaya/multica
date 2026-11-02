@@ -25,7 +25,9 @@
     "progress": "進度",
     "lead": "負責人",
     "created": "建立時間",
-    "issues": "任務數"
+    "issues": "任務數",
+    "lead_coordinates": "負責人派活",
+    "lead_coordinates_help": "開啟後，資訊流裡的新訊息先交給負責人，由它回答、拆分或轉給已有任務"
   },
   "status": {
     "planned": "計劃中",
@@ -171,5 +173,61 @@
     "section_priority": "優先順序",
     "section_lead": "負責人",
     "view": "檢視"
+  },
+  "pull_requests": {
+    "group_open": "開啟",
+    "group_merged": "已合併",
+    "group_closed": "已關閉",
+    "empty": "暫無 PR",
+    "load_more": "載入更多",
+    "loading": "載入中…",
+    "load_failed": "無法載入 PR",
+    "retry": "重試"
+  },
+  "sidebar": {
+    "tab_properties": "屬性",
+    "tab_overview": "概覽",
+    "tab_autopilots": "自動化",
+    "tab_library": "庫",
+    "tab_pull_requests": "PR",
+    "tabs_label": "專案面板"
+  },
+  "automations": {
+    "new": "新建",
+    "empty": "此專案還沒有自動化",
+    "next_run": "下次 {{time}}",
+    "last_run": "上次執行 {{time}}"
+  },
+  "overview": {
+    "group_needs_reply": "等你回覆",
+    "group_needs_review": "待你審閱",
+    "group_running": "進行中",
+    "group_idle": "空閒",
+    "group_resolved": "已解決",
+    "empty_needs_reply": "沒有等你回覆的任務",
+    "empty_needs_review": "沒有待你審閱的任務",
+    "empty_running": "沒有智慧體在工作",
+    "empty_idle": "沒有空閒的任務",
+    "empty_resolved": "還沒有已解決的任務",
+    "empty_project": "該專案還沒有任務",
+    "load_failed": "無法載入任務",
+    "truncated": "僅顯示最近活躍的 {{limit}} 個任務",
+    "sub_issue_progress": "子任務已完成 {{done}}/{{total}}",
+    "deliverables": "檔案：{{count}}"
+  },
+  "library": {
+    "add": "新增",
+    "add_failed": "檔案上傳失敗",
+    "deliverables": "產出",
+    "files": "檔案",
+    "view_list": "列表檢視",
+    "view_grid": "網格檢視",
+    "filter_label": "按型別篩選",
+    "load_more": "載入更多",
+    "empty": "還沒有檔案",
+    "empty_filtered": "沒有符合篩選條件的檔案",
+    "load_failed": "檔案載入失敗",
+    "retry": "重試",
+    "open_issue": "開啟任務 {{identifier}}"
   }
 }

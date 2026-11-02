@@ -17,6 +17,7 @@ import {
   List,
   ListTree,
   Search,
+  MessagesSquare,
   SignalHigh,
   SlidersHorizontal,
   Tag,
@@ -89,6 +90,7 @@ import { ProjectIcon } from "../../projects/components/project-icon";
 import { useProjectStatusLabels } from "../../projects/components/labels";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
+import { SegmentedToggle } from "../../common/segmented-toggle";
 import { sortDirectionLabelKey } from "../utils/sort-direction";
 import { LabelChip } from "../../labels/label-chip";
 import {
@@ -1712,12 +1714,14 @@ const LAYOUTS: { mode: ViewMode; Icon: typeof List }[] = [
   { mode: "table", Icon: Table2 },
   { mode: "swimlane", Icon: Waves },
   { mode: "gantt", Icon: ChartGantt },
+  { mode: "feed", Icon: MessagesSquare },
 ];
 
 export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  allowFeed = false,
   dateFilter = null,
   onDateFilterChange,
   facetCountsExact = true,
@@ -1742,6 +1746,8 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  // Feed is Project-detail-only for the same reason as Gantt.
+  allowFeed?: boolean;
   /**
    * Whether `scopedIssues` covers the surface's full window. Table does not
    * use loaded rows for counts; server-paged List, Board, and Swimlane follow
@@ -1754,6 +1760,7 @@ export function IssueDisplayControls({
 }) {
   const { t } = useT("issues");
   const viewMode = useViewStore((s) => s.viewMode);
+  const feedSort = useViewStore((s) => s.feedSort);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
   const assigneeFilters = useViewStore((s) => s.assigneeFilters);
@@ -1915,9 +1922,12 @@ export function IssueDisplayControls({
         : effectiveTableGrouping === "project"
           ? t(($) => $.table.columns.project)
           : t(($) => $.table.group_none);
-  // A Gantt layout persisted on a surface without Gantt renders as List.
-  const layout: ViewMode = viewMode === "gantt" && !allowGantt ? "list" : viewMode;
-  const layouts = LAYOUTS.filter(({ mode }) => mode !== "gantt" || allowGantt);
+  // A Gantt or Feed layout persisted on a surface without it renders as List.
+  const layout: ViewMode =
+    (viewMode === "gantt" && !allowGantt) || (viewMode === "feed" && !allowFeed) ? "list" : viewMode;
+  const layouts = LAYOUTS.filter(
+    ({ mode }) => (mode !== "gantt" || allowGantt) && (mode !== "feed" || allowFeed),
+  );
   const LayoutIcon = hideViewToggle
     ? SlidersHorizontal
     : LAYOUTS.find(({ mode }) => mode === layout)!.Icon;
@@ -1960,6 +1970,17 @@ export function IssueDisplayControls({
           viewBaseline={viewBaseline}
         />}
 
+        {viewMode === "feed" && allowFeed && (
+          <SegmentedToggle
+            value={feedSort}
+            options={[
+              ["created", t(($) => $.feed.sort.created)],
+              ["activity", t(($) => $.feed.sort.activity)],
+            ]}
+            onChange={(sort) => act.setFeedSort(sort)}
+            buttonClassName="px-2 py-0.5 text-caption"
+          />
+        )}
         <Popover>
           <Tooltip>
             <PopoverTrigger
@@ -2001,7 +2022,11 @@ export function IssueDisplayControls({
                 aria-label={t(($) => $.view.section)}
                 className={cn(
                   "mb-3 grid gap-0.5 rounded-lg bg-muted p-0.5",
-                  layouts.length === 5 ? "grid-cols-5" : "grid-cols-4",
+                  layouts.length === 6
+                    ? "grid-cols-6"
+                    : layouts.length === 5
+                      ? "grid-cols-5"
+                      : "grid-cols-4",
                 )}
               >
                 {layouts.map(({ mode, Icon }) => (
@@ -2131,6 +2156,10 @@ export function IssueDisplayControls({
                   </Select>
                 </div>
               )}
+              {/* Feed shows top-level issues only; its two orders live in the
+                  header toggle, not in the sort/group settings. */}
+              {viewMode !== "feed" && (
+              <>
               <div className="flex items-center justify-between gap-3">
                 <span className="text-caption font-medium text-muted-foreground">
                   {t(($) => $.display.ordering_section)}
@@ -2188,6 +2217,8 @@ export function IssueDisplayControls({
                   onCheckedChange={() => act.toggleShowSubIssues()}
                 />
               </label>
+              </>
+              )}
             </div>
             {hasLayoutOptions && (
               <div className="mt-5 space-y-3">

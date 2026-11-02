@@ -89,6 +89,7 @@ export interface IssueSurfaceController {
   createDefaults: IssueCreateDefaults;
   viewMode: IssueSurfaceMode;
   allowGantt: boolean;
+  allowFeed: boolean;
   surfaceIssues: Issue[];
   projectIssues: Issue[];
   issues: Issue[];
@@ -407,8 +408,11 @@ export function useIssueSurfaceController({
   const usesTable = effectiveViewMode === "table";
   const activeSearch = usesTable ? tableSearch : search;
   const debouncedActiveSearch = useDebouncedTableSearch(activeSearch);
+  // Feed reads the same server-paged status branches as list; it only changes
+  // how the loaded rows are ordered and drawn.
   const usesServerStatusSurface =
     effectiveViewMode === "list" ||
+    effectiveViewMode === "feed" ||
     (effectiveViewMode === "board" && effectiveGrouping === "status");
   const usesServerGroupSurface =
     (effectiveViewMode === "board" && effectiveGrouping !== "status") ||
@@ -992,6 +996,7 @@ export function useIssueSurfaceController({
     createDefaults: resolvedCreateDefaults,
     viewMode: effectiveViewMode,
     allowGantt: allowedModes.has("gantt") && !!projectId,
+    allowFeed: allowedModes.has("feed"),
     ...surfaceData,
     isLoading: data.isLoading || workingFilterPending,
     workingAgents,

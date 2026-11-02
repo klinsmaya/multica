@@ -965,8 +965,14 @@ type claimProjectContext struct {
 	ProjectID   string
 	Title       string
 	Description string
-	Resources   []ProjectResourceData
-	Repos       []RepoData
+	// LeadCoordinates is the project's coordinator opt-in. LeadAgentID is the
+	// project's lead when that lead is an agent, empty otherwise, so a claim
+	// can tell whether the dispatched agent is the one coordinating.
+	LeadCoordinates bool
+	LeadAgentID     string
+	Resources       []ProjectResourceData
+	Files           []ProjectFileData
+	Repos           []RepoData
 }
 
 // applyTo copies the resolved context onto a claim response. Callers assign the
@@ -976,8 +982,12 @@ func (c claimProjectContext) applyTo(resp *AgentTaskResponse) {
 	resp.ProjectID = c.ProjectID
 	resp.ProjectTitle = c.Title
 	resp.ProjectDescription = c.Description
+	resp.ProjectLeadCoordinates = c.LeadCoordinates
 	if len(c.Resources) > 0 {
 		resp.ProjectResources = c.Resources
+	}
+	if len(c.Files) > 0 {
+		resp.ProjectFiles = c.Files
 	}
 	resp.Repos = c.Repos
 }
@@ -1018,6 +1028,10 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 			out.ProjectID = uuidToString(project.ID)
 			out.Title = project.Title
 			out.Description = project.Description.String
+			out.LeadCoordinates = project.LeadCoordinates
+			if project.LeadType.Valid && project.LeadType.String == "agent" && project.LeadID.Valid {
+				out.LeadAgentID = uuidToString(project.LeadID)
+			}
 
 			rows, resErr := h.Queries.ListProjectResourcesInWorkspace(ctx, db.ListProjectResourcesInWorkspaceParams{
 				ProjectID:   project.ID,
@@ -1027,6 +1041,12 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 				return claimProjectContext{}, fmt.Errorf("list project resources: %w", resErr)
 			}
 			out.Resources, out.Repos = projectResourcesForClaim(rows)
+
+			files, filesErr := h.projectLibraryFilesForClaim(ctx, project.ID, workspaceID)
+			if filesErr != nil {
+				return claimProjectContext{}, filesErr
+			}
+			out.Files = files
 		case errors.Is(err, pgx.ErrNoRows):
 			// Stale/deleted/foreign reference: degrade to workspace context.
 		default:
@@ -1055,6 +1075,52 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 		}
 	}
 	return out, nil
+}
+
+// projectFilesClaimLimit caps the library files one claim carries. The brief
+// lists every file, so the cap bounds prompt size; the newest files win.
+const projectFilesClaimLimit = 50
+
+// projectLibraryFilesForClaim lists the project's shared reference files: the
+// newest version of each file attached to the "Project files" holder issue. A
+// project with no holder issue has no library, which is an empty list, not an
+// error.
+func (h *Handler) projectLibraryFilesForClaim(ctx context.Context, projectID, workspaceID pgtype.UUID) ([]ProjectFileData, error) {
+	holder, err := h.Queries.GetProjectLibraryIssue(ctx, db.GetProjectLibraryIssueParams{
+		ProjectID:   projectID,
+		WorkspaceID: workspaceID,
+		Title:       projectLibraryIssueTitle,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get project library issue: %w", err)
+	}
+	rows, err := h.Queries.ListProjectLibraryFiles(ctx, db.ListProjectLibraryFilesParams{
+		IssueID:     holder.ID,
+		WorkspaceID: workspaceID,
+		MaxFiles:    projectFilesClaimLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list project library files: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	files := make([]ProjectFileData, len(rows))
+	for i, row := range rows {
+		files[i] = ProjectFileData{
+			AttachmentID: uuidToString(row.ID),
+			Filename:     row.Filename,
+			SizeBytes:    row.SizeBytes,
+			ContentType:  row.ContentType,
+			UploadedAt:   timestampToString(row.CreatedAt),
+			UploaderType: row.UploaderType,
+			UploaderID:   uuidToString(row.UploaderID),
+		}
+	}
+	return files, nil
 }
 
 // projectResourcesForClaim maps resource rows onto the claim wire shape and

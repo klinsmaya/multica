@@ -308,7 +308,9 @@
     "list": "列表",
     "table": "表格",
     "gantt": "甘特圖",
-    "swimlane": "泳道"
+    "swimlane": "泳道",
+    "tooltip_feed": "資訊流檢視",
+    "feed": "資訊流"
   },
   "table": {
     "select_all": "選擇所有可見任務",
@@ -552,11 +554,13 @@
     "workdir_path_unavailable": "暫無本地 workdir — 這個任務還沒被本地智慧體執行過",
     "unsubscribe_subtree_succeeded": "已取消訂閱此任務及其子任務。",
     "subscription_update_failed": "無法更新訂閱狀態，請重試。",
-    "pull_requests_empty_title": "暫無關聯 PR。"
+    "pull_requests_empty_title": "暫無關聯 PR。",
+    "load_more_sub_issues": "載入更多子任務"
   },
   "timeline": {
     "loading": "載入中…",
-    "jump_to_latest": "跳到最新"
+    "jump_to_latest": "跳到最新",
+    "load_earlier": "載入更早的評論"
   },
   "activity": {
     "created": "建立了這個任務",
@@ -708,7 +712,8 @@
     "recipient_count_other": "{{count}} 個智慧體會收到",
     "steer_attachment_notice": "插話只支援文字，帶附件的訊息會在本輪結束後處理。",
     "restart_send": "停止併傳送",
-    "restart_failed": "沒能停止當前執行，訊息還沒有傳送。"
+    "restart_failed": "沒能停止當前執行，訊息還沒有傳送。",
+    "reply_context_remove": "回覆中不再引用 {{name}}"
   },
   "reply": {
     "placeholder": "回覆...",
@@ -728,7 +733,8 @@
       "selection_failed": "未能獲取選中文字。請在同一條評論或任務描述內重新選擇後再試。",
       "source_label": "{{name}} 的評論",
       "edit": "編輯批註 {{number}}",
-      "note_placeholder": "新增意見..."
+      "note_placeholder": "新增意見...",
+      "add_document": "批註"
     }
   },
   "agent_activity": {
@@ -1449,7 +1455,31 @@
     "overview_summary_with_size_other": "{{count}} 個產物 · 共 {{size}}",
     "overview_close": "關閉",
     "overview_empty": "沒有這類產物。",
-    "group_comment_by": "{{name}} 的評論"
+    "group_comment_by": "{{name}} 的評論",
+    "open_focus": "全屏開啟",
+    "open_focus_named": "全屏開啟 {{name}}",
+    "focus_comments": "評論",
+    "focus_unavailable": "該產物已不可用。",
+    "progressive": {
+      "pending": "待寫",
+      "changed_label": "Claude",
+      "writing": "正在寫 · {{done}}/{{total}} 段",
+      "unfinished": "未完成 · {{done}}/{{total}}"
+    },
+    "canvas": {
+      "fit_all": "適應全部",
+      "prototypes": "原型",
+      "play": "演示",
+      "play_named": "演示 {{name}}",
+      "back": "返回畫布",
+      "save_layout": "儲存佈局",
+      "saving": "儲存中…",
+      "save_failed": "無法儲存佈局",
+      "file_not_found": "找不到檔案：{{name}}",
+      "load_failed": "無法載入 {{name}}",
+      "invalid": "無法讀取此畫布",
+      "page": "頁面"
+    }
   },
   "workflows": {
     "default_name": "Default",
@@ -1769,6 +1799,75 @@
       "unstar": "將{{name}}從側欄移除",
       "row_actions": "{{name}} 的操作",
       "no_matches": "沒有符合的檢視"
+    }
+  },
+  "feed": {
+    "reply_count_other": "{{count}} 條回覆",
+    "last_reply": "最後回覆 {{time}}",
+    "open_threads_other": "{{count}} 個未解決討論",
+    "open_thread": "開啟討論",
+    "unread": "未讀",
+    "awaiting_reply": "等你回覆",
+    "children": {
+      "more_other": "還有 {{count}} 個子任務"
+    },
+    "decision": {
+      "title": "等你決定",
+      "open_thread": "檢視討論串",
+      "reply_here": "回覆到這裡"
+    },
+    "reply": {
+      "expand": "展開",
+      "collapse": "收起",
+      "open_thread": "檢視討論串"
+    },
+    "progress": {
+      "label": "最新進度",
+      "count": "{{done}}/{{total}} 完成",
+      "more": "還有 {{number}} 項",
+      "item_done": "已完成：",
+      "item_open": "待辦："
+    },
+    "run": {
+      "running": "執行中 · 已 {{minutes}} 分鐘",
+      "starting": "執行中",
+      "queued": "排隊中"
+    },
+    "empty": "資訊流中沒有任務",
+    "quick": {
+      "continue": "繼續最近的工作",
+      "plan": "制定計劃",
+      "plan_title": "制定計劃",
+      "new": "新建任務"
+    },
+    "sort": {
+      "created": "按建立時間",
+      "activity": "按最近活躍"
+    },
+    "new_messages": "有新訊息",
+    "output": {
+      "pull_request": "PR #{{number}}，{{state}}",
+      "state_open": "Open",
+      "checks_failed": "檢查失敗",
+      "checks_pending": "檢查進行中",
+      "deliverables_other": "{{count}} 個產物",
+      "deliverables_updated": "最後更新 {{time}}"
+    },
+    "composer": {
+      "placeholder": "發訊息，首行是標題，@ 可指派",
+      "send": "傳送",
+      "sending": "傳送中...",
+      "failed": "無法傳送",
+      "retry": "重試",
+      "reply_to_other": "回覆到 {{count}} 個討論串",
+      "reply_placeholder_other": "回覆到 {{count}} 個討論串，每個討論串發一條評論",
+      "reply_clear": "全部清除",
+      "reply_remove": "移除 {{identifier}}",
+      "reply_marker": "來自專案對話 · {{name}}"
+    },
+    "forward": {
+      "title_other": "已發到 {{count}} 個討論串",
+      "dismiss": "關閉"
     }
   }
 }

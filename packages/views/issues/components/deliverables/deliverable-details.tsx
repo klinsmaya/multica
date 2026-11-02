@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, type ReactNode } from "react";
-import { Check, ChevronDown, FileText, ImageIcon, MessageSquareText } from "@multica/ui/icons";
+import { Check, ChevronDown, FileText, ImageIcon, Maximize2, MessageSquareText } from "@multica/ui/icons";
 import {
   findDeliverableVersion,
   type DeliverableFile,
@@ -44,10 +44,13 @@ export function useDeliverableDetails({
   files,
   commentById,
   onLocate,
+  onOpenFocus,
 }: {
   files: ReadonlyArray<DeliverableFile>;
   commentById: ReadonlyMap<string, TimelineEntry>;
   onLocate: (origin: DeliverableOrigin) => void;
+  /** Omit where the full-screen view is not offered. */
+  onOpenFocus?: (attachmentId: string) => void;
 }) {
   const { t } = useT("issues");
   return useCallback(
@@ -74,6 +77,16 @@ export function useDeliverableDetails({
           }
         : undefined;
 
+      // Same hand-off as `locate`: the full-screen view replaces the viewer.
+      const openFocus =
+        onOpenFocus && item.attachment
+          ? () => {
+              const attachmentId = item.attachment!.id;
+              controls.close();
+              onOpenFocus(attachmentId);
+            }
+          : undefined;
+
       return {
         titleAccessory:
           deliverable && deliverable.file.versions.length > 1 ? (
@@ -92,12 +105,13 @@ export function useDeliverableDetails({
             version={deliverable}
             locateLabel={locateLabel}
             onLocate={locate}
+            onOpenFocus={openFocus}
           />
         ),
         locate: locate ? { label: locateLabel, onSelect: locate } : undefined,
       };
     },
-    [files, commentById, onLocate, t],
+    [files, commentById, onLocate, onOpenFocus, t],
   );
 }
 
@@ -170,6 +184,7 @@ function DeliverableInfo({
   version,
   locateLabel,
   onLocate,
+  onOpenFocus,
 }: {
   item: ImageSequenceItem;
   controls: PreviewSequenceControls;
@@ -178,6 +193,7 @@ function DeliverableInfo({
   version?: { file: DeliverableFile; version: number };
   locateLabel: string;
   onLocate?: () => void;
+  onOpenFocus?: () => void;
 }) {
   const { t } = useT("issues");
   const locale = useLocale();
@@ -312,6 +328,16 @@ function DeliverableInfo({
               </InfoRow>
             )}
           </dl>
+          {onOpenFocus && (
+            <button
+              type="button"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-input px-2 py-1 text-caption text-foreground transition-colors hover:bg-secondary"
+              onClick={onOpenFocus}
+            >
+              <Maximize2 className="size-3.5" />
+              {t(($) => $.deliverables.open_focus)}
+            </button>
+          )}
         </InfoSection>
       )}
     </div>

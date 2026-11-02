@@ -11,7 +11,7 @@ import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
-import { projectKeys } from "../projects/queries";
+import { projectAttachmentKeys, projectKeys, projectPullRequestKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { autopilotKeys } from "../autopilots/queries";
 import { runtimeKeys } from "../runtimes/queries";
@@ -42,6 +42,8 @@ import {
   onIssueMetadataChanged,
   onIssueAuxiliaryRevision,
   invalidateIssueOwnerProjections,
+  onCommentCreatedPatchThreadSummaries,
+  invalidateThreadSummaries,
 } from "../issues/ws-updaters";
 import {
   invalidateLastActivitySortedIssueLists,
@@ -948,6 +950,13 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // The feed's output strip carries each issue's newest PRs and their CI.
+        const wsId = getCurrentWsId();
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
+          // The project PR tab lists PRs across the project's issues.
+          qc.invalidateQueries({ queryKey: projectPullRequestKeys.all(wsId) });
+        }
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the
@@ -1115,6 +1124,13 @@ export function useRealtimeSync(
       if (wsId) onIssueCreated(qc, wsId, issue);
     });
 
+    // Any project's library may list the changed file, and the event does not
+    // name the project, so the whole workspace's libraries go stale; only a
+    // mounted library tab refetches.
+    const invalidateProjectLibraries = (wsId: string) => {
+      qc.invalidateQueries({ queryKey: projectAttachmentKeys.all(wsId) });
+    };
+
     const unsubIssueDeleted = ws.on("issue:deleted", (p) => {
       const { issue_id } = p as IssueDeletedPayload;
       if (!issue_id) return;
@@ -1122,6 +1138,7 @@ export function useRealtimeSync(
       if (wsId) {
         onIssueDeleted(qc, wsId, issue_id);
         void onInboxIssueDeleted(qc, wsId, issue_id);
+        invalidateProjectLibraries(wsId);
       }
     });
 
@@ -1137,7 +1154,10 @@ export function useRealtimeSync(
       if (!issue_id) return;
       qc.invalidateQueries({ queryKey: issueKeys.attachments(issue_id) });
       const wsId = getCurrentWsId();
-      if (wsId) onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
+      if (wsId) {
+        invalidateProjectLibraries(wsId);
+        onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
+      }
     });
 
     const unsubIssueMetadataChanged = ws.on("issue_metadata:changed", (p) => {
@@ -1216,6 +1236,14 @@ export function useRealtimeSync(
       if (wsId) {
         invalidateUpdatedAtSortedIssueLists(qc, wsId);
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        onCommentCreatedPatchThreadSummaries(
+          qc,
+          wsId,
+          comment,
+          authStore.getState().user?.id,
+        );
+        // A comment that carries files adds rows to its project's library.
+        if ((comment.attachments?.length ?? 0) > 0) invalidateProjectLibraries(wsId);
         // A comment carries only the aggregate owner revision, not a full
         // Issue snapshot. Mark stale projections for an authoritative fetch
         // without making a later full snapshot look older than the cache.
@@ -1234,6 +1262,9 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        // A deleted comment with replies stays as a tombstone, announced here;
+        // its files leave the project library.
+        if (comment.deleted_at) invalidateProjectLibraries(wsId);
         if (issue_revision) {
           onIssueAuxiliaryRevision(qc, wsId, comment.issue_id, issue_revision);
         } else {
@@ -1249,6 +1280,9 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         invalidateLastActivitySortedIssueLists(qc, wsId);
+        invalidateThreadSummaries(qc, wsId);
+        // Deleting a comment removes its files from the project library.
+        invalidateProjectLibraries(wsId);
         if (issue_revision) {
           onIssueAuxiliaryRevision(qc, wsId, issue_id, issue_revision);
         } else {
@@ -1259,12 +1293,18 @@ export function useRealtimeSync(
 
     const unsubCommentResolved = ws.on("comment:resolved", (p) => {
       const { comment } = p as CommentResolvedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (!comment?.issue_id) return;
+      invalidateTimeline(comment.issue_id);
+      const wsId = getCurrentWsId();
+      if (wsId) invalidateThreadSummaries(qc, wsId);
     });
 
     const unsubCommentUnresolved = ws.on("comment:unresolved", (p) => {
       const { comment } = p as CommentUnresolvedPayload;
-      if (comment?.issue_id) invalidateTimeline(comment.issue_id);
+      if (!comment?.issue_id) return;
+      invalidateTimeline(comment.issue_id);
+      const wsId = getCurrentWsId();
+      if (wsId) invalidateThreadSummaries(qc, wsId);
     });
 
     const unsubActivityCreated = ws.on("activity:created", (p) => {

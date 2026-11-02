@@ -207,6 +207,19 @@ describe("IssueSurface — scope switch loading semantics", () => {
     useActiveIssueViewStore.getState().setActive("ws-1:workspace", null);
   });
 
+  it("reports the active view mode to its host as it changes", async () => {
+    const store = createIssueStatusListStore("todo");
+    const onViewModeChange = vi.fn();
+    render(<QueryClientProvider client={qc}>
+      <IssueSurfaceWithStore store={store} baseline={baselineFromQuery({ statusFilters: ["todo"] })}
+        scope={{ type: "workspace", actorKind: "all" }} modes={["list", "board"]} renderHeader={() => null} batchToolbar="never"
+        onViewModeChange={onViewModeChange} />
+    </QueryClientProvider>);
+    await waitFor(() => expect(onViewModeChange).toHaveBeenLastCalledWith("list"));
+    act(() => store.getState().setViewMode("board"));
+    await waitFor(() => expect(onViewModeChange).toHaveBeenLastCalledWith("board"));
+  });
+
   it("shows loading — not the previous project's issues — while the next project is fetching", async () => {
     // Regression: the list queries use `placeholderData: keepPreviousData` to
     // keep sort/filter changes flicker-free WITHIN one surface. Without a

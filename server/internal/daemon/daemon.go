@@ -7836,7 +7836,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ProjectID:                        task.ProjectID,
 		ProjectTitle:                     task.ProjectTitle,
 		ProjectDescription:               task.ProjectDescription,
+		ProjectLeadCoordinates:           task.ProjectLeadCoordinates,
+		AssigneeIsProjectLead:            task.AssigneeIsProjectLead,
+		IssueHasParent:                   task.IssueHasParent,
 		ProjectResources:                 convertProjectResourcesForEnv(task.ProjectResources),
+		ProjectFiles:                     convertProjectFilesForEnv(task.ProjectFiles),
 		ChatSessionID:                    task.ChatSessionID,
 		ChatChannelType:                  task.ChatChannelType,
 		ChatChannelDeliversFiles:         task.ChatChannelDeliversFiles,
@@ -10330,6 +10334,17 @@ func convertProjectResourcesForEnv(resources []ProjectResourceData) []execenv.Pr
 			ResourceRef:  r.ResourceRef,
 			Label:        r.Label,
 		}
+	}
+	return result
+}
+
+func convertProjectFilesForEnv(files []ProjectFileData) []execenv.ProjectFileForEnv {
+	if len(files) == 0 {
+		return nil
+	}
+	result := make([]execenv.ProjectFileForEnv, len(files))
+	for i, f := range files {
+		result[i] = execenv.ProjectFileForEnv(f)
 	}
 	return result
 }

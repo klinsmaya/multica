@@ -189,6 +189,35 @@ describe("Send = Enter editor behavior", () => {
     expect(hasHardBreak).toBe(false);
   });
 
+  it("sends on plain Enter for a composer that opts in, whatever the configured shortcut", () => {
+    let submitCount = 0;
+    const editor = new Editor({
+      element: document.createElement("div"),
+      content: "hello",
+      extensions: [
+        StarterKit.configure({ listItem: false }),
+        PatchedListItem,
+        Markdown,
+        createSubmitShortcutExtension(
+          () => {
+            submitCount += 1;
+            return true;
+          },
+          { plainEnter: () => true },
+        ),
+      ],
+    });
+    editors.push(editor);
+    editor.commands.focus("end");
+
+    expect(press(editor, event("Enter"))).toBe(true);
+    expect(submitCount).toBe(1);
+
+    expect(press(editor, event("Enter", { shiftKey: true }))).toBe(true);
+    expect(submitCount).toBe(1);
+    expect(editor.state.doc.childCount).toBe(2);
+  });
+
   it("continues list items with Shift+Enter", () => {
     useShortcutStore.getState().setShortcut("send", createShortcutChord("Enter"));
     let submitCount = 0;

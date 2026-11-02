@@ -668,6 +668,17 @@ SELECT * FROM issue
 WHERE parent_issue_id = $1
 ORDER BY number ASC;
 
+-- name: ListChildIssuesPage :many
+-- Paged variant of ListChildIssues with the same sibling-stable ordering.
+SELECT * FROM issue
+WHERE parent_issue_id = $1
+ORDER BY number ASC
+LIMIT $2 OFFSET $3;
+
+-- name: CountChildIssues :one
+SELECT COUNT(*)::bigint AS total FROM issue
+WHERE parent_issue_id = $1;
+
 -- name: ListChildrenByParents :many
 -- Batched variant of ListChildIssues: returns all children for the given
 -- parent set in one round trip. Used by Swimlane to avoid an N+1 fan-out
@@ -715,6 +726,26 @@ FROM issue
 WHERE workspace_id = $1
   AND parent_issue_id IS NOT NULL
 GROUP BY parent_issue_id;
+
+-- name: ChildIssueProgressForParents :many
+-- ChildIssueProgress narrowed to the given parents. A parent without children
+-- (or outside the workspace) yields no row.
+SELECT parent_issue_id,
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = ANY(sqlc.arg('parent_ids')::uuid[])
+GROUP BY parent_issue_id;
+
+-- name: ChildIssueProgressForParent :one
+-- Single-parent variant of ChildIssueProgress for the issue detail response.
+-- Always returns one row; a parent without children yields 0/0.
+SELECT COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE status = ANY(sqlc.arg('terminal_status_keys')::text[]))::bigint AS done
+FROM issue
+WHERE workspace_id = $1
+  AND parent_issue_id = $2;
 
 -- SearchIssues: moved to handler (dynamic SQL for multi-word search support).
 
@@ -766,3 +797,49 @@ FROM (
     WHERE workspace_id = $1
     LIMIT sqlc.arg('limit')::bigint
 ) bounded_issues;
+
+-- name: ListIssueThreadChildren :many
+-- Direct children of a batch of issues for the project feed's thread cards:
+-- the newest child_limit per parent, newest first, in one statement.
+-- child_total is the parent's full child count, repeated on each row. Each
+-- child carries its own counted-comment rollup, using the same rule as
+-- ListIssueThreadSummaries (not deleted, not platform-authored).
+SELECT r.parent_issue_id,
+       r.id,
+       r.number,
+       r.title,
+       r.status,
+       r.assignee_type,
+       r.assignee_id,
+       r.child_total,
+       COALESCE(cc.reply_count, 0)::bigint AS reply_count,
+       cc.last_reply_at::timestamptz AS last_reply_at
+FROM (
+    SELECT i.parent_issue_id,
+           i.id,
+           i.number,
+           i.title,
+           i.status,
+           i.assignee_type,
+           i.assignee_id,
+           i.created_at,
+           COUNT(*) OVER (PARTITION BY i.parent_issue_id)::bigint AS child_total,
+           ROW_NUMBER() OVER (
+               PARTITION BY i.parent_issue_id
+               ORDER BY i.created_at DESC, i.id DESC
+           ) AS rn
+    FROM issue i
+    WHERE i.workspace_id = sqlc.arg('workspace_id')
+      AND i.parent_issue_id = ANY(sqlc.arg('issue_ids')::uuid[])
+) r
+LEFT JOIN LATERAL (
+    SELECT COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at) AS last_reply_at
+    FROM comment cm
+    WHERE cm.workspace_id = sqlc.arg('workspace_id')
+      AND cm.issue_id = r.id
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+) cc ON true
+WHERE r.rn <= sqlc.arg('child_limit')::int
+ORDER BY r.parent_issue_id, r.rn;

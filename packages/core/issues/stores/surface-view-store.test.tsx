@@ -9,6 +9,7 @@ import {
   getIssueSurfaceViewStateRegistrySnapshot,
   getIssueSurfaceViewStore,
   pruneIssueSurfaceViewStates,
+  seedIssueSurfaceViewState,
 } from "./surface-view-store";
 
 const flush = async () => {
@@ -126,6 +127,21 @@ describe("issue surface view store registry", () => {
       getIssueSurfaceViewStore("workspace:compact-card").getState().cardProperties
         .project,
     ).toBe(true);
+  });
+
+  it("seeds a saved view's feed sort on first open and defaults it when absent", async () => {
+    setCurrentWorkspace("acme", "ws_a");
+    await flush();
+
+    seedIssueSurfaceViewState("view:feed", { viewMode: "feed", feedSort: "activity" });
+    seedIssueSurfaceViewState("view:legacy", { viewMode: "feed" });
+
+    expect(getIssueSurfaceViewStore("view:feed").getState().feedSort).toBe("activity");
+    expect(getIssueSurfaceViewStore("view:legacy").getState().feedSort).toBe("created");
+
+    const raw = localStorage.getItem(`${ISSUE_SURFACE_VIEW_STORAGE_KEY}:acme`);
+    const parsed = JSON.parse(raw as string);
+    expect(parsed.state.surfaces["view:feed"].state.feedSort).toBe("activity");
   });
 
   it("isolates view state by surface key inside one workspace registry", async () => {

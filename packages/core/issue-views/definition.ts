@@ -44,6 +44,7 @@ export function issueViewDefinitionFromState(state: IssueViewState): IssueViewDe
     display: {
       showSubIssues: state.showSubIssues,
       viewMode: state.viewMode,
+      feedSort: state.feedSort,
       grouping: state.grouping,
       sortBy: state.sortBy,
       sortDirection: state.sortDirection,
