@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileText, MessageSquare, X } from "lucide-react";
+import { FileText, MessageSquare, X } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
+import { IconButton } from "@multica/ui/components/common/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@multica/ui/components/ui/popover";
 import { useCommentDraftStore, type CommentDraftKey } from "@multica/core/issues/stores";
 import type { ReplyAnnotation } from "@multica/core/drafts/reply-annotation";
@@ -60,9 +61,9 @@ export function ReplyAnnotations({ draftKey, annotations, disabled, onEditAnnota
                 {t(($) => $.reply.annotations.source_changed)}
               </p>}
             </div>
-            <Button variant="ghost" size="icon-sm" disabled={disabled}
-              aria-label={t(($) => $.reply.annotations.remove, { number: index + 1 })}
-              onClick={() => useCommentDraftStore.getState().removeAnnotation(draftKey, annotation.id)}><X /></Button>
+            <IconButton variant="ghost" size="icon-sm" disabled={disabled}
+              label={t(($) => $.reply.annotations.remove, { number: index + 1 })}
+              onClick={() => useCommentDraftStore.getState().removeAnnotation(draftKey, annotation.id)}><X /></IconButton>
           </div>)}
         </div>
       </PopoverContent>

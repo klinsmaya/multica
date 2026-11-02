@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { ArrowDown, MessagesSquare } from "lucide-react";
+import { ArrowDown, MessagesSquare } from "@multica/ui/icons";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useAuthStore } from "@multica/core/auth";
 import { threadSummariesOptions } from "@multica/core/issues/queries";

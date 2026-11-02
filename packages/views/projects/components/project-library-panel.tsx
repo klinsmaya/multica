@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useQueries, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { ChevronRight, LayoutGrid, List, Loader2, Plus } from "lucide-react";
+import { ChevronRight, LayoutGrid, List, Loader2, Plus } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { api } from "@multica/core/api";
 import { useWorkspaceId } from "@multica/core/hooks";

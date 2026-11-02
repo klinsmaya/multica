@@ -2,7 +2,7 @@
 
 import { memo, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Paperclip } from "lucide-react";
+import { ChevronRight, Paperclip } from "@multica/ui/icons";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { cn } from "@multica/ui/lib/utils";
 import { useAuthStore } from "@multica/core/auth";

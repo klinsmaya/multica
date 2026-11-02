@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCheck, X } from "lucide-react";
+import { CheckCheck, X } from "@multica/ui/icons";
 import type { FeedReplyTarget } from "@multica/core/issues/stores";
 import { Button } from "@multica/ui/components/ui/button";
 import { useT } from "../../i18n";

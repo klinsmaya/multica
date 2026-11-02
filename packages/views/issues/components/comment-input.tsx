@@ -1,14 +1,15 @@
 "use client";
 
 import { useRef, useState, useEffect, useMemo } from "react";
-import { FileText, X } from "lucide-react";
+import { FileText, X } from "@multica/ui/icons";
 import { cn } from "@multica/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
 import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
 import { SubmitButton } from "@multica/ui/components/common/submit-button";
 import { Button } from "@multica/ui/components/ui/button";
 import { contentReferencesAttachment, type AgentTask } from "@multica/core/types";
-import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
+import { useShortcut } from "@multica/core/shortcuts";
+import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { composeAnnotatedReply, hasReplyIntent } from "@multica/core/drafts/reply-annotation";
 import { composeDeliverableReply, type DeliverableReplyRef } from "@multica/core/issues/deliverable-reply";
@@ -359,13 +360,19 @@ function CommentInput({ issueId, onSubmit, onAccepted, onEditAnnotation, replyCo
           disabled={!canSend}
           loading={submitting}
           busy={gate.uploading}
-          tooltip={gate.uploading
+          disabledReason={gate.uploading
             ? tEditor(($) => $.upload.in_progress)
             : !canSend && annotations.length > 0
               ? t(($) => $.reply.annotations.intent_hint)
-              : sendShortcut
-              ? `${t(($) => $.comment.send_tooltip)} · ${formatShortcut(sendShortcut)}`
-              : t(($) => $.comment.send_tooltip)}
+              : undefined}
+          tooltip={sendShortcut
+            ? (
+              <>
+                {t(($) => $.comment.send_tooltip)}
+                <ShortcutKeycaps shortcut={sendShortcut} decorative />
+              </>
+            )
+            : t(($) => $.comment.send_tooltip)}
           ariaLabel={gate.uploading
             ? tEditor(($) => $.upload.in_progress)
             : t(($) => $.comment.send_tooltip)}

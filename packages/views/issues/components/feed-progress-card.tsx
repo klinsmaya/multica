@@ -2,7 +2,7 @@
 
 import { memo, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Square, SquareCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, CircleCheck } from "@multica/ui/icons";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { threadSummariesOptions } from "@multica/core/issues/queries";
@@ -107,9 +107,9 @@ export const FeedProgressCard = memo(function FeedProgressCard({
                 )}
               >
                 {item.done ? (
-                  <SquareCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <CircleCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 ) : (
-                  <Square className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <Circle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                 )}
                 <span className="sr-only">
                   {item.done

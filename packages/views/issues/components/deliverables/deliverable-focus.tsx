@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, PanelRight } from "lucide-react";
+import { ArrowLeft, Loader2, PanelRight } from "@multica/ui/icons";
 import {
   collectDeliverableFiles,
   findDeliverableVersion,

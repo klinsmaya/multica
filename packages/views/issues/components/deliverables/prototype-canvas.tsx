@@ -11,7 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { Loader2, Maximize, Play } from "lucide-react";
+import { Loader2, Maximize, Play } from "@multica/ui/icons";
 import { toast } from "sonner";
 import { api } from "@multica/core/api";
 import type { DeliverableFile } from "@multica/core/attachments/deliverables";

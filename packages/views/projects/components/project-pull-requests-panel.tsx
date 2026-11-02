@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@multica/ui/icons";
 import { deriveChecksStatus, formatPullRequestDiffCount } from "@multica/core/github";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { projectPullRequestsOptions } from "@multica/core/projects/queries";

@@ -13,8 +13,8 @@ import {
   FileVideo,
   ImageIcon,
   LayoutDashboard,
-  type LucideIcon,
-} from "lucide-react";
+  type IconComponent,
+} from "@multica/ui/icons";
 import { isCanvasFilename } from "@multica/core/attachments/prototype-canvas";
 import { getPreviewKind } from "./preview";
 
@@ -42,7 +42,7 @@ export function isDocumentFile(contentType: string, filename: string): boolean {
   return DOCUMENT_EXTENSIONS.has(extensionOf(filename));
 }
 
-export function fileIcon(contentType: string, filename: string): LucideIcon {
+export function fileIcon(contentType: string, filename: string): IconComponent {
   const ext = extensionOf(filename);
   if (isCanvasFilename(filename)) return LayoutDashboard;
   if (SPREADSHEET_EXTENSIONS.has(ext)) return FileSpreadsheet;

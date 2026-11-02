@@ -1,8 +1,12 @@
 "use client";
 
+import { IssueSidebarSectionHeader } from "../issue-sidebar-section";
+
 import { useState } from "react";
-import { ChevronRight, LayoutGrid, Maximize2 } from "lucide-react";
+import { LayoutGrid, Maximize2 } from "@multica/ui/icons";
 import type { DeliverableFile } from "@multica/core/attachments/deliverables";
+import { IconButton } from "@multica/ui/components/common/icon-button";
+import { TooltipHint } from "@multica/ui/components/common/tooltip-hint";
 import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../../i18n";
 import { formatBytes } from "../../../common/format-bytes";
@@ -51,37 +55,29 @@ export function DeliverablesSection({
 
   return (
     <div>
-      <button
-        type="button"
-        className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${open ? "" : "text-muted-foreground hover:text-foreground"}`}
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-      >
-        {t(($) => $.deliverables.section_title)}{" "}
-        <span className="rounded-xs bg-muted px-1 text-micro font-medium tabular-nums text-muted-foreground">
-          {files.length}
-        </span>
-        <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
-      </button>
+      <IssueSidebarSectionHeader title={t(($) => $.deliverables.section_title)} open={open} onOpenChange={setOpen} count={files.length} actions={
+        <IconButton size="icon-xs" label={t(($) => $.deliverables.view_all, { count: files.length })} onClick={onOpenOverview}><LayoutGrid /></IconButton>
+      } />
       {open && (
-        <div className="pl-2">
+        <div className="px-2">
           {images.length > 0 && (
-            <div className="mb-1.5 grid grid-cols-3 gap-1.5">
+            <div className="mx-2 mb-1.5 grid grid-cols-3 gap-1.5">
               {images.map((file) => (
                 <div key={file.key} className="group/thumb relative aspect-[4/3]">
-                  <button
-                    type="button"
-                    className="relative size-full overflow-hidden rounded-md ring-1 ring-border transition-shadow hover:ring-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    title={file.latest.filename}
-                    aria-label={versionedName(file, t)}
-                    onClick={() => openAttachment(file.latest)}
-                  >
-                    <DeliverableThumbnail
-                      attachment={file.latest}
-                      showTypeLabel={false}
-                      className="size-full"
-                    />
-                  </button>
+                  <TooltipHint label={file.latest.filename}>
+                    <button
+                      type="button"
+                      className="relative size-full overflow-hidden rounded-md ring-1 ring-border transition-shadow hover:ring-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={versionedName(file, t)}
+                      onClick={() => openAttachment(file.latest)}
+                    >
+                      <DeliverableThumbnail
+                        attachment={file.latest}
+                        showTypeLabel={false}
+                        className="size-full"
+                      />
+                    </button>
+                  </TooltipHint>
                   {onOpenFocus && (
                     <FocusButton
                       file={file}
@@ -101,14 +97,7 @@ export function DeliverablesSection({
               onOpenFocus={onOpenFocus}
             />
           ))}
-          <button
-            type="button"
-            className="mt-0.5 flex w-[calc(100%+1rem)] -mx-2 items-center gap-2 rounded-md px-2 py-1 text-left text-caption text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-            onClick={onOpenOverview}
-          >
-            <LayoutGrid className="size-3.5 shrink-0" />
-            {t(($) => $.deliverables.view_all, { count: files.length })}
-          </button>
+
         </div>
       )}
       {modal}
@@ -140,10 +129,10 @@ function FileRow({
   const { latest } = file;
   const Icon = fileIcon(latest.content_type, latest.filename);
   return (
-    <div className="group/row relative -mx-2 w-[calc(100%+1rem)]">
+    <div className="group/row relative">
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-caption transition-colors hover:bg-accent/50"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-caption transition-colors hover:bg-accent/50"
         title={latest.filename}
         aria-label={versionedName(file, t)}
         onClick={onOpen}
@@ -151,7 +140,12 @@ function FileRow({
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{latest.filename}</span>
         {file.versions.length > 1 && <VersionBadge version={file.versions.length} />}
-        <span className="ml-auto shrink-0 pl-2 text-micro tabular-nums text-muted-foreground group-hover/row:opacity-0 group-focus-within/row:opacity-0">
+        <span
+          className={cn(
+            "ml-auto shrink-0 pl-2 text-micro tabular-nums text-muted-foreground",
+            onOpenFocus && "group-hover/row:opacity-0 group-focus-within/row:opacity-0",
+          )}
+        >
           {latest.size_bytes > 0 ? formatBytes(latest.size_bytes) : null}
         </span>
       </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useState } from "react";
-import { Clock3, Loader2 } from "lucide-react";
+import { Clock3, Loader2 } from "@multica/ui/icons";
 import { useQuery } from "@tanstack/react-query";
 import { agentTaskSnapshotOptions } from "@multica/core/agents";
 import { isTaskMessageTaskId, taskMessagesOptions } from "@multica/core/chat/queries";

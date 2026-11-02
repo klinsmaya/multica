@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ListChecks, Loader2, PenLine, Play } from "lucide-react";
+import { ListChecks, Loader2, PenLine, Play } from "@multica/ui/icons";
 import { Button } from "@multica/ui/components/ui/button";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useCreateIssue } from "@multica/core/issues/mutations";

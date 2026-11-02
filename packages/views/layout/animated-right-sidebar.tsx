@@ -124,28 +124,32 @@ export function AnimatedRightSidebar({
   motionEnabled,
   children,
   className,
-  padded = true,
+  contentClassName = "p-4",
 }: {
   open: boolean;
   motionEnabled?: boolean;
   children: ReactNode;
   className?: string;
-  /** False lets the children own padding and scrolling (tabbed sidebars). */
-  padded?: boolean;
+  contentClassName?: string;
 }) {
   return (
     <motion.div
       animate={{ opacity: open ? 1 : 0, x: open ? 0 : 12 }}
+      // `relative` makes this scroller the containing block of absolutely
+      // positioned descendants (`sr-only` labels in the execution log, etc.).
+      // Without it they resolve against an ancestor outside the scroller:
+      // they escape its clip and stretch the enclosing panel's scroll height,
+      // so wheeling past the end of the comments scrolled the whole issue
+      // detail up and left a blank band at the bottom (MUL-8100).
       className={cn(
-        "h-full overflow-x-hidden border-l",
-        padded ? "overflow-y-auto" : "overflow-y-hidden",
+        "relative h-full overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable] border-l",
         !open && "pointer-events-none",
         className,
       )}
       initial={false}
       transition={motionEnabled ? rightSidebarTransition : { duration: 0 }}
     >
-      <div className={padded ? "p-4" : "h-full"}>{children}</div>
+      <div className={contentClassName}>{children}</div>
     </motion.div>
   );
 }

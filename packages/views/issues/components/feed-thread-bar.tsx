@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare } from "@multica/ui/icons";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import type { Issue, IssueThreadSummary } from "@multica/core/types";
