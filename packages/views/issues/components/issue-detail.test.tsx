@@ -1775,7 +1775,7 @@ describe("IssueDetail (shared)", () => {
       started_at: "2026-01-16T00:00:00Z", dispatched_at: null, completed_at: null, result: null, error: null,
       trigger_comment_id: root.id, delivered_comment_ids: [root.id],
     };
-    mockApiObj.listTimeline.mockResolvedValue([root]);
+    mockTimelineEntries([root]);
     mockApiObj.listTasksByIssue.mockResolvedValue([task]);
     const { container } = renderIssueDetail();
     await waitFor(() => expect(container.querySelector(`[data-run-slot-id="${task.id}"]`)).not.toBeNull());
@@ -3190,7 +3190,7 @@ describe("IssueDetail (shared)", () => {
 
   it("returns to the issue title and description from the outline", async () => {
     // Destination behavior is covered by thread-minimap.test.tsx; this tests the scroller wiring.
-    mockApiObj.listTimeline.mockResolvedValue([mockTimeline.find((entry) => entry.type === "comment")!]);
+    mockTimelineEntries([mockTimeline.find((entry) => entry.type === "comment")!]);
     const { container } = renderIssueDetail();
     const tick = await screen.findByRole("button", { name: "Issue description" });
     const scroller = container.querySelector<HTMLDivElement>("[data-tab-scroll-root]")!;
@@ -3229,7 +3229,7 @@ describe("IssueDetail (shared)", () => {
 
     it("jumps from the outline to the expanded sub-issues section without comments", async () => {
       // Preview/order behavior lives in thread-minimap.test.tsx; this tests the real section.
-      mockApiObj.listTimeline.mockResolvedValue([]);
+      mockTimelineEntries([]);
       mockApiObj.listChildIssues.mockResolvedValue({
         issues: [subIssue({ id: "child-1", title: "Child destination" })],
       });
