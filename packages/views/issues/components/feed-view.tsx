@@ -18,6 +18,7 @@ import { FeedDecisionCard } from "./feed-decision-card";
 import { FeedForwardSummary } from "./feed-forward-summary";
 import { FeedMessageCard } from "./feed-message-card";
 import { getFeedReadState } from "./feed-read-state";
+import { FeedReplyBubble } from "./feed-reply-bubble";
 import { FeedQuickActions } from "./feed-quick-actions";
 import { FeedThreadBar } from "./feed-thread-bar";
 import { FeedThreadCards } from "./feed-thread-cards";
@@ -153,6 +154,11 @@ export function FeedView({
                 <FeedMessageCard
                   issue={issue}
                   readState={getFeedReadState(summaries?.get(issue.id), currentUserId)}
+                />
+                <FeedReplyBubble
+                  issueId={issue.id}
+                  identifier={issue.identifier}
+                  summary={summaries?.get(issue.id)}
                 />
                 <FeedDecisionCard
                   issueId={issue.id}

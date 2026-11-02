@@ -696,6 +696,11 @@
       "open_thread": "스레드 보기",
       "reply_here": "여기에 답글"
     },
+    "reply": {
+      "expand": "더 보기",
+      "collapse": "접기",
+      "open_thread": "스레드 보기"
+    },
     "progress": {
       "label": "최신 진행 상황",
       "count": "{{done}}/{{total}} 완료",

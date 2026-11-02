@@ -780,6 +780,7 @@ describe("threadSummariesOptions", () => {
       reply_count: replyCount,
       last_reply_at: null,
       last_reply_excerpt: null,
+      last_reply: null,
       open_thread_count: 0,
       participants: [],
       last_read_at: null,

@@ -1846,6 +1846,15 @@ export const ThreadSummariesResponseSchema = z.object({
     last_reply_at: z.string().nullable().default(null),
     // Older servers do not send the newest comment's excerpt.
     last_reply_excerpt: z.string().nullable().optional().default(null),
+    // Older servers do not send the newest comment's body and author; a
+    // malformed object drops the bubble, not the whole list.
+    last_reply: z.object({
+      comment_id: z.string(),
+      author_type: z.string(),
+      author_id: z.string(),
+      content: z.string().default(""),
+      created_at: z.string().default(""),
+    }).loose().nullable().catch(null).default(null),
     open_thread_count: z.number().default(0),
     participants: z.array(z.object({
       type: z.string(),

@@ -696,6 +696,11 @@
       "open_thread": "スレッドを見る",
       "reply_here": "ここに返信"
     },
+    "reply": {
+      "expand": "もっと見る",
+      "collapse": "閉じる",
+      "open_thread": "スレッドを見る"
+    },
     "progress": {
       "label": "最新の進捗",
       "count": "{{done}}/{{total}} 完了",

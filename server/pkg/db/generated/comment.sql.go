@@ -1730,6 +1730,10 @@ SELECT s.issue_id,
        s.reply_count,
        s.last_reply_at,
        s.open_thread_count,
+       l.id AS last_reply_id,
+       l.author_type AS last_reply_author_type,
+       l.author_id AS last_reply_author_id,
+       l.created_at AS last_reply_created_at,
        l.content AS last_reply_content
 FROM (
     SELECT cm.issue_id,
@@ -1744,7 +1748,8 @@ FROM (
     GROUP BY cm.issue_id
 ) s
 CROSS JOIN LATERAL (
-    SELECT LEFT(c.content, 2000)::text AS content
+    SELECT c.id, c.author_type, c.author_id, c.created_at,
+           LEFT(c.content, 2000)::text AS content
     FROM comment c
     WHERE c.issue_id = s.issue_id
       AND c.deleted_at IS NULL
@@ -1760,18 +1765,22 @@ type ListIssueThreadSummariesParams struct {
 }
 
 type ListIssueThreadSummariesRow struct {
-	IssueID          pgtype.UUID        `json:"issue_id"`
-	ReplyCount       int64              `json:"reply_count"`
-	LastReplyAt      pgtype.Timestamptz `json:"last_reply_at"`
-	OpenThreadCount  int64              `json:"open_thread_count"`
-	LastReplyContent string             `json:"last_reply_content"`
+	IssueID             pgtype.UUID        `json:"issue_id"`
+	ReplyCount          int64              `json:"reply_count"`
+	LastReplyAt         pgtype.Timestamptz `json:"last_reply_at"`
+	OpenThreadCount     int64              `json:"open_thread_count"`
+	LastReplyID         pgtype.UUID        `json:"last_reply_id"`
+	LastReplyAuthorType string             `json:"last_reply_author_type"`
+	LastReplyAuthorID   pgtype.UUID        `json:"last_reply_author_id"`
+	LastReplyCreatedAt  pgtype.Timestamptz `json:"last_reply_created_at"`
+	LastReplyContent    string             `json:"last_reply_content"`
 }
 
 // Per-issue comment rollup for the project feed. System rows (platform
 // notices) and soft-deleted comments are not conversation, so they are not
 // counted. A thread is open when its root comment is unresolved. The newest
-// counted comment's body is returned (capped) for the caller to flatten into
-// a one-line excerpt.
+// counted comment is returned with its author and (capped) body, for the
+// caller to flatten into an excerpt and to render as the feed's reply bubble.
 func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThreadSummariesParams) ([]ListIssueThreadSummariesRow, error) {
 	rows, err := q.db.Query(ctx, listIssueThreadSummaries, arg.WorkspaceID, arg.IssueIds)
 	if err != nil {
@@ -1786,6 +1795,10 @@ func (q *Queries) ListIssueThreadSummaries(ctx context.Context, arg ListIssueThr
 			&i.ReplyCount,
 			&i.LastReplyAt,
 			&i.OpenThreadCount,
+			&i.LastReplyID,
+			&i.LastReplyAuthorType,
+			&i.LastReplyAuthorID,
+			&i.LastReplyCreatedAt,
 			&i.LastReplyContent,
 		); err != nil {
 			return nil, err

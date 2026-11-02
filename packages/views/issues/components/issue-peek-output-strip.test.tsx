@@ -22,6 +22,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     reply_count: 0,
     last_reply_at: null,
     last_reply_excerpt: null,
+    last_reply: null,
     open_thread_count: 0,
     participants: [],
     last_read_at: null,

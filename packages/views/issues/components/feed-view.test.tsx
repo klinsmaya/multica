@@ -64,6 +64,10 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
+vi.mock("../../editor", () => ({
+  ReadonlyContent: ({ content }: { content: string }) => <div>{content}</div>,
+}));
+
 vi.mock("./issue-agent-activity-indicator", () => ({
   IssueAgentActivityIndicator: () => null,
 }));
@@ -160,6 +164,7 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     reply_count: 0,
     last_reply_at: null,
     last_reply_excerpt: null,
+    last_reply: null,
     open_thread_count: 0,
     participants: [],
     last_read_at: null,
@@ -489,6 +494,44 @@ describe("FeedView", () => {
 
     fireEvent.click(card);
     expect(peek.open).toHaveBeenCalledWith("child-1");
+  });
+
+  it("shows the latest reply bubble between the message card and the decision card, only for issues that have one", async () => {
+    mockListThreadSummaries.mockResolvedValue({
+      summaries: [
+        summary({ issue_id: "issue-1", reply_count: 1 }),
+        summary({
+          issue_id: "issue-2",
+          reply_count: 2,
+          last_reply: {
+            comment_id: "c-9",
+            author_type: "agent",
+            author_id: "agent-7",
+            content: "Pushed the **fix**",
+            created_at: "2026-10-02T00:00:00Z",
+          },
+          awaiting_me: [
+            {
+              comment_id: "c-9",
+              actor_id: "agent-7",
+              excerpt: "Ship @Me?",
+              created_at: "2026-10-02T00:00:00Z",
+            },
+          ],
+        }),
+      ],
+    });
+    renderFeed([
+      makeIssue({ id: "issue-1", title: "Quiet", created_at: "2026-10-01T00:00:00Z" }),
+      makeIssue({ id: "issue-2", title: "Busy", created_at: "2026-10-02T00:00:00Z" }),
+    ]);
+
+    const bubble = await screen.findByText("Pushed the **fix**");
+    expect(screen.getAllByText("Pushed the **fix**")).toHaveLength(1);
+    const card = screen.getByText("Busy");
+    const decision = screen.getByText("Waiting on you");
+    expect(card.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bubble.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows the empty state when nothing top-level remains", () => {

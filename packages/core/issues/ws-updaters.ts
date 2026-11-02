@@ -834,6 +834,14 @@ const THREAD_SUMMARY_PARTICIPANT_LIMIT = 3;
 // Matches the server's last_reply_excerpt length.
 const THREAD_SUMMARY_EXCERPT_CHARS = 80;
 
+// Matches the server's cap on last_reply.content, counted in characters.
+const THREAD_SUMMARY_REPLY_CHARS = 2000;
+
+function capReplyContent(content: string): string {
+  if (content.length <= THREAD_SUMMARY_REPLY_CHARS) return content;
+  return Array.from(content).slice(0, THREAD_SUMMARY_REPLY_CHARS).join("");
+}
+
 // A new agent progress report with a checklist replaces the stored one when it
 // is not older; anything else leaves the server's value in place.
 function nextLatestProgress(
@@ -874,6 +882,16 @@ function applyCommentToThreadSummary(
       lastReplyAt === comment.created_at
         ? commentExcerpt(comment.content ?? "", THREAD_SUMMARY_EXCERPT_CHARS) || null
         : (existing?.last_reply_excerpt ?? null),
+    last_reply:
+      lastReplyAt === comment.created_at
+        ? {
+            comment_id: comment.id,
+            author_type: comment.author_type,
+            author_id: comment.author_id,
+            content: capReplyContent(comment.content ?? ""),
+            created_at: comment.created_at,
+          }
+        : (existing?.last_reply ?? null),
     open_thread_count: (existing?.open_thread_count ?? 0) + (openRoot ? 1 : 0),
     participants,
     last_read_at: existing?.last_read_at ?? null,

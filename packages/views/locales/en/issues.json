@@ -726,6 +726,11 @@
       "open_thread": "View thread",
       "reply_here": "Reply here"
     },
+    "reply": {
+      "expand": "Show more",
+      "collapse": "Show less",
+      "open_thread": "View thread"
+    },
     "progress": {
       "label": "Latest progress",
       "count": "{{done}}/{{total}} done",

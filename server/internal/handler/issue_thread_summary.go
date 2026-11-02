@@ -33,6 +33,9 @@ const (
 // Runes kept of the newest comment for last_reply_excerpt.
 const issueLastReplyExcerptRunes = 80
 
+// Runes of the newest comment's Markdown kept for last_reply.content.
+const issueLastReplyContentRunes = 2000
+
 // Linked PRs listed per issue on the output strip, newest first.
 const issueThreadSummaryPullRequestLimit = 3
 
@@ -59,9 +62,12 @@ type IssueThreadSummaryResponse struct {
 	LastReplyAt *string `json:"last_reply_at"`
 	// LastReplyExcerpt is the newest counted comment flattened to one line
 	// (mentions collapsed to "@Label"); null when the issue has none.
-	LastReplyExcerpt *string                     `json:"last_reply_excerpt"`
-	OpenThreadCount  int64                       `json:"open_thread_count"`
-	Participants     []ThreadParticipantResponse `json:"participants"`
+	LastReplyExcerpt *string `json:"last_reply_excerpt"`
+	// LastReply is the same newest counted comment with its author and
+	// Markdown body, for the feed's reply bubble; null when the issue has none.
+	LastReply       *LastReplyResponse          `json:"last_reply"`
+	OpenThreadCount int64                       `json:"open_thread_count"`
+	Participants    []ThreadParticipantResponse `json:"participants"`
 	// LastReadAt is the caller's own read cursor on the issue; null when the
 	// caller never opened it.
 	LastReadAt *string `json:"last_read_at"`
@@ -101,6 +107,16 @@ type ThreadChildResponse struct {
 	AssigneeID   *string `json:"assignee_id"`
 	ReplyCount   int64   `json:"reply_count"`
 	LastReplyAt  *string `json:"last_reply_at"`
+}
+
+// LastReplyResponse is the newest counted comment of an issue. Content is the
+// stored Markdown cut at issueLastReplyContentRunes runes, not flattened.
+type LastReplyResponse struct {
+	CommentID  string `json:"comment_id"`
+	AuthorType string `json:"author_type"`
+	AuthorID   string `json:"author_id"`
+	Content    string `json:"content"`
+	CreatedAt  string `json:"created_at"`
 }
 
 type LatestProgressResponse struct {
@@ -392,6 +408,19 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 			summary.LastReplyAt = timestampToNanoPtr(row.LastReplyAt)
 			if excerpt := commentExcerpt(row.LastReplyContent, issueLastReplyExcerptRunes); excerpt != "" {
 				summary.LastReplyExcerpt = &excerpt
+			}
+			if row.LastReplyContent != "" {
+				content := row.LastReplyContent
+				if runes := []rune(content); len(runes) > issueLastReplyContentRunes {
+					content = string(runes[:issueLastReplyContentRunes])
+				}
+				summary.LastReply = &LastReplyResponse{
+					CommentID:  uuidToString(row.LastReplyID),
+					AuthorType: row.LastReplyAuthorType,
+					AuthorID:   uuidToString(row.LastReplyAuthorID),
+					Content:    content,
+					CreatedAt:  row.LastReplyCreatedAt.Time.Format(time.RFC3339Nano),
+				}
 			}
 			summary.OpenThreadCount = row.OpenThreadCount
 		}

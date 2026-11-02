@@ -59,6 +59,7 @@ function summaryOf(awaiting_me: IssueAwaitingMe[]): IssueThreadSummary {
     reply_count: awaiting_me.length,
     last_reply_at: null,
     last_reply_excerpt: null,
+    last_reply: null,
     open_thread_count: awaiting_me.length,
     participants: [],
     last_read_at: null,

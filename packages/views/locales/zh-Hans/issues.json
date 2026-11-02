@@ -696,6 +696,11 @@
       "open_thread": "查看讨论串",
       "reply_here": "回复到这里"
     },
+    "reply": {
+      "expand": "展开",
+      "collapse": "收起",
+      "open_thread": "查看讨论串"
+    },
     "progress": {
       "label": "最新进度",
       "count": "{{done}}/{{total}} 完成",

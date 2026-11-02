@@ -1361,6 +1361,7 @@ describe("useMarkIssueRead", () => {
       reply_count: 1,
       last_reply_at: "2026-01-01T00:00:00Z",
       last_reply_excerpt: null,
+      last_reply: null,
       open_thread_count: 0,
       participants: [],
       last_read_at: null,

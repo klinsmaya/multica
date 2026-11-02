@@ -1129,6 +1129,7 @@ describe("ApiClient schema fallback", () => {
           reply_count: 0,
           last_reply_at: null,
           last_reply_excerpt: null,
+          last_reply: null,
           open_thread_count: 0,
           participants: [],
           last_read_at: null,
@@ -1291,6 +1292,46 @@ describe("ApiClient schema fallback", () => {
       const client = new ApiClient("https://api.example.test");
       await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
         summaries: [],
+      });
+    });
+
+    it("keeps last_reply and nulls a missing, null or malformed one", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            last_reply: {
+              comment_id: "c-1",
+              author_type: "agent",
+              author_id: "agent-1",
+              content: "**done**",
+              created_at: "2026-10-01T00:00:00Z",
+            },
+          },
+          { issue_id: "issue-2" },
+          { issue_id: "issue-3", last_reply: null },
+          { issue_id: "issue-4", last_reply: "oops" },
+          { issue_id: "issue-5", last_reply: { comment_id: "c-5" } },
+          { issue_id: "issue-6", last_reply: { comment_id: "c-6", author_type: "member", author_id: "u-6" } },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1", "issue-2", "issue-3", "issue-4", "issue-5", "issue-6"]);
+      expect(res.summaries).toHaveLength(6);
+      expect(res.summaries[0]?.last_reply).toEqual({
+        comment_id: "c-1",
+        author_type: "agent",
+        author_id: "agent-1",
+        content: "**done**",
+        created_at: "2026-10-01T00:00:00Z",
+      });
+      expect(res.summaries.slice(1, 5).map((s) => s.last_reply)).toEqual([null, null, null, null]);
+      expect(res.summaries[5]?.last_reply).toEqual({
+        comment_id: "c-6",
+        author_type: "member",
+        author_id: "u-6",
+        content: "",
+        created_at: "",
       });
     });
 

@@ -212,6 +212,7 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
       reply_count: 1,
       last_reply_at: "2026-10-01T00:00:00Z",
       last_reply_excerpt: null,
+      last_reply: null,
       open_thread_count: 1,
       participants: [{ type: "member", id: "u1" }],
       last_read_at: null,

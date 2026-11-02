@@ -192,6 +192,16 @@ export interface IssueLatestProgress {
   created_at: string;
 }
 
+/** The newest counted comment of an issue, for the feed's reply bubble. */
+export interface IssueLastReply {
+  comment_id: string;
+  author_type: string;
+  author_id: string;
+  /** Stored Markdown, cut at 2000 characters; not flattened. */
+  content: string;
+  created_at: string;
+}
+
 /**
  * CI verdict for a linked PR on the feed strip. `none` covers both "no checks"
  * and "no current CI snapshot".
@@ -235,6 +245,8 @@ export interface IssueThreadSummary {
   last_reply_at: string | null;
   /** The newest counted comment flattened to one line; null when there is none. */
   last_reply_excerpt: string | null;
+  /** The same comment with its author and Markdown body; null when there is none. */
+  last_reply: IssueLastReply | null;
   open_thread_count: number;
   participants: IssueThreadParticipant[];
   /** The caller's own read cursor on the issue; null when never opened. */

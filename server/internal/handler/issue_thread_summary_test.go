@@ -120,12 +120,14 @@ func TestListIssueThreadSummaries_SystemCommentsAreNotCounted(t *testing.T) {
 
 func TestListIssueThreadSummaries_LastReplyExcerptIsNewestCountedComment(t *testing.T) {
 	issueID := dbfx.Issue(t, "thread summary excerpt")
+	agentID := uuid.NewString()
 	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
 	at := func(minutes int) time.Time { return base.Add(time.Duration(minutes) * time.Minute) }
 
 	dbfx.Comment(t, issueID, "older comment", testutil.Cols{"created_at": at(1)})
-	dbfx.Comment(t, issueID, "Ping [@Alice](mention://member/"+uuid.NewString()+")\n\nsee   [MUL-7](mention://issue/"+uuid.NewString()+") please", testutil.Cols{
-		"created_at": at(2),
+	newestBody := "Ping [@Alice](mention://member/" + uuid.NewString() + ")\n\nsee   [MUL-7](mention://issue/" + uuid.NewString() + ") please"
+	newestID := dbfx.Comment(t, issueID, newestBody, testutil.Cols{
+		"author_type": "agent", "author_id": agentID, "created_at": at(2),
 	})
 	// Newer, but a deleted comment and a platform notice are not conversation.
 	dbfx.Comment(t, issueID, "deleted reply", testutil.Cols{"created_at": at(3), "deleted_at": at(4)})
@@ -141,10 +143,28 @@ func TestListIssueThreadSummaries_LastReplyExcerptIsNewestCountedComment(t *test
 	if excerpt == nil || *excerpt != "Ping @Alice see MUL-7 please" {
 		t.Errorf("last_reply_excerpt = %v, want %q", excerpt, "Ping @Alice see MUL-7 please")
 	}
+	reply := got.Summaries[0].LastReply
+	if reply == nil {
+		t.Fatalf("last_reply = nil, want the newest counted comment")
+	}
+	if reply.CommentID != newestID || reply.AuthorType != "agent" || reply.AuthorID != agentID {
+		t.Errorf("last_reply = %+v, want comment %s by agent %s", reply, newestID, agentID)
+	}
+	if reply.Content != newestBody {
+		t.Errorf("last_reply.content = %q, want the unflattened Markdown %q", reply.Content, newestBody)
+	}
+	if created, err := time.Parse(time.RFC3339Nano, reply.CreatedAt); err != nil || !created.Equal(at(2)) {
+		t.Errorf("last_reply.created_at = %q (err %v), want %s", reply.CreatedAt, err, at(2).Format(time.RFC3339Nano))
+	}
 
 	long := dbfx.Issue(t, "thread summary long excerpt")
-	dbfx.Comment(t, long, strings.Repeat("word ", 60))
+	dbfx.Comment(t, long, strings.Repeat("word ", 60)+strings.Repeat("字", issueLastReplyContentRunes))
 	gotLong := listThreadSummaries(t, long)
+	if len(gotLong.Summaries) == 1 && gotLong.Summaries[0].LastReply != nil {
+		if n := len([]rune(gotLong.Summaries[0].LastReply.Content)); n != issueLastReplyContentRunes {
+			t.Errorf("last_reply.content has %d runes, want it cut at %d", n, issueLastReplyContentRunes)
+		}
+	}
 	if len(gotLong.Summaries) != 1 || gotLong.Summaries[0].LastReplyExcerpt == nil {
 		t.Fatalf("summaries = %+v, want one row with an excerpt", gotLong.Summaries)
 	}
