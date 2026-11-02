@@ -1590,6 +1590,24 @@ describe("SearchProjectsResponseSchema date drift", () => {
     expect(parsed.projects[0]?.start_date).toBeNull();
     expect(parsed.projects[0]?.due_date).toBeNull();
   });
+
+  it("parses lead_coordinates and reads a missing or malformed value as off", () => {
+    const parsed = parseWithFallback(
+      {
+        projects: [
+          { ...baseProject, id: "p-on", lead_coordinates: true },
+          { ...baseProject, id: "p-missing" },
+          { ...baseProject, id: "p-bad", lead_coordinates: "yes" },
+        ],
+        total: 3,
+      },
+      SearchProjectsResponseSchema,
+      EMPTY_SEARCH_PROJECTS_RESPONSE,
+      ENDPOINT,
+    );
+    expect(parsed).not.toBe(EMPTY_SEARCH_PROJECTS_RESPONSE);
+    expect(parsed.projects.map((p) => p.lead_coordinates)).toEqual([true, false, false]);
+  });
 });
 
 // The "run now" flow branches on run.status/reason_code to avoid a false-success

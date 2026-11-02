@@ -9,6 +9,8 @@ import { ProjectDetail } from "./project-detail";
 
 const mocks = vi.hoisted(() => ({
   role: "admin",
+  project: null as Project | null,
+  updateProject: vi.fn(),
   copyText: vi.fn(),
   deleteProject: vi.fn(),
   getShareableUrl: vi.fn((path: string) => `https://app.example${path}`),
@@ -27,7 +29,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey?: readonly unknown[] }) => {
     switch (options.queryKey?.[0]) {
       case "project-detail":
-        return { data: PROJECT, isLoading: false };
+        return { data: mocks.project ?? PROJECT, isLoading: false };
       case "members":
         return {
           data: [{ user_id: "user-1", name: "User One", role: mocks.role }],
@@ -47,7 +49,7 @@ vi.mock("@multica/core/projects/queries", () => ({
 }));
 
 vi.mock("@multica/core/projects/mutations", () => ({
-  useUpdateProject: () => ({ mutate: vi.fn() }),
+  useUpdateProject: () => ({ mutate: mocks.updateProject }),
   useDeleteProject: () => ({ mutate: mocks.deleteProject }),
 }));
 
@@ -297,6 +299,8 @@ function renderProjectDetail() {
 
 beforeEach(() => {
   mocks.role = "admin";
+  mocks.project = null;
+  mocks.updateProject.mockReset();
   mocks.copyText.mockReset().mockResolvedValue(true);
   mocks.deleteProject.mockReset();
   mocks.getShareableUrl.mockClear();
@@ -356,5 +360,49 @@ describe("ProjectDetail project deletion", () => {
     expect(
       screen.queryByRole("button", { name: "Delete project" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ProjectDetail lead coordination", () => {
+  it("hides the toggle unless an agent leads the project", () => {
+    mocks.project = { ...PROJECT, lead_type: "member", lead_id: "user-1", lead_coordinates: true };
+
+    renderProjectDetail();
+
+    expect(screen.queryByRole("switch", { name: "Lead dispatch" })).not.toBeInTheDocument();
+  });
+
+  it("toggles lead_coordinates through the update mutation", async () => {
+    const user = userEvent.setup();
+    mocks.project = { ...PROJECT, lead_type: "agent", lead_id: "agent-1", lead_coordinates: false };
+
+    renderProjectDetail();
+
+    const toggle = screen.getByRole("switch", { name: "Lead dispatch" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    await user.click(toggle);
+
+    expect(mocks.updateProject).toHaveBeenCalledWith({
+      id: PROJECT.id,
+      lead_coordinates: true,
+    });
+  });
+
+  it("shows the stored state and turns it off", async () => {
+    const user = userEvent.setup();
+    mocks.project = { ...PROJECT, lead_type: "agent", lead_id: "agent-1", lead_coordinates: true };
+
+    renderProjectDetail();
+
+    const toggle = screen.getByRole("switch", { name: "Lead dispatch" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    await user.click(toggle);
+
+    expect(mocks.updateProject).toHaveBeenCalledWith({
+      id: PROJECT.id,
+      lead_coordinates: false,
+    });
   });
 });

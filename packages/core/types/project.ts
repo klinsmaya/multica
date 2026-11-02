@@ -27,6 +27,12 @@ export interface Project {
    * Optional because older servers do not send it. (MUL-7420)
    */
   workflow_id?: string | null;
+  /**
+   * The lead agent coordinates the project feed. Kept when the lead stops
+   * being an agent, but only takes effect while an agent leads. Optional
+   * because older servers do not send it.
+   */
+  lead_coordinates?: boolean;
 }
 
 export interface CreateProjectRequest {
@@ -41,6 +47,8 @@ export interface CreateProjectRequest {
   due_date?: string;
   /** Workflow to use from the start; omitted uses the Default workflow. */
   workflow_id?: string | null;
+  /** Requires lead_type "agent". */
+  lead_coordinates?: boolean;
   // Resources to attach in the same transaction as the project. Server returns
   // 4xx (and rolls back) if any one is invalid or duplicate.
   resources?: CreateProjectResourceRequest[];
@@ -57,6 +65,8 @@ export interface UpdateProjectRequest {
   // Omit the key to leave the date untouched; send null (or "") to clear it.
   start_date?: string | null;
   due_date?: string | null;
+  /** Turning it on requires an agent lead once the update is applied. */
+  lead_coordinates?: boolean;
 }
 
 export interface ListProjectsResponse {

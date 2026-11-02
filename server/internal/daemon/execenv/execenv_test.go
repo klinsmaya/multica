@@ -809,6 +809,76 @@ func TestProjectFilesWrittenToResourcesJSON(t *testing.T) {
 	}
 }
 
+// The Project coordinator section turns the project's lead agent into the
+// router of its feed. It appears only for the lead agent working a top-level
+// issue assigned to it in a project that opted in; any other combination keeps
+// the ordinary brief.
+func TestProjectCoordinatorSection(t *testing.T) {
+	t.Parallel()
+
+	base := TaskContextForEnv{
+		IssueID:                "11111111-2222-3333-4444-555555555555",
+		ProjectID:              "22222222-3333-4444-5555-666666666666",
+		ProjectTitle:           "Project Beta",
+		ProjectDescription:     "Beta rollout context.",
+		ProjectLeadCoordinates: true,
+		AssigneeIsProjectLead:  true,
+	}
+
+	render := func(t *testing.T, ctx TaskContextForEnv) string {
+		t.Helper()
+		dir := t.TempDir()
+		if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
+			t.Fatalf("InjectRuntimeConfig: %v", err)
+		}
+		content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+		if err != nil {
+			t.Fatalf("read CLAUDE.md: %v", err)
+		}
+		return string(content)
+	}
+
+	t.Run("present when coordinating a top-level feed message", func(t *testing.T) {
+		t.Parallel()
+		s := render(t, base)
+		for _, want := range []string{
+			"## Project coordinator",
+			"--parent <this issue id> --project <project id>",
+			"`multica agent list`",
+			"`multica issue search <query>`",
+			"`multica issue comment add <issue-id> --content-file ...`",
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("brief missing %q", want)
+			}
+		}
+		ctxAt := strings.Index(s, "## Project Context")
+		coordAt := strings.Index(s, "## Project coordinator")
+		if ctxAt < 0 || coordAt < ctxAt {
+			t.Errorf("Project coordinator must follow Project Context (context at %d, coordinator at %d)", ctxAt, coordAt)
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(*TaskContextForEnv)
+	}{
+		{"absent when the project did not opt in", func(c *TaskContextForEnv) { c.ProjectLeadCoordinates = false }},
+		{"absent when the agent is not the project lead", func(c *TaskContextForEnv) { c.AssigneeIsProjectLead = false }},
+		{"absent when the issue has a parent", func(c *TaskContextForEnv) { c.IssueHasParent = true }},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := base
+			tc.mutate(&ctx)
+			if s := render(t, ctx); strings.Contains(s, "## Project coordinator") {
+				t.Errorf("brief contains the Project coordinator section:\n%s", s)
+			}
+		})
+	}
+}
+
 // When the issue's project has its own github_repo resources, those should be
 // the only repos rendered in the meta-skill — workspace-level repos must not
 // leak into the agent prompt to avoid confusing it about which repo to use.

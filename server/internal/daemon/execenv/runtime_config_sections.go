@@ -513,6 +513,28 @@ func formatUploadDate(ts string) string {
 	return t.UTC().Format("2006-01-02")
 }
 
+// coordinatesProjectFeed reports whether this run is the project coordinator:
+// the project opted its lead agent in, the dispatched agent is that lead working
+// the issue assigned to it, and the issue is a top-level message rather than a
+// sub-issue the coordinator itself created.
+func (ctx TaskContextForEnv) coordinatesProjectFeed() bool {
+	return ctx.ProjectLeadCoordinates && ctx.AssigneeIsProjectLead && !ctx.IssueHasParent
+}
+
+// writeProjectCoordinator emits the Project coordinator section. The issue is a
+// message posted in the project feed; the agent routes it instead of doing the
+// work. Every command named here exists in the CLI: `multica agent list` and
+// `multica squad list` enumerate who can be assigned, and issue links use the
+// Mentions section's `mention://issue/<issue-id>` form.
+func writeProjectCoordinator(b *strings.Builder) {
+	b.WriteString("## Project coordinator\n\n")
+	b.WriteString("This issue is a message posted in the project feed, and you are the project's coordinator. Read it and pick exactly one of the four routes below. Reply in the author's language. Do not do the requested work yourself in this role.\n\n")
+	b.WriteString("1. **Answer.** It is a question or discussion you can answer from context: answer in a comment, then set this issue's status to done.\n")
+	b.WriteString("2. **New work.** Create one child issue per independent ask with `multica issue create --title ... --description-file ... --parent <this issue id> --project <project id> --assignee <name>`. Choose each assignee from `multica agent list` and `multica squad list`. Then post one comment listing every child as a `[MUL-123](mention://issue/<issue-id>)` link with its assignee, and set this issue to done.\n")
+	b.WriteString("3. **Continues existing work.** Find the issue with `multica issue list --project <project id>` or `multica issue search <query>`. Post the message there with `multica issue comment add <issue-id> --content-file ...`, quoting the original author. Reply here with a link to that issue, then set this issue to done.\n")
+	b.WriteString("4. **Ambiguous.** Ask the author a clarifying question in a comment that @mentions them, and leave this issue open.\n\n")
+}
+
 // writeInstructionPrecedence emits the "Agent Identity wins over the issue
 // workflow below" guardrail. Caller gates on kind == kindIssue.
 //
@@ -945,6 +967,10 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	}
 
 	writeProjectContext(&b, ctx)
+
+	if kind == kindIssue && ctx.coordinatesProjectFeed() {
+		writeProjectCoordinator(&b)
+	}
 
 	if kind == kindIssue {
 		writeInstructionPrecedence(&b)

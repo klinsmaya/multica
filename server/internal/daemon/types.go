@@ -125,6 +125,9 @@ type Task struct {
 	ProjectID                     string                 `json:"project_id,omitempty"`                       // active project for this task, when present
 	ProjectTitle                  string                 `json:"project_title,omitempty"`                    // human-readable project title for context injection
 	ProjectDescription            string                 `json:"project_description,omitempty"`              // durable project-level context injected into the brief
+	ProjectLeadCoordinates        bool                   `json:"project_lead_coordinates,omitempty"`         // the project opted its lead agent in as the feed coordinator
+	AssigneeIsProjectLead         bool                   `json:"assignee_is_project_lead,omitempty"`         // this run is the project's lead agent on an issue assigned to it
+	IssueHasParent                bool                   `json:"issue_has_parent,omitempty"`                 // the issue is a sub-issue, so it is not a project feed message
 	ProjectResources              []ProjectResourceData  `json:"project_resources,omitempty"`                // project-scoped resources to expose to the agent
 	ProjectFiles                  []ProjectFileData      `json:"project_files,omitempty"`                    // project library files, newest version of each
 	IsLeaderTask                  bool                   `json:"is_leader_task,omitempty"`                   // true when executing in the squad-leader coordinator role

@@ -25,6 +25,8 @@
     "status": "Statut",
     "progress": "Avancement",
     "lead": "Responsable",
+    "lead_coordinates": "Répartition",
+    "lead_coordinates_help": "Les nouveaux messages du fil vont d'abord au responsable, qui y répond, les découpe en tâches ou les transfère à une tâche existante",
     "created": "Création",
     "issues": "Tâches"
   },

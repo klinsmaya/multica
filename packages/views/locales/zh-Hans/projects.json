@@ -24,6 +24,8 @@
     "status": "状态",
     "progress": "进度",
     "lead": "负责人",
+    "lead_coordinates": "负责人派活",
+    "lead_coordinates_help": "开启后，信息流里的新消息先交给负责人，由它回答、拆分或转给已有任务",
     "created": "创建时间",
     "issues": "任务数"
   },

@@ -25,6 +25,8 @@
     "status": "Status",
     "progress": "Progress",
     "lead": "Lead",
+    "lead_coordinates": "Lead dispatch",
+    "lead_coordinates_help": "New feed messages go to the lead first, which answers them, splits them into issues, or forwards them to existing issues",
     "created": "Created",
     "issues": "Issues"
   },

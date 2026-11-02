@@ -24,6 +24,8 @@
     "status": "상태",
     "progress": "진행률",
     "lead": "리드",
+    "lead_coordinates": "리드 배정",
+    "lead_coordinates_help": "켜면 피드의 새 메시지가 먼저 리드에게 전달되어, 리드가 답하거나 태스크로 나누거나 기존 태스크로 넘깁니다",
     "created": "생성일",
     "issues": "태스크 수"
   },

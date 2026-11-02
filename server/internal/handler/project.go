@@ -47,6 +47,10 @@ type ProjectResponse struct {
 	// WorkflowID is the workflow this project uses; null means the workspace
 	// Default workflow. (MUL-7420)
 	WorkflowID *string `json:"workflow_id"`
+	// LeadCoordinates makes the project's lead agent the coordinator of the
+	// project feed. The flag is kept when the lead stops being an agent but
+	// has no effect until an agent leads the project again.
+	LeadCoordinates bool `json:"lead_coordinates"`
 }
 
 func projectToResponse(p db.Project) ProjectResponse {
@@ -65,7 +69,17 @@ func projectToResponse(p db.Project) ProjectResponse {
 		CreatedAt:   timestampToString(p.CreatedAt),
 		UpdatedAt:   timestampToString(p.UpdatedAt),
 		WorkflowID:  uuidToPtr(p.WorkflowID),
+
+		LeadCoordinates: p.LeadCoordinates,
 	}
+}
+
+// errProjectLeadNotAgent is the machine-readable code for a request that turns
+// lead_coordinates on while the project is not led by an agent.
+const errProjectLeadNotAgent = "project_lead_not_agent"
+
+func writeProjectLeadNotAgent(w http.ResponseWriter) {
+	writeErrorCode(w, http.StatusBadRequest, errProjectLeadNotAgent, "lead_coordinates requires the project lead to be an agent")
 }
 
 func (h *Handler) loadProjectIssueStats(ctx context.Context, workspaceID, projectID pgtype.UUID) (int64, int64) {
@@ -117,6 +131,9 @@ type CreateProjectRequest struct {
 	// uses the workspace Default workflow. A new project has no issues, so no
 	// status mapping is involved. (MUL-7420)
 	WorkflowID *string `json:"workflow_id,omitempty"`
+	// LeadCoordinates opts the lead agent in as the feed coordinator; it needs
+	// lead_type "agent".
+	LeadCoordinates *bool `json:"lead_coordinates,omitempty"`
 }
 
 // CreateProjectResourceRequestPayload mirrors CreateProjectResourceRequest but
@@ -139,6 +156,9 @@ type UpdateProjectRequest struct {
 	LeadID      *string `json:"lead_id"`
 	StartDate   *string `json:"start_date"`
 	DueDate     *string `json:"due_date"`
+	// LeadCoordinates is absent-means-unchanged. Turning it on needs an agent
+	// lead after this update is applied.
+	LeadCoordinates *bool `json:"lead_coordinates"`
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -308,6 +328,11 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	leadCoordinates := req.LeadCoordinates != nil && *req.LeadCoordinates
+	if leadCoordinates && (req.LeadType == nil || *req.LeadType != "agent" || !leadID.Valid) {
+		writeProjectLeadNotAgent(w)
+		return
+	}
 	var workflowID pgtype.UUID
 	if req.WorkflowID != nil && *req.WorkflowID != "" {
 		if !h.requireProjectWorkflowsV1(w, r) {
@@ -405,6 +430,8 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		StartDate:   startDate,
 		DueDate:     dueDate,
 		WorkflowID:  workflowID,
+
+		LeadCoordinates: leadCoordinates,
 	}
 
 	// Without resources, keep the simple non-tx path.
@@ -537,6 +564,10 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	_, params.LeadIDSet = rawFields["lead_id"]
 	_, params.StartDateSet = rawFields["start_date"]
 	_, params.DueDateSet = rawFields["due_date"]
+	if req.LeadCoordinates != nil {
+		params.LeadCoordinatesSet = true
+		params.LeadCoordinates = *req.LeadCoordinates
+	}
 	if req.Title != nil {
 		params.Title = pgtype.Text{String: *req.Title, Valid: true}
 	}
@@ -608,6 +639,22 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 			params.DueDate = d
 		} else {
 			params.DueDate = pgtype.Date{Valid: false} // explicit null = clear date
+		}
+	}
+	// Turning the coordinator on needs an agent lead once this update lands. A
+	// request that only moves the lead away from an agent is not rejected: the
+	// stored flag is kept and simply has no effect until an agent leads again.
+	if params.LeadCoordinatesSet && params.LeadCoordinates {
+		leadType, leadID := prevProject.LeadType, prevProject.LeadID
+		if params.LeadTypeSet {
+			leadType = params.LeadType
+		}
+		if params.LeadIDSet {
+			leadID = params.LeadID
+		}
+		if !leadType.Valid || leadType.String != "agent" || !leadID.Valid {
+			writeProjectLeadNotAgent(w)
+			return
 		}
 	}
 	project, err := h.Queries.UpdateProject(r.Context(), params)

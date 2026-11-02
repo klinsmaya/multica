@@ -445,11 +445,18 @@ type AgentTaskResponse struct {
 	ProjectID          string                   `json:"project_id,omitempty"`          // issue's project, when present
 	ProjectTitle       string                   `json:"project_title,omitempty"`       // for surfacing in agent context
 	ProjectDescription string                   `json:"project_description,omitempty"` // durable project-level context injected into the brief
-	ProjectResources   []ProjectResourceData    `json:"project_resources,omitempty"`   // resources attached to the project
-	ProjectFiles       []ProjectFileData        `json:"project_files,omitempty"`       // newest version of each file in the project library, capped at projectFilesClaimLimit
-	CreatedAt          string                   `json:"created_at"`
-	PriorSessionID     string                   `json:"prior_session_id,omitempty"` // session ID from a previous task on same issue
-	PriorWorkDir       string                   `json:"prior_work_dir,omitempty"`   // work_dir from a previous task on same issue
+	// ProjectLeadCoordinates, AssigneeIsProjectLead and IssueHasParent together
+	// pick the brief's Project coordinator section: the project opted its lead
+	// agent in, this run is that agent working its own assigned issue, and the
+	// issue is a top-level feed message. Mirror fields: internal/daemon/types.go.
+	ProjectLeadCoordinates bool                  `json:"project_lead_coordinates,omitempty"`
+	AssigneeIsProjectLead  bool                  `json:"assignee_is_project_lead,omitempty"`
+	IssueHasParent         bool                  `json:"issue_has_parent,omitempty"`
+	ProjectResources       []ProjectResourceData `json:"project_resources,omitempty"` // resources attached to the project
+	ProjectFiles           []ProjectFileData     `json:"project_files,omitempty"`     // newest version of each file in the project library, capped at projectFilesClaimLimit
+	CreatedAt              string                `json:"created_at"`
+	PriorSessionID         string                `json:"prior_session_id,omitempty"` // session ID from a previous task on same issue
+	PriorWorkDir           string                `json:"prior_work_dir,omitempty"`   // work_dir from a previous task on same issue
 	// PriorSessionResumeUnavailable is set when a more recent Codex session was
 	// withheld because its rollout was missing (MUL-5305); PriorSessionID (if
 	// any) is then an older fallback, and the daemon surfaces the continuity gap

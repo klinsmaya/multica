@@ -931,9 +931,14 @@ type claimProjectContext struct {
 	ProjectID   string
 	Title       string
 	Description string
-	Resources   []ProjectResourceData
-	Files       []ProjectFileData
-	Repos       []RepoData
+	// LeadCoordinates is the project's coordinator opt-in. LeadAgentID is the
+	// project's lead when that lead is an agent, empty otherwise, so a claim
+	// can tell whether the dispatched agent is the one coordinating.
+	LeadCoordinates bool
+	LeadAgentID     string
+	Resources       []ProjectResourceData
+	Files           []ProjectFileData
+	Repos           []RepoData
 }
 
 // applyTo copies the resolved context onto a claim response. Callers assign the
@@ -943,6 +948,7 @@ func (c claimProjectContext) applyTo(resp *AgentTaskResponse) {
 	resp.ProjectID = c.ProjectID
 	resp.ProjectTitle = c.Title
 	resp.ProjectDescription = c.Description
+	resp.ProjectLeadCoordinates = c.LeadCoordinates
 	if len(c.Resources) > 0 {
 		resp.ProjectResources = c.Resources
 	}
@@ -988,6 +994,10 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 			out.ProjectID = uuidToString(project.ID)
 			out.Title = project.Title
 			out.Description = project.Description.String
+			out.LeadCoordinates = project.LeadCoordinates
+			if project.LeadType.Valid && project.LeadType.String == "agent" && project.LeadID.Valid {
+				out.LeadAgentID = uuidToString(project.LeadID)
+			}
 
 			rows, resErr := h.Queries.ListProjectResourcesInWorkspace(ctx, db.ListProjectResourcesInWorkspaceParams{
 				ProjectID:   project.ID,

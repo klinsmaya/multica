@@ -24,6 +24,8 @@
     "status": "ステータス",
     "progress": "進捗",
     "lead": "リード",
+    "lead_coordinates": "リードが振り分け",
+    "lead_coordinates_help": "有効にすると、フィードの新しいメッセージはまずリードに渡り、回答、タスクへの分割、既存タスクへの転送が行われます",
     "created": "作成日",
     "issues": "タスク数"
   },

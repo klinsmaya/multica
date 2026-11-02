@@ -173,6 +173,9 @@ type TaskContextForEnv struct {
 	ProjectID                     string                  // active project for this task, when present
 	ProjectTitle                  string                  // human-readable project title
 	ProjectDescription            string                  // durable project-level context, rendered into the brief's Project Context section
+	ProjectLeadCoordinates        bool                    // the project opted its lead agent in as the feed coordinator
+	AssigneeIsProjectLead         bool                    // this run is the project's lead agent on an issue assigned to it
+	IssueHasParent                bool                    // the issue is a sub-issue, not a top-level project feed message
 	ProjectResources              []ProjectResourceForEnv // resources attached to the project
 	ProjectFiles                  []ProjectFileForEnv     // project library files, newest version of each
 	ChatSessionID                 string                  // non-empty for chat tasks

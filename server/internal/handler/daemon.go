@@ -2819,6 +2819,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
+		resp.IssueHasParent = issue.ParentIssueID.Valid
+		resp.AssigneeIsProjectLead = projectCtx.LeadAgentID != "" &&
+			issue.AssigneeType.Valid && issue.AssigneeType.String == "agent" &&
+			uuidToString(issue.AssigneeID) == projectCtx.LeadAgentID &&
+			uuidToString(task.AgentID) == projectCtx.LeadAgentID
 		// Project workflow (MUL-7420): best-effort, like the status catalog
 		// below — a failure degrades to the workspace-wide status rules.
 		resp.ProjectWorkflow = h.claimProjectWorkflow(r.Context(), issue, task)

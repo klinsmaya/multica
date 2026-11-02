@@ -37,6 +37,7 @@ import { IssueSurface } from "../../issues/surface/issue-surface";
 import type { IssueSurfaceMode } from "../../issues/surface/types";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Button } from "@multica/ui/components/ui/button";
+import { Switch } from "@multica/ui/components/ui/switch";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@multica/ui/components/ui/resizable";
 import { Sheet, SheetContent } from "@multica/ui/components/ui/sheet";
 import { useIsMobile } from "@multica/ui/hooks/use-mobile";
@@ -84,13 +85,15 @@ import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
 function PropRow({
   label,
+  title,
   children,
 }: {
   label: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-8 items-center gap-2 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors">
+    <div title={title} className="flex min-h-8 items-center gap-2 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors">
       <span className="w-16 shrink-0 text-caption text-muted-foreground">{label}</span>
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-caption truncate">
         {children}
@@ -425,6 +428,19 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               </PopoverContent>
             </Popover>
           </PropRow>
+          {project.lead_type === "agent" && (
+            <PropRow
+              label={t(($) => $.table.lead_coordinates)}
+              title={t(($) => $.table.lead_coordinates_help)}
+            >
+              <Switch
+                size="sm"
+                checked={project.lead_coordinates === true}
+                onCheckedChange={(checked: boolean) => handleUpdateField({ lead_coordinates: checked })}
+                aria-label={t(($) => $.table.lead_coordinates)}
+              />
+            </PropRow>
+          )}
           <PropRow label={t(($) => $.detail.prop_start_date)}>
             <ProjectStartDatePicker startDate={project.start_date} onUpdate={handleUpdateField} />
           </PropRow>

@@ -1632,6 +1632,8 @@ const ProjectSchema = z.object({
   done_count: z.number().default(0),
   resource_count: z.number().default(0),
   workflow_id: z.string().nullable().default(null),
+  // Older backends omit it; a malformed value reads as off.
+  lead_coordinates: z.boolean().catch(false),
 }).loose();
 
 const SearchProjectResultSchema = ProjectSchema.extend({
