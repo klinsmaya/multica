@@ -220,6 +220,8 @@ describe("useRealtimeSync — comment activity cache coherence", () => {
       pull_requests: [],
       deliverable_count: 0,
       last_deliverable_at: null,
+      children: [],
+      child_total: 0,
     };
 
     function mount() {

@@ -717,6 +717,10 @@
     "open_thread": "Ouvrir le fil",
     "unread": "Non lu",
     "awaiting_reply": "En attente de votre réponse",
+    "children": {
+      "more_one": "{{count}} sous-tâche de plus",
+      "more_other": "{{count}} sous-tâches de plus"
+    },
     "decision": {
       "title": "En attente de votre décision",
       "open_thread": "Voir le fil",

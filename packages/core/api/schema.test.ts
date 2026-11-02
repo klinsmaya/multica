@@ -1137,8 +1137,67 @@ describe("ApiClient schema fallback", () => {
           pull_requests: [],
           deliverable_count: 0,
           last_deliverable_at: null,
+          children: [],
+          child_total: 0,
         },
       ]);
+    });
+
+    it("keeps child cards and defaults their optional fields", async () => {
+      stubFetchJson({
+        summaries: [
+          {
+            issue_id: "issue-1",
+            child_total: 7,
+            children: [
+              {
+                id: "child-1",
+                identifier: "MUL-9",
+                title: "Plan the rollout",
+                status: "in_progress",
+                assignee_type: "agent",
+                assignee_id: "agent-1",
+                reply_count: 3,
+                last_reply_at: "2026-05-01T10:00:00.5Z",
+              },
+              { id: "child-2", status: "a_status_from_the_future" },
+            ],
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const res = await client.listThreadSummaries(["issue-1"]);
+      expect(res.summaries[0]?.child_total).toBe(7);
+      expect(res.summaries[0]?.children).toEqual([
+        {
+          id: "child-1",
+          identifier: "MUL-9",
+          title: "Plan the rollout",
+          status: "in_progress",
+          assignee_type: "agent",
+          assignee_id: "agent-1",
+          reply_count: 3,
+          last_reply_at: "2026-05-01T10:00:00.5Z",
+        },
+        {
+          id: "child-2",
+          identifier: "",
+          title: "",
+          status: "a_status_from_the_future",
+          assignee_type: null,
+          assignee_id: null,
+          reply_count: 0,
+          last_reply_at: null,
+        },
+      ]);
+    });
+
+    it("falls back to no summaries when children is malformed", async () => {
+      stubFetchJson({ summaries: [{ issue_id: "issue-1", children: "invalid" }] });
+      const client = new ApiClient("https://api.example.test");
+      await expect(client.listThreadSummaries(["issue-1"])).resolves.toEqual({
+        summaries: [],
+      });
     });
 
     it("keeps the output strip fields and defaults a PR's optional ones", async () => {

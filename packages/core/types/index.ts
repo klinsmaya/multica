@@ -2,6 +2,7 @@ export type { Issue, IssueStatus, BuiltInIssueStatus, IssuePriority, IssueAssign
   IssueDuplicateOf,
   IssueAwaitingMe,
   IssueLatestProgress,
+  IssueThreadChild,
   IssueThreadParticipant,
   IssueThreadPullRequest,
   IssueThreadPullRequestChecksState,

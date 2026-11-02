@@ -381,6 +381,16 @@ function findIssueInFlatCaches(
   return undefined;
 }
 
+function findCachedIssue(qc: QueryClient, wsId: string, issueId: string): Issue | undefined {
+  const detail = qc.getQueryData<Issue>(issueKeys.detail(wsId, issueId));
+  if (detail) return detail;
+  for (const [, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
+    const found = data ? findIssueLocation(data, issueId)?.issue : undefined;
+    if (found) return found;
+  }
+  return findIssueInFlatCaches(qc, wsId, issueId);
+}
+
 export function onIssueCreated(
   qc: QueryClient,
   wsId: string,
@@ -417,6 +427,7 @@ export function onIssueCreated(
     // The parent's detail carries child_count / child_done_count.
     qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issue.parent_issue_id) });
     qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
+    invalidateThreadSummariesForChild(qc, wsId, issue.id, [issue.parent_issue_id]);
   }
 }
 
@@ -554,6 +565,7 @@ export function onIssueUpdated(
     }
     qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   }
+  invalidateThreadSummariesForChild(qc, wsId, issue.id, [oldParentId, newParentId]);
   reconcileIssueFullSnapshotRevision(qc, wsId, issue.id, issue.revision);
 }
 
@@ -798,7 +810,10 @@ export function onIssueDeleted(
   wsId: string,
   issueId: string,
 ) {
+  // The event carries no parent; read it before the caches forget the issue.
+  const parentId = findCachedIssue(qc, wsId, issueId)?.parent_issue_id ?? null;
   cleanupDeletedIssueCaches(qc, wsId, issueId);
+  invalidateThreadSummariesForChild(qc, wsId, issueId, [parentId]);
   // Deleting an original clears its duplicates' marks server-side.
   qc.invalidateQueries({ queryKey: issueKeys.duplicatesAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
@@ -868,6 +883,8 @@ function applyCommentToThreadSummary(
     pull_requests: existing?.pull_requests ?? [],
     deliverable_count: existing?.deliverable_count ?? 0,
     last_deliverable_at: existing?.last_deliverable_at ?? null,
+    children: existing?.children ?? [],
+    child_total: existing?.child_total ?? 0,
   };
 }
 
@@ -915,6 +932,7 @@ export function onCommentCreatedPatchThreadSummaries(
 
   const ownMemberComment = isOwnMemberComment(comment, selfUserId);
   const askingCaller = mayAskCaller(comment, selfUserId);
+  patchThreadChildReply(qc, wsId, comment);
 
   const caches = qc.getQueriesData<IssueThreadSummary[]>({
     queryKey: issueKeys.threadSummariesAll(wsId),
@@ -994,4 +1012,61 @@ export function patchThreadSummariesLastRead(
  */
 export function invalidateThreadSummaries(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: issueKeys.threadSummariesAll(wsId) });
+}
+
+/**
+ * A child issue appeared, changed or went away. Its thread card lives in the
+ * summary of its parent, so refetch every loaded thread-summary cache that was
+ * asked for one of `parentIds` (a new child, a changed total) or that already
+ * lists the child (a title, status or assignee change; a move away from, or
+ * deletion under, a parent the event does not name).
+ */
+export function invalidateThreadSummariesForChild(
+  qc: QueryClient,
+  wsId: string,
+  childId: string,
+  parentIds: readonly (string | null | undefined)[],
+) {
+  const parents = parentIds.filter((id): id is string => !!id);
+  for (const [key, data] of qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  })) {
+    const idsKey = key[key.length - 1];
+    if (typeof idsKey !== "string") continue;
+    const ids = idsKey.split(",");
+    const asksForParent = parents.some((id) => ids.includes(id));
+    const listsChild = data?.some((s) => s.children.some((c) => c.id === childId)) ?? false;
+    if (asksForParent || listsChild) qc.invalidateQueries({ queryKey: key, exact: true });
+  }
+}
+
+// A reply on a listed child moves that card's counter. Caches that are mid-fetch
+// may already include the comment, so they are refetched instead.
+function patchThreadChildReply(qc: QueryClient, wsId: string, comment: Comment) {
+  for (const [key, data] of qc.getQueriesData<IssueThreadSummary[]>({
+    queryKey: issueKeys.threadSummariesAll(wsId),
+  })) {
+    if (!data?.some((s) => s.children.some((c) => c.id === comment.issue_id))) continue;
+    if (qc.getQueryState(key)?.fetchStatus === "fetching") {
+      qc.invalidateQueries({ queryKey: key, exact: true });
+      continue;
+    }
+    qc.setQueryData<IssueThreadSummary[]>(
+      key,
+      data.map((s) => ({
+        ...s,
+        children: s.children.map((c) => {
+          if (c.id !== comment.issue_id) return c;
+          const newer =
+            c.last_reply_at == null ||
+            Date.parse(comment.created_at) >= Date.parse(c.last_reply_at);
+          return {
+            ...c,
+            reply_count: c.reply_count + 1,
+            last_reply_at: newer ? comment.created_at : c.last_reply_at,
+          };
+        }),
+      })),
+    );
+  }
 }

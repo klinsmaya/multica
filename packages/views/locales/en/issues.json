@@ -717,6 +717,10 @@
     "open_thread": "Open thread",
     "unread": "Unread",
     "awaiting_reply": "Awaiting your reply",
+    "children": {
+      "more_one": "{{count}} more sub-issue",
+      "more_other": "{{count}} more sub-issues"
+    },
     "decision": {
       "title": "Waiting on you",
       "open_thread": "View thread",

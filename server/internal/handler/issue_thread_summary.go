@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,10 @@ const issueLastReplyExcerptRunes = 80
 
 // Linked PRs listed per issue on the output strip, newest first.
 const issueThreadSummaryPullRequestLimit = 3
+
+// Child issues listed per issue on the feed's thread cards, newest first; the
+// rest are implied by child_total.
+const issueThreadSummaryChildLimit = 5
 
 // Values of ThreadPullRequestResponse.ChecksState.
 const (
@@ -75,6 +80,27 @@ type IssueThreadSummaryResponse struct {
 	DeliverableCount int64 `json:"deliverable_count"`
 	// LastDeliverableAt is the newest upload among those files, or null.
 	LastDeliverableAt *string `json:"last_deliverable_at"`
+
+	// Children are the issue's newest direct child issues, newest first, at
+	// most issueThreadSummaryChildLimit; the thread cards under the message.
+	// Never null.
+	Children []ThreadChildResponse `json:"children"`
+	// ChildTotal counts all direct children, listed or not.
+	ChildTotal int64 `json:"child_total"`
+}
+
+// ThreadChildResponse is a child issue as a thread card renders it. ReplyCount
+// and LastReplyAt follow the same counted-comment rule as the parent's own
+// summary.
+type ThreadChildResponse struct {
+	ID           string  `json:"id"`
+	Identifier   string  `json:"identifier"`
+	Title        string  `json:"title"`
+	Status       string  `json:"status"`
+	AssigneeType *string `json:"assignee_type"`
+	AssigneeID   *string `json:"assignee_id"`
+	ReplyCount   int64   `json:"reply_count"`
+	LastReplyAt  *string `json:"last_reply_at"`
 }
 
 type LatestProgressResponse struct {
@@ -136,8 +162,8 @@ func commentExcerpt(content string, maxRunes int) string {
 // feed can render reply counts and avatars without one comment list per card.
 //
 // An issue gets a row when it has at least one counted comment (not deleted,
-// not platform-authored), a linked PR, or a deliverable; callers treat a
-// missing issue as zero.
+// not platform-authored), a linked PR, a deliverable, or a child issue;
+// callers treat a missing issue as zero.
 // Workspace scope is enforced in the query, so an id from another workspace
 // yields no row rather than an error.
 //
@@ -149,6 +175,9 @@ func commentExcerpt(content string, maxRunes int) string {
 //
 // pull_requests and deliverable_count/last_deliverable_at feed the output
 // strip: what the issue has produced, without opening it.
+//
+// children lists the issue's newest direct child issues with their own reply
+// counts, for the thread cards under a feed message.
 //
 // Each row also carries the caller's read cursor (last_read_at, null when never
 // opened) so the feed can tell unread cards from read ones; other users'
@@ -287,6 +316,36 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	childRows, err := h.Queries.ListIssueThreadChildren(r.Context(), db.ListIssueThreadChildrenParams{
+		WorkspaceID: wsUUID,
+		IssueIds:    issueIDs,
+		ChildLimit:  issueThreadSummaryChildLimit,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list thread children")
+		return
+	}
+	var childPrefix string
+	if len(childRows) > 0 {
+		childPrefix = h.getIssuePrefix(r.Context(), wsUUID)
+	}
+	children := make(map[string][]ThreadChildResponse)
+	childTotals := make(map[string]int64)
+	for _, c := range childRows {
+		parentID := uuidToString(c.ParentIssueID)
+		childTotals[parentID] = c.ChildTotal
+		children[parentID] = append(children[parentID], ThreadChildResponse{
+			ID:           uuidToString(c.ID),
+			Identifier:   childPrefix + "-" + strconv.Itoa(int(c.Number)),
+			Title:        c.Title,
+			Status:       c.Status,
+			AssigneeType: textToPtr(c.AssigneeType),
+			AssigneeID:   uuidToPtr(c.AssigneeID),
+			ReplyCount:   c.ReplyCount,
+			LastReplyAt:  timestampToNanoPtr(c.LastReplyAt),
+		})
+	}
+
 	// Rows arrive ordered by issue then most recent activity, so the first
 	// few per issue are the participants to show.
 	participants := make(map[string][]ThreadParticipantResponse, len(rows))
@@ -314,6 +373,10 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		if prs == nil {
 			prs = []ThreadPullRequestResponse{}
 		}
+		childList := children[issueID]
+		if childList == nil {
+			childList = []ThreadChildResponse{}
+		}
 		summary := IssueThreadSummaryResponse{
 			IssueID:        issueID,
 			Participants:   list,
@@ -321,6 +384,8 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 			AwaitingMe:     awaitingList,
 			PullRequests:   prs,
 			LatestProgress: progress[issueID],
+			Children:       childList,
+			ChildTotal:     childTotals[issueID],
 		}
 		if row != nil {
 			summary.ReplyCount = row.ReplyCount
@@ -344,15 +409,15 @@ func (h *Handler) ListIssueThreadSummaries(w http.ResponseWriter, r *http.Reques
 		seen[issueID] = true
 		summaries = append(summaries, build(issueID, &rows[i]))
 	}
-	// Issues with output but no counted comment (a PR linked before anyone
-	// replied) still need a row; they follow the commented ones in request
-	// order.
+	// Issues with output or children but no counted comment (a PR linked
+	// before anyone replied, a thread handed to child issues) still need a
+	// row; they follow the commented ones in request order.
 	for _, id := range issueIDs {
 		issueID := uuidToString(id)
 		if seen[issueID] {
 			continue
 		}
-		if _, hasFiles := deliverables[issueID]; !hasFiles && len(pullRequests[issueID]) == 0 {
+		if _, hasFiles := deliverables[issueID]; !hasFiles && len(pullRequests[issueID]) == 0 && len(children[issueID]) == 0 {
 			continue
 		}
 		seen[issueID] = true

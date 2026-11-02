@@ -37,6 +37,8 @@ function summary(
     pull_requests: [],
     deliverable_count: 0,
     last_deliverable_at: null,
+    children: [],
+    child_total: 0,
     ...overrides,
   };
 }

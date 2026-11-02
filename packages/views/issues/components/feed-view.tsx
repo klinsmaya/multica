@@ -20,6 +20,7 @@ import { FeedMessageCard } from "./feed-message-card";
 import { getFeedReadState } from "./feed-read-state";
 import { FeedQuickActions } from "./feed-quick-actions";
 import { FeedThreadBar } from "./feed-thread-bar";
+import { FeedThreadCards } from "./feed-thread-cards";
 
 const SCROLL_TO_NEWEST = { index: "LAST", align: "end", behavior: "smooth" } as const;
 
@@ -158,6 +159,7 @@ export function FeedView({
                   identifier={issue.identifier}
                   summary={summaries?.get(issue.id)}
                 />
+                <FeedThreadCards issueId={issue.id} summary={summaries?.get(issue.id)} />
                 <FeedThreadBar issue={issue} summary={summaries?.get(issue.id)} />
               </div>
             )}

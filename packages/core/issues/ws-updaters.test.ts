@@ -1253,6 +1253,8 @@ describe("thread summary realtime updates", () => {
     pull_requests: [],
     deliverable_count: 0,
     last_deliverable_at: null,
+    children: [],
+    child_total: 0,
   });
 
   const read = (key: readonly unknown[] = cacheKey) =>
@@ -1286,6 +1288,8 @@ describe("thread summary realtime updates", () => {
       pull_requests: [],
       deliverable_count: 0,
       last_deliverable_at: null,
+      children: [],
+      child_total: 0,
     });
   });
 
@@ -1404,6 +1408,8 @@ describe("thread summary realtime updates", () => {
       pull_requests: [],
       deliverable_count: 0,
       last_deliverable_at: null,
+      children: [],
+      child_total: 0,
     });
   });
 
@@ -1727,5 +1733,142 @@ describe("thread summary realtime updates", () => {
     expectInvalidated(qc, cacheKey);
     expectInvalidated(qc, onlyBKey);
     expect(qc.getQueryState(otherWsKey)?.isInvalidated).toBe(false);
+  });
+
+  describe("child thread cards", () => {
+    const childId = "child-1";
+    const makeChild = (): IssueThreadSummary["children"][number] => ({
+      id: childId,
+      identifier: "MUL-9",
+      title: "Child",
+      status: "todo",
+      assignee_type: null,
+      assignee_id: null,
+      reply_count: 1,
+      last_reply_at: "2026-10-01T00:00:00Z",
+    });
+    const otherWsKey = issueKeys.threadSummaries("ws-2", issueA);
+    const issueC = "issue-c";
+    const onlyCKey = issueKeys.threadSummaries(WS_ID, issueC);
+    const childOf = (parent: string | null): Issue => ({
+      ...baseIssue,
+      id: childId,
+      parent_issue_id: parent,
+      revision: 1,
+    });
+
+    beforeEach(() => {
+      qc.setQueryData<IssueThreadSummary[]>(onlyBKey, []);
+      qc.setQueryData<IssueThreadSummary[]>(otherWsKey, []);
+      qc.setQueryData<IssueThreadSummary[]>(onlyCKey, []);
+    });
+
+    const withListedChild = () =>
+      qc.setQueryData<IssueThreadSummary[]>(cacheKey, [
+        { ...summaryA(), children: [makeChild()], child_total: 1 },
+      ]);
+
+    it("refetches the caches that ask for the parent when a child is created", () => {
+      onIssueCreated(qc, WS_ID, childOf(issueA));
+
+      expectInvalidated(qc, cacheKey);
+      expect(qc.getQueryState(onlyBKey)?.isInvalidated).toBe(false);
+      expect(qc.getQueryState(otherWsKey)?.isInvalidated).toBe(false);
+    });
+
+    it("leaves thread summaries alone when an issue without a parent is created", () => {
+      onIssueCreated(qc, WS_ID, childOf(null));
+
+      expect(qc.getQueryState(cacheKey)?.isInvalidated).toBe(false);
+    });
+
+    it("refetches when a listed child is updated, even if the payload names no loaded parent", () => {
+      withListedChild();
+
+      onIssueUpdated(qc, WS_ID, { id: childId, title: "Renamed", revision: 2 });
+
+      expectInvalidated(qc, cacheKey);
+      expect(qc.getQueryState(onlyBKey)?.isInvalidated).toBe(false);
+    });
+
+    it("refetches the new parent's cache when an issue is moved under it", () => {
+      qc.setQueryData<Issue>(issueKeys.detail(WS_ID, childId), childOf(null));
+
+      onIssueUpdated(qc, WS_ID, { id: childId, parent_issue_id: issueB, revision: 2 });
+
+      expectInvalidated(qc, cacheKey);
+      expectInvalidated(qc, onlyBKey);
+    });
+
+    it("refetches the previous parent's cache when a child is moved away", () => {
+      qc.setQueryData<Issue>(issueKeys.detail(WS_ID, childId), childOf(issueC));
+
+      onIssueUpdated(qc, WS_ID, { id: childId, parent_issue_id: null, revision: 2 });
+
+      expectInvalidated(qc, onlyCKey);
+      expect(qc.getQueryState(cacheKey)?.isInvalidated).toBe(false);
+    });
+
+    it("ignores updates of issues that are neither a loaded parent's child nor listed", () => {
+      onIssueUpdated(qc, WS_ID, { id: "unrelated", title: "x", revision: 2 });
+
+      expect(qc.getQueryState(cacheKey)?.isInvalidated).toBe(false);
+      expect(qc.getQueryState(onlyBKey)?.isInvalidated).toBe(false);
+    });
+
+    it("refetches when a listed child is deleted", () => {
+      withListedChild();
+
+      onIssueDeleted(qc, WS_ID, childId);
+
+      expectInvalidated(qc, cacheKey);
+      expect(qc.getQueryState(onlyBKey)?.isInvalidated).toBe(false);
+    });
+
+    it("refetches the parent's cache when an unlisted child is deleted, using the cached parent", () => {
+      qc.setQueryData<Issue>(issueKeys.detail(WS_ID, childId), childOf(issueC));
+
+      onIssueDeleted(qc, WS_ID, childId);
+
+      expectInvalidated(qc, onlyCKey);
+      expect(qc.getQueryState(cacheKey)?.isInvalidated).toBe(false);
+    });
+
+    it("counts a reply on a listed child on its card, not on the parent", () => {
+      withListedChild();
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({ issue_id: childId, created_at: "2026-10-03T00:00:00Z" }),
+      );
+
+      expect(rowA()?.children[0]).toMatchObject({
+        reply_count: 2,
+        last_reply_at: "2026-10-03T00:00:00Z",
+      });
+      expect(rowA()?.reply_count).toBe(2);
+    });
+
+    it("keeps a card's newer last_reply_at when an older reply arrives", () => {
+      withListedChild();
+
+      onCommentCreatedPatchThreadSummaries(
+        qc,
+        WS_ID,
+        makeComment({ issue_id: childId, created_at: "2026-09-01T00:00:00Z" }),
+      );
+
+      expect(rowA()?.children[0]?.last_reply_at).toBe("2026-10-01T00:00:00Z");
+    });
+
+    it("keeps the listed children when a comment lands on the parent", () => {
+      withListedChild();
+
+      onCommentCreatedPatchThreadSummaries(qc, WS_ID, makeComment());
+
+      expect(rowA()?.children).toEqual([makeChild()]);
+      expect(rowA()?.child_total).toBe(1);
+    });
   });
 });

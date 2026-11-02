@@ -1879,6 +1879,19 @@ export const ThreadSummariesResponseSchema = z.object({
     }).loose()).default([]),
     deliverable_count: z.number().default(0),
     last_deliverable_at: z.string().nullable().optional().default(null),
+    // Older servers do not list child issues.
+    children: z.array(z.object({
+      id: z.string(),
+      identifier: z.string().default(""),
+      title: z.string().default(""),
+      // Unknown statuses from newer servers pass through as strings.
+      status: z.string().default("todo"),
+      assignee_type: z.string().nullable().optional().default(null),
+      assignee_id: z.string().nullable().optional().default(null),
+      reply_count: z.number().default(0),
+      last_reply_at: z.string().nullable().optional().default(null),
+    }).loose()).default([]),
+    child_total: z.number().default(0),
   }).loose()).default([]),
 }).loose();
 

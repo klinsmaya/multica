@@ -211,9 +211,23 @@ export interface IssueThreadPullRequest {
   checks_state: IssueThreadPullRequestChecksState;
 }
 
+/** A direct child issue shown as a thread card under its parent's feed message. */
+export interface IssueThreadChild {
+  id: string;
+  identifier: string;
+  title: string;
+  /** Unknown statuses from newer servers pass through; resolve them with `useIssueStatuses`. */
+  status: IssueStatus;
+  assignee_type: IssueAssigneeType | null;
+  assignee_id: string | null;
+  /** Counted comments on the child, by the same rule as the parent's own `reply_count`. */
+  reply_count: number;
+  last_reply_at: string | null;
+}
+
 /**
  * Rollup for one issue: its comment thread and what it has produced. Issues
- * with no counted comment, linked PR or deliverable have no row.
+ * with no counted comment, linked PR, deliverable or child issue have no row.
  */
 export interface IssueThreadSummary {
   issue_id: string;
@@ -235,6 +249,10 @@ export interface IssueThreadSummary {
   deliverable_count: number;
   /** Newest upload among those files; null when there are none. */
   last_deliverable_at: string | null;
+  /** Newest direct child issues, newest first (at most 5). */
+  children: IssueThreadChild[];
+  /** All direct children, listed or not. */
+  child_total: number;
 }
 
 export interface Issue {

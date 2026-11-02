@@ -688,6 +688,9 @@
     "open_thread": "スレッドを開く",
     "unread": "未読",
     "awaiting_reply": "返信待ち",
+    "children": {
+      "more_other": "ほか {{count}} 件のサブタスク"
+    },
     "decision": {
       "title": "あなたの判断待ち",
       "open_thread": "スレッドを見る",

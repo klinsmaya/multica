@@ -1527,6 +1527,103 @@ func (q *Queries) ListIssueRefsInWorkspace(ctx context.Context, arg ListIssueRef
 	return items, nil
 }
 
+const listIssueThreadChildren = `-- name: ListIssueThreadChildren :many
+SELECT r.parent_issue_id,
+       r.id,
+       r.number,
+       r.title,
+       r.status,
+       r.assignee_type,
+       r.assignee_id,
+       r.child_total,
+       COALESCE(cc.reply_count, 0)::bigint AS reply_count,
+       cc.last_reply_at::timestamptz AS last_reply_at
+FROM (
+    SELECT i.parent_issue_id,
+           i.id,
+           i.number,
+           i.title,
+           i.status,
+           i.assignee_type,
+           i.assignee_id,
+           i.created_at,
+           COUNT(*) OVER (PARTITION BY i.parent_issue_id)::bigint AS child_total,
+           ROW_NUMBER() OVER (
+               PARTITION BY i.parent_issue_id
+               ORDER BY i.created_at DESC, i.id DESC
+           ) AS rn
+    FROM issue i
+    WHERE i.workspace_id = $1
+      AND i.parent_issue_id = ANY($2::uuid[])
+) r
+LEFT JOIN LATERAL (
+    SELECT COUNT(*)::bigint AS reply_count,
+           MAX(cm.created_at) AS last_reply_at
+    FROM comment cm
+    WHERE cm.workspace_id = $1
+      AND cm.issue_id = r.id
+      AND cm.deleted_at IS NULL
+      AND cm.author_type <> 'system'
+) cc ON true
+WHERE r.rn <= $3::int
+ORDER BY r.parent_issue_id, r.rn
+`
+
+type ListIssueThreadChildrenParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	IssueIds    []pgtype.UUID `json:"issue_ids"`
+	ChildLimit  int32         `json:"child_limit"`
+}
+
+type ListIssueThreadChildrenRow struct {
+	ParentIssueID pgtype.UUID        `json:"parent_issue_id"`
+	ID            pgtype.UUID        `json:"id"`
+	Number        int32              `json:"number"`
+	Title         string             `json:"title"`
+	Status        string             `json:"status"`
+	AssigneeType  pgtype.Text        `json:"assignee_type"`
+	AssigneeID    pgtype.UUID        `json:"assignee_id"`
+	ChildTotal    int64              `json:"child_total"`
+	ReplyCount    int64              `json:"reply_count"`
+	LastReplyAt   pgtype.Timestamptz `json:"last_reply_at"`
+}
+
+// Direct children of a batch of issues for the project feed's thread cards:
+// the newest child_limit per parent, newest first, in one statement.
+// child_total is the parent's full child count, repeated on each row. Each
+// child carries its own counted-comment rollup, using the same rule as
+// ListIssueThreadSummaries (not deleted, not platform-authored).
+func (q *Queries) ListIssueThreadChildren(ctx context.Context, arg ListIssueThreadChildrenParams) ([]ListIssueThreadChildrenRow, error) {
+	rows, err := q.db.Query(ctx, listIssueThreadChildren, arg.WorkspaceID, arg.IssueIds, arg.ChildLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIssueThreadChildrenRow{}
+	for rows.Next() {
+		var i ListIssueThreadChildrenRow
+		if err := rows.Scan(
+			&i.ParentIssueID,
+			&i.ID,
+			&i.Number,
+			&i.Title,
+			&i.Status,
+			&i.AssigneeType,
+			&i.AssigneeID,
+			&i.ChildTotal,
+			&i.ReplyCount,
+			&i.LastReplyAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIssues = `-- name: ListIssues :many
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,

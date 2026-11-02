@@ -26,7 +26,10 @@ const virtuoso = vi.hoisted(() => ({
 
 vi.mock("@multica/core/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@multica/core/api")>()),
-  api: { listThreadSummaries: mockListThreadSummaries },
+  api: {
+    listThreadSummaries: mockListThreadSummaries,
+    getAgentTaskSnapshot: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock("@multica/core/hooks", () => ({
@@ -165,6 +168,8 @@ function summary(overrides: Partial<IssueThreadSummary>): IssueThreadSummary {
     pull_requests: [],
     deliverable_count: 0,
     last_deliverable_at: null,
+    children: [],
+    child_total: 0,
     ...overrides,
   };
 }
@@ -437,6 +442,53 @@ describe("FeedView", () => {
     expect(before.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(decision.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Ship @Me?")).toBeInTheDocument();
+  });
+
+  it("shows the thread cards between the decision card and the thread bar, only for issues with children", async () => {
+    mockListThreadSummaries.mockResolvedValue({
+      summaries: [
+        summary({ issue_id: "issue-1", reply_count: 1 }),
+        summary({
+          issue_id: "issue-2",
+          reply_count: 2,
+          awaiting_me: [
+            {
+              comment_id: "c-9",
+              actor_id: "agent-7",
+              excerpt: "Ship @Me?",
+              created_at: "2026-10-02T00:00:00Z",
+            },
+          ],
+          children: [
+            {
+              id: "child-1",
+              identifier: "MUL-9",
+              title: "Handled in a thread",
+              status: "todo",
+              assignee_type: null,
+              assignee_id: null,
+              reply_count: 0,
+              last_reply_at: null,
+            },
+          ],
+          child_total: 1,
+        }),
+      ],
+    });
+    renderFeed([
+      makeIssue({ id: "issue-1", title: "Quiet", created_at: "2026-10-01T00:00:00Z" }),
+      makeIssue({ id: "issue-2", title: "Blocked", created_at: "2026-10-02T00:00:00Z" }),
+    ]);
+
+    const card = await screen.findByText("Handled in a thread");
+    expect(screen.getAllByText("Handled in a thread")).toHaveLength(1);
+    const decision = screen.getByText("Waiting on you");
+    const bar = screen.getByText("2 replies");
+    expect(decision.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(card);
+    expect(peek.open).toHaveBeenCalledWith("child-1");
   });
 
   it("shows the empty state when nothing top-level remains", () => {
