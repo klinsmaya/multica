@@ -208,11 +208,13 @@
     "last_run": "Dernière exécution : {{time}}"
   },
   "overview": {
-    "group_needs_you": "À traiter",
+    "group_needs_reply": "En attente de réponse",
+    "group_needs_review": "Prêt à relire",
     "group_running": "En cours",
     "group_idle": "Inactives",
     "group_resolved": "Résolues",
-    "empty_needs_you": "Rien n'attend votre réponse",
+    "empty_needs_reply": "Rien n'attend votre réponse",
+    "empty_needs_review": "Rien n'est prêt à relire",
     "empty_running": "Aucun agent au travail",
     "empty_idle": "Aucune tâche inactive",
     "empty_resolved": "Aucune tâche résolue pour l'instant",

@@ -206,11 +206,13 @@
     "last_run": "마지막 실행 {{time}}"
   },
   "overview": {
-    "group_needs_you": "확인 필요",
+    "group_needs_reply": "답변 대기",
+    "group_needs_review": "검토 대기",
     "group_running": "진행 중",
     "group_idle": "대기 중",
     "group_resolved": "해결됨",
-    "empty_needs_you": "확인할 작업이 없습니다",
+    "empty_needs_reply": "답변을 기다리는 작업이 없습니다",
+    "empty_needs_review": "검토를 기다리는 작업이 없습니다",
     "empty_running": "작업 중인 에이전트가 없습니다",
     "empty_idle": "대기 중인 작업이 없습니다",
     "empty_resolved": "해결된 작업이 아직 없습니다",

@@ -208,11 +208,13 @@
     "last_run": "Last run {{time}}"
   },
   "overview": {
-    "group_needs_you": "Needs you",
+    "group_needs_reply": "Waiting for you",
+    "group_needs_review": "Ready to review",
     "group_running": "Running",
     "group_idle": "Idle",
     "group_resolved": "Resolved",
-    "empty_needs_you": "Nothing is waiting on you",
+    "empty_needs_reply": "Nothing is waiting for your reply",
+    "empty_needs_review": "Nothing is ready for your review",
     "empty_running": "No agents are working",
     "empty_idle": "No idle issues",
     "empty_resolved": "Nothing resolved yet",

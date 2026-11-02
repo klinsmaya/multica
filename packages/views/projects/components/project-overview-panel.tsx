@@ -54,8 +54,8 @@ function overviewRowsRequest(projectId: string): IssueTableRowsRequest {
 }
 
 /**
- * The project sidebar's overview: the project's top-level issues in four
- * groups (needs you, running, idle, resolved), each row showing the newest
+ * The project sidebar's overview: the project's top-level issues in five
+ * groups (needs reply, needs review, running, idle, resolved), each row showing the newest
  * reply and what the issue has produced.
  *
  * Issues come from a fixed project-scoped Table query rather than the issue
@@ -70,7 +70,8 @@ export function ProjectOverviewPanel({ projectId }: { projectId: string }) {
   const { categoryOf, colorOf, iconOf } = useIssueStatuses(wsId);
   const { activityByIssueId } = useIssueSurfaceActivity();
   const [collapsed, setCollapsed] = useState<Record<ProjectIssueGroupKey, boolean>>({
-    needs_you: false,
+    needs_reply: false,
+    needs_review: false,
     running: false,
     idle: false,
     resolved: true,
@@ -107,9 +108,13 @@ export function ProjectOverviewPanel({ projectId }: { projectId: string }) {
   );
 
   const labels: Record<ProjectIssueGroupKey, { title: string; empty: string }> = {
-    needs_you: {
-      title: t(($) => $.overview.group_needs_you),
-      empty: t(($) => $.overview.empty_needs_you),
+    needs_reply: {
+      title: t(($) => $.overview.group_needs_reply),
+      empty: t(($) => $.overview.empty_needs_reply),
+    },
+    needs_review: {
+      title: t(($) => $.overview.group_needs_review),
+      empty: t(($) => $.overview.empty_needs_review),
     },
     running: {
       title: t(($) => $.overview.group_running),

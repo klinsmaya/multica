@@ -1,12 +1,18 @@
 import type { Issue, IssueStatusCategory, IssueThreadSummary } from "@multica/core/types";
 import { getFeedReadState } from "../../issues/components/feed-read-state";
 
-export type ProjectIssueGroupKey = "needs_you" | "running" | "idle" | "resolved";
+export type ProjectIssueGroupKey =
+  | "needs_reply"
+  | "needs_review"
+  | "running"
+  | "idle"
+  | "resolved";
 
 export type ProjectIssueGroups = Record<ProjectIssueGroupKey, Issue[]>;
 
 export const PROJECT_ISSUE_GROUP_ORDER: readonly ProjectIssueGroupKey[] = [
-  "needs_you",
+  "needs_reply",
+  "needs_review",
   "running",
   "idle",
   "resolved",
@@ -34,17 +40,27 @@ function time(value: string): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
+/** A linked PR that is open and not failing or still running CI. */
+function hasReviewablePullRequest(summary: IssueThreadSummary | undefined): boolean {
+  return (summary?.pull_requests ?? []).some(
+    (pr) => pr.state === "open" && (pr.checks_state === "passed" || pr.checks_state === "none"),
+  );
+}
+
 /**
- * Sorts a project's top-level issues into the overview's four groups. Each
+ * Sorts a project's top-level issues into the overview's five groups. Each
  * issue lands in exactly one, by the first rule that matches:
  *
  * 1. Resolved: the status category is done or closed. A finished issue stays
  *    here even with a pending question or a task still winding down.
- * 2. Needs you: an agent question waits on the caller, or the thread is
- *    unread and someone else spoke last. Wins over Running, because a running
- *    issue that asks the caller something is waiting on the caller.
- * 3. Running: an agent task is running or queued.
- * 4. Idle: everything else.
+ * 2. Needs reply: an agent question waits on the caller. Wins over Running,
+ *    because a running issue that asks the caller something is waiting on the
+ *    caller.
+ * 3. Needs review: the thread is unread and someone else spoke last, or a
+ *    linked PR is open with passing or absent checks. There is no "in review"
+ *    status category, so the status never decides this group.
+ * 4. Running: an agent task is running or queued.
+ * 5. Idle: everything else.
  *
  * Sub-issues are skipped. Each group is ordered newest activity first.
  */
@@ -56,7 +72,8 @@ export function groupProjectIssues({
   categoryOf,
 }: GroupProjectIssuesInput): ProjectIssueGroups {
   const groups: ProjectIssueGroups = {
-    needs_you: [],
+    needs_reply: [],
+    needs_review: [],
     running: [],
     idle: [],
     resolved: [],
@@ -67,11 +84,13 @@ export function groupProjectIssues({
     const category = categoryOf(issue.status);
     if (category === "done" || category === "closed") {
       groups.resolved.push(issue);
+    } else if ((summary?.awaiting_me.length ?? 0) > 0) {
+      groups.needs_reply.push(issue);
     } else if (
-      (summary?.awaiting_me.length ?? 0) > 0 ||
-      getFeedReadState(summary, currentUserId) === "awaiting"
+      getFeedReadState(summary, currentUserId) === "awaiting" ||
+      hasReviewablePullRequest(summary)
     ) {
-      groups.needs_you.push(issue);
+      groups.needs_review.push(issue);
     } else if (runningIssueIds.has(issue.id)) {
       groups.running.push(issue);
     } else {

@@ -122,10 +122,11 @@ describe("ProjectOverviewPanel", () => {
     mocks.getAgentTaskSnapshot.mockResolvedValue([]);
   });
 
-  function seedFourGroups() {
+  function seedGroups() {
     mocks.listIssueTableRows.mockResolvedValue(
       rowsResponse([
         makeIssue({ id: "ask", title: "Needs an answer" }),
+        makeIssue({ id: "review", title: "Open PR" }),
         makeIssue({ id: "run", title: "Agent at work" }),
         makeIssue({ id: "idle", title: "Quiet one" }),
         makeIssue({ id: "idle2", title: "Quiet two" }),
@@ -144,6 +145,22 @@ describe("ProjectOverviewPanel", () => {
           ],
           deliverable_count: 2,
         }),
+        makeSummary({
+          issue_id: "review",
+          last_reply_excerpt: "PR is up",
+          pull_requests: [
+            {
+              id: "pr-1",
+              number: 7,
+              title: "Fix it",
+              url: "https://example.com/pr/7",
+              state: "open",
+              additions: 3,
+              deletions: 1,
+              checks_state: "passed",
+            },
+          ],
+        }),
         makeSummary({ issue_id: "idle", last_reply_excerpt: "Looks fine" }),
       ],
     });
@@ -161,13 +178,17 @@ describe("ProjectOverviewPanel", () => {
     expect(request.group).toEqual({ kind: "none" });
   });
 
-  it("renders the four groups with counts and keeps Resolved collapsed", async () => {
-    seedFourGroups();
+  it("renders the five groups with counts and keeps only Resolved collapsed", async () => {
+    seedGroups();
     renderPanel();
 
     await screen.findByText("Should I ship it?");
-    const needs = screen.getByRole("button", { name: /Needs you/ });
-    expect(needs).toHaveTextContent("1");
+    const reply = screen.getByRole("button", { name: /Waiting for you/ });
+    expect(reply).toHaveTextContent("1");
+    const review = screen.getByRole("button", { name: /Ready to review/ });
+    expect(review).toHaveTextContent("1");
+    expect(reply).toHaveAttribute("aria-expanded", "true");
+    expect(review).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: /Running/ })).toHaveTextContent("1");
     expect(screen.getByRole("button", { name: /Idle/ })).toHaveTextContent("2");
     const resolved = screen.getByRole("button", { name: /Resolved/ });
@@ -176,6 +197,7 @@ describe("ProjectOverviewPanel", () => {
     expect(resolved).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Shipped")).not.toBeInTheDocument();
     expect(screen.getByText("Needs an answer")).toBeInTheDocument();
+    expect(screen.getByText("Open PR")).toBeInTheDocument();
     expect(screen.getByText("Agent at work")).toBeInTheDocument();
     expect(screen.queryByText("A sub issue")).not.toBeInTheDocument();
 
@@ -184,7 +206,7 @@ describe("ProjectOverviewPanel", () => {
   });
 
   it("shows the newest reply, sub-issue progress and file count on a row", async () => {
-    seedFourGroups();
+    seedGroups();
     renderPanel();
 
     // Rows move groups once the summaries land, so look the row up by its
@@ -199,7 +221,7 @@ describe("ProjectOverviewPanel", () => {
   });
 
   it("opens the issue through the feed helper when a row is clicked", async () => {
-    seedFourGroups();
+    seedGroups();
     renderPanel();
 
     fireEvent.click((await screen.findByText("Agent at work")).closest("button")!);
@@ -212,7 +234,8 @@ describe("ProjectOverviewPanel", () => {
     );
     renderPanel();
 
-    expect(await screen.findByText("Nothing is waiting on you")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing is waiting for your reply")).toBeInTheDocument();
+    expect(screen.getByText("Nothing is ready for your review")).toBeInTheDocument();
     expect(screen.getByText("No agents are working")).toBeInTheDocument();
 
     const idle = screen.getByRole("button", { name: /Idle/ });
@@ -225,7 +248,7 @@ describe("ProjectOverviewPanel", () => {
     renderPanel();
 
     expect(await screen.findByText("No issues in this project yet")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Needs you/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Waiting for you/ })).not.toBeInTheDocument();
     expect(mocks.listThreadSummaries).not.toHaveBeenCalled();
   });
 });
