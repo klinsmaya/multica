@@ -51,6 +51,18 @@ type ProjectResourceData struct {
 	Label        string          `json:"label,omitempty"`
 }
 
+// ProjectFileData mirrors handler.ProjectFileData — one project library file
+// as delivered to the daemon.
+type ProjectFileData struct {
+	AttachmentID string `json:"attachment_id"`
+	Filename     string `json:"filename"`
+	SizeBytes    int64  `json:"size_bytes"`
+	ContentType  string `json:"content_type"`
+	UploadedAt   string `json:"uploaded_at"`
+	UploaderType string `json:"uploader_type"`
+	UploaderID   string `json:"uploader_id"`
+}
+
 // ConnectedAppData keeps the claim-response field local to daemon types while
 // sharing the canonical JSON shape with the runtime app metadata package.
 type ConnectedAppData = runtimeapps.ConnectedApp
@@ -114,6 +126,7 @@ type Task struct {
 	ProjectTitle                  string                 `json:"project_title,omitempty"`                    // human-readable project title for context injection
 	ProjectDescription            string                 `json:"project_description,omitempty"`              // durable project-level context injected into the brief
 	ProjectResources              []ProjectResourceData  `json:"project_resources,omitempty"`                // project-scoped resources to expose to the agent
+	ProjectFiles                  []ProjectFileData      `json:"project_files,omitempty"`                    // project library files, newest version of each
 	IsLeaderTask                  bool                   `json:"is_leader_task,omitempty"`                   // true when executing in the squad-leader coordinator role
 	LeaderRoleResolved            bool                   `json:"leader_role_resolved,omitempty"`             // server capability: IsLeaderTask/SquadID authoritatively answer "is this a leader run". Absent on servers predating it — those before #4951 never sent is_leader_task at all, later ones send it without this guarantee — so taskIsSquadLeader falls back to the briefing marker for both (MUL-5811)
 	PriorSessionID                string                 `json:"prior_session_id,omitempty"`                 // Claude session ID from a previous task on this issue

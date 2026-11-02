@@ -1156,6 +1156,74 @@ func (q *Queries) ListProjectAttachments(ctx context.Context, arg ListProjectAtt
 	return items, nil
 }
 
+const listProjectLibraryFiles = `-- name: ListProjectLibraryFiles :many
+SELECT id, filename, content_type, size_bytes, uploader_type, uploader_id, created_at
+FROM (
+    SELECT DISTINCT ON (lower(btrim(split_part(a.content_type, ';', 1))), btrim(a.filename))
+           a.id, a.filename, a.content_type, a.size_bytes, a.uploader_type, a.uploader_id, a.created_at
+    FROM attachment a
+    LEFT JOIN comment c ON c.id = a.comment_id
+    WHERE a.issue_id = $1
+      AND a.workspace_id = $2
+      AND a.source_context_id IS NULL
+      AND c.deleted_at IS NULL
+    ORDER BY lower(btrim(split_part(a.content_type, ';', 1))), btrim(a.filename),
+             a.created_at DESC, a.id DESC
+) latest
+ORDER BY created_at DESC, id DESC
+LIMIT $3
+`
+
+type ListProjectLibraryFilesParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	MaxFiles    int32       `json:"max_files"`
+}
+
+type ListProjectLibraryFilesRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	Filename     string             `json:"filename"`
+	ContentType  string             `json:"content_type"`
+	SizeBytes    int64              `json:"size_bytes"`
+	UploaderType string             `json:"uploader_type"`
+	UploaderID   pgtype.UUID        `json:"uploader_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+// The files an agent working in the project should know about: the library
+// holder issue's attachments, newest version per file, newest files first.
+// Uploads with the same media type (parameters dropped, case-insensitive) and
+// filename are versions of ONE file, the same grouping rule as
+// ListIssueDeliverableSummaries. Source-context snapshot copies and
+// attachments of deleted comments are excluded, as in ListProjectAttachments.
+func (q *Queries) ListProjectLibraryFiles(ctx context.Context, arg ListProjectLibraryFilesParams) ([]ListProjectLibraryFilesRow, error) {
+	rows, err := q.db.Query(ctx, listProjectLibraryFiles, arg.IssueID, arg.WorkspaceID, arg.MaxFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectLibraryFilesRow{}
+	for rows.Next() {
+		var i ListProjectLibraryFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Filename,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.UploaderType,
+			&i.UploaderID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSourceContextAttachmentURLsByWorkspace = `-- name: ListSourceContextAttachmentURLsByWorkspace :many
 SELECT url FROM attachment
 WHERE workspace_id = $1

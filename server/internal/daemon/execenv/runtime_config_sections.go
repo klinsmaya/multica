@@ -3,6 +3,7 @@ package execenv
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
@@ -456,6 +457,9 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 		b.WriteString(desc)
 		b.WriteString("\n\n")
 	}
+	if len(ctx.ProjectFiles) > 0 {
+		writeProjectFiles(b, ctx.ProjectFiles)
+	}
 	if len(ctx.ProjectResources) > 0 {
 		b.WriteString("Project resources (also written to `.multica/project/resources.json`):\n\n")
 		for _, r := range ctx.ProjectResources {
@@ -467,6 +471,46 @@ func writeProjectContext(b *strings.Builder, ctx TaskContextForEnv) {
 	} else {
 		b.WriteString("This project has no resources attached yet.\n\n")
 	}
+}
+
+// writeProjectFiles lists the project's shared library files inside the
+// Project Context section. They are reference material the project's members
+// uploaded for every thread; the list carries ids, not contents, so the agent
+// fetches a file only when the task refers to it.
+func writeProjectFiles(b *strings.Builder, files []ProjectFileForEnv) {
+	b.WriteString("Project files — the project's shared reference files (newest version of each):\n\n")
+	for _, f := range files {
+		fmt.Fprintf(b, "- %s (%s, uploaded %s) — attachment %s\n", f.Filename, formatFileSize(f.SizeBytes), formatUploadDate(f.UploadedAt), f.AttachmentID)
+	}
+	b.WriteString("\nRead these when the task refers to them. Download one with `multica attachment download <attachment-id>` (add `-o <dir>` to choose where it lands). ")
+	b.WriteString("The same list is in `.multica/project/resources.json` under `project_files`.\n\n")
+}
+
+// formatFileSize renders a byte count in the largest unit that keeps the
+// number under 1024, e.g. "512 B", "1.5 KB", "3.0 MB".
+func formatFileSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	size := float64(n)
+	for _, suffix := range []string{"KB", "MB", "GB"} {
+		size /= unit
+		if size < unit || suffix == "GB" {
+			return fmt.Sprintf("%.1f %s", size, suffix)
+		}
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
+// formatUploadDate reduces an RFC 3339 timestamp to its UTC calendar date. An
+// unparseable value is shown as given rather than dropped.
+func formatUploadDate(ts string) string {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return ts
+	}
+	return t.UTC().Format("2006-01-02")
 }
 
 // writeInstructionPrecedence emits the "Agent Identity wins over the issue

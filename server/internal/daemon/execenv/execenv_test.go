@@ -693,6 +693,122 @@ func TestChatProjectContextInjectedIntoRuntimeBrief(t *testing.T) {
 	}
 }
 
+func projectFilesTaskContext(files []ProjectFileForEnv) TaskContextForEnv {
+	return TaskContextForEnv{
+		IssueID:      "11111111-2222-3333-4444-555555555555",
+		ProjectID:    "22222222-3333-4444-5555-666666666666",
+		ProjectTitle: "Project Gamma",
+		ProjectFiles: files,
+	}
+}
+
+func TestProjectFilesListedInRuntimeBrief(t *testing.T) {
+	t.Parallel()
+
+	ctx := projectFilesTaskContext([]ProjectFileForEnv{
+		{
+			AttachmentID: "aaaaaaaa-1111-2222-3333-444444444444",
+			Filename:     "brand-guide.pdf",
+			SizeBytes:    1572864,
+			ContentType:  "application/pdf",
+			UploadedAt:   "2026-03-04T10:20:30Z",
+			UploaderType: "member",
+			UploaderID:   "bbbbbbbb-1111-2222-3333-444444444444",
+		},
+		{
+			AttachmentID: "cccccccc-1111-2222-3333-444444444444",
+			Filename:     "notes.txt",
+			SizeBytes:    512,
+			ContentType:  "text/plain",
+			UploadedAt:   "2026-03-01T00:00:00Z",
+			UploaderType: "agent",
+			UploaderID:   "dddddddd-1111-2222-3333-444444444444",
+		},
+	})
+	dir := t.TempDir()
+	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
+		t.Fatalf("InjectRuntimeConfig: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	s := string(content)
+	for _, want := range []string{
+		"- brand-guide.pdf (1.5 MB, uploaded 2026-03-04) — attachment aaaaaaaa-1111-2222-3333-444444444444",
+		"- notes.txt (512 B, uploaded 2026-03-01) — attachment cccccccc-1111-2222-3333-444444444444",
+		"multica attachment download <attachment-id>",
+		"`project_files`",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("CLAUDE.md missing %q", want)
+		}
+	}
+	// The Project files list sits inside Project Context, ahead of resources.
+	if strings.Index(s, "## Project Context") > strings.Index(s, "brand-guide.pdf") {
+		t.Errorf("project files should be listed under ## Project Context")
+	}
+}
+
+func TestProjectFilesAbsentFromBriefAndResourcesJSONWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := projectFilesTaskContext(nil)
+	dir := t.TempDir()
+	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
+		t.Fatalf("InjectRuntimeConfig: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	if s := string(content); !strings.Contains(s, "## Project Context") || strings.Contains(s, "Project files") {
+		t.Errorf("empty file list must leave Project Context without a Project files block; got:\n%s", s)
+	}
+
+	if err := writeProjectResources(dir, ctx, nil); err != nil {
+		t.Fatalf("writeProjectResources: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".multica", "project", "resources.json"))
+	if err != nil {
+		t.Fatalf("read resources.json: %v", err)
+	}
+	if strings.Contains(string(raw), "project_files") {
+		t.Errorf("resources.json should omit project_files when empty:\n%s", raw)
+	}
+}
+
+func TestProjectFilesWrittenToResourcesJSON(t *testing.T) {
+	t.Parallel()
+
+	want := ProjectFileForEnv{
+		AttachmentID: "aaaaaaaa-1111-2222-3333-444444444444",
+		Filename:     "brand-guide.pdf",
+		SizeBytes:    1572864,
+		ContentType:  "application/pdf",
+		UploadedAt:   "2026-03-04T10:20:30Z",
+		UploaderType: "member",
+		UploaderID:   "bbbbbbbb-1111-2222-3333-444444444444",
+	}
+	dir := t.TempDir()
+	if err := writeProjectResources(dir, projectFilesTaskContext([]ProjectFileForEnv{want}), nil); err != nil {
+		t.Fatalf("writeProjectResources: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ".multica", "project", "resources.json"))
+	if err != nil {
+		t.Fatalf("read resources.json: %v", err)
+	}
+	var got struct {
+		ProjectFiles []ProjectFileForEnv `json:"project_files"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("resources.json unmarshal: %v\n%s", err, raw)
+	}
+	if len(got.ProjectFiles) != 1 || got.ProjectFiles[0] != want {
+		t.Errorf("resources.json project_files = %+v, want [%+v]", got.ProjectFiles, want)
+	}
+}
+
 // When the issue's project has its own github_repo resources, those should be
 // the only repos rendered in the meta-skill — workspace-level repos must not
 // leak into the agent prompt to avoid confusing it about which repo to use.
